@@ -2,7 +2,7 @@ import { IMPORT_WAIT_ON_FLUSH_MS } from '../../shared/attachments/limits';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import type { ErrorEnvelope, Result } from '../../shared/contracts/envelope';
 import type { NoteSummaryType } from '../../shared/contracts/hierarchy';
-import type { DraftSummaryType, NoteContentResponseType, VersionSummaryType } from '../../shared/contracts/notes';
+import { SAVE_RETRIES, SAVE_RETRY_DELAY_MS, type DraftSummaryType, type NoteContentResponseType, type VersionSummaryType } from '../../shared/contracts/notes';
 import type { RichDocLike } from '../../shared/editor/doc-schema';
 import { validateTitle, normalizeTitle } from '../../shared/names';
 import type { ContentSource, EditorHost } from '../editor/content';
@@ -37,11 +37,19 @@ export interface NoteControllerState {
 }
 
 export type FlushResult = { ok: true } | { ok: false; code: string; message: string; details?: unknown };
+
+/** Failures after which main still has the text (as a recovered draft) or the note is gone (D-055). */
+const KEPT_AFTER_FAILURE = new Set(['CONFLICT', 'LEASE_REQUIRED', 'NOT_FOUND']);
+
+/** True when nothing typed would be lost by closing the view now: saved, or kept by main as a draft (D-055, D-072). */
+export function textIsSafe(result: FlushResult): boolean {
+  return result.ok || KEPT_AFTER_FAILURE.has(result.code);
+}
 export type ActionResult = { ok: true } | { ok: false; message: string };
 
 export const SAVE_DEBOUNCE_MS = 400;
-export const RETRY_DELAY_MS = 1000;
-export const MAX_RETRIES = 3;
+export const RETRY_DELAY_MS = SAVE_RETRY_DELAY_MS;
+export const MAX_RETRIES = SAVE_RETRIES;
 export const SAVE_FAILED = 'Could not save this note.';
 export const CONTENT_ERROR = 'This note could not be displayed.';
 export const TAKE_CONTROL_FIRST = 'Take edit control first';
@@ -74,6 +82,7 @@ export class NoteController implements EditorHost {
   private renaming: Promise<void> | null = null;
   private pendingTitle: string | null = null;
   private failure: { code: string; message: string; details?: unknown } | null = null;
+  private opening: Promise<void> | null = null;
   private disposed = false;
   private readonly saveTimer;
   private readonly renameTimer;
@@ -114,7 +123,19 @@ export class NoteController implements EditorHost {
   }
 
   // Opening ----------------------------------------------------------------------------
-  async open(): Promise<void> {
+  /**
+   * Opens the note and asks for the lease. With `take`, a lease held elsewhere is taken (Float and Dock are explicit
+   * requests for edit control, D-065).
+   */
+  open(mode: 'acquire' | 'take' = 'acquire'): Promise<void> {
+    this.opening = (async () => {
+      await this.load();
+      if (mode === 'take' && this.state.status === 'readOnly') await this.takeEditControl();
+    })();
+    return this.opening;
+  }
+
+  private async load(): Promise<void> {
     const res = await this.deps.bridge.note.open({ noteId: this.noteId });
     if (this.disposed) return;
     if (!res.ok) {
@@ -337,10 +358,31 @@ export class NoteController implements EditorHost {
     if (status === 'readOnly' || (status === 'ready' && !this.dirty && !this.saving && this.state.save === 'saved')) void this.reload();
   }
 
+  /**
+   * Tracks the holder. A mirror that is read-only only because another view held the lease acquires it as soon as
+   * the note is free (D-065); a mirror that lost its lease keeps the recovered-draft banner, and a take in flight
+   * (busy) never races its own acquire.
+   */
   onLease(event: { noteId: string; holderViewId: string | null }): void {
     if (event.noteId !== this.noteId || this.disposed) return;
     if (event.holderViewId === this.deps.viewId) return;
     this.store.setState({ holderElsewhere: event.holderViewId !== null });
+    const { status, readOnlyReason, busy } = this.state;
+    if (event.holderViewId === null && status === 'readOnly' && readOnlyReason === 'lease' && busy === null) void this.autoAcquire();
+  }
+
+  private autoAcquire(): Promise<void> {
+    return this.busyWith('take', async () => {
+      const res = await this.deps.bridge.lease.acquire({ noteId: this.noteId, viewId: this.deps.viewId });
+      if (!res.ok || !res.data.granted || this.disposed) return;
+      this.leaseToken = res.data.leaseToken;
+      if (this.state.status !== 'readOnly' || this.state.readOnlyReason !== 'lease') {
+        await this.releaseLease();
+        return;
+      }
+      await this.reload();
+      this.store.setState({ status: 'ready', readOnlyReason: null, holderElsewhere: false });
+    });
   }
 
   /** Another window takes edit control: flush, release, and become a read-only mirror. */
@@ -383,6 +425,32 @@ export class NoteController implements EditorHost {
       }));
       return { ok: true };
     });
+  }
+
+  /** Takes edit control unless this view already has it or is busy (Float or Dock of an open note). */
+  async ensureEditing(): Promise<ActionResult> {
+    await this.opening;
+    if (this.disposed || this.state.status !== 'readOnly' || this.state.busy !== null) return { ok: true };
+    return this.takeEditControl();
+  }
+
+  /**
+   * The note went to Trash elsewhere: pending edits are flushed (main keeps them as a trashed-conflict draft), the
+   * lease is released and the view shows the trash state. The flush result tells whether a draft was kept.
+   */
+  async handleTrashed(batchId: string | null): Promise<FlushResult> {
+    const flushed = await this.flush();
+    await this.releaseLease();
+    if (!this.disposed) this.store.setState({ status: 'trashed', trashBatchId: batchId, save: 'saved' });
+    return flushed;
+  }
+
+  /** The note is back from Trash: open it again from the stored content. */
+  async reopen(): Promise<void> {
+    this.dirty = false;
+    this.failure = null;
+    this.store.setState({ status: 'loading', message: undefined, trashBatchId: undefined, readOnlyReason: null, holderElsewhere: false, conflict: null });
+    await this.open('acquire');
   }
 
   private applyContent(res: NoteContentResponseType): void {

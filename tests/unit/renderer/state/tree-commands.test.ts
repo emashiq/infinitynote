@@ -128,14 +128,30 @@ describe('command runner (INF-KEY-01, INF-KEY-02, INF-HOME-03)', () => {
     expect(services.ui.store.getState().focusRequest).toEqual({ target: 'noteTitle', noteId: active.slice(5) });
   });
 
-  it('sticky.new under a Project filter goes to the project root with sticky true', async () => {
+  it('sticky.new under a Project filter goes to the project root with sticky true and floats it without a tab (D-069)', async () => {
     const { services, fake } = await setupServices();
     const p = await fake.bridge.project.create({ name: 'P' });
     if (!p.ok) throw new Error('p');
     await services.home.setScope({ kind: 'project', projectId: p.data.project.id });
     await services.commands.run('sticky.new');
     expect(fake.callsTo('note:create')[0]?.req).toEqual({ location: { projectId: p.data.project.id, folderId: null }, sticky: true });
-    expect(services.tree.store.getState().snapshot.notes[0]).toMatchObject({ sticky: true, color: 'yellow' });
+    const created = services.tree.store.getState().snapshot.notes[0]!;
+    expect(created).toMatchObject({ sticky: true, color: 'yellow' });
+    expect(fake.callsTo('sticky:float').map((c) => c.req)).toEqual([{ noteId: created.id }]);
+    expect(services.tabs.store.getState().session.tabs.map((t) => t.kind)).toEqual(['home']);
+  });
+
+  it('note.float flushes the active note and floats it; a failure shows a notice', async () => {
+    const { services, fake } = await setupServices();
+    await services.commands.run('note.float');
+    expect(fake.callsTo('sticky:float')).toEqual([]);
+    const note = await makeNote(fake, undefined, 'Float me');
+    await services.tabs.openNote(note.id);
+    await services.commands.run('note.float');
+    expect(fake.callsTo('sticky:float').map((c) => c.req)).toEqual([{ noteId: note.id }]);
+    fake.failNext('sticky:float', { code: 'LIMIT_EXCEEDED', message: 'You have 50 open stickies. Hide some to open more.' });
+    await services.commands.run('note.float');
+    expect(services.notices.store.getState().notices.map((n) => n.text)).toContain('You have 50 open stickies. Hide some to open more.');
   });
 
   it('uses the open note location when a note tab is active, and the focused tree selection first', async () => {

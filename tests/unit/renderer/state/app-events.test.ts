@@ -12,23 +12,38 @@ afterEach(() => {
 const OTHER_VIEW = '33333333-3333-4333-8333-333333333333';
 
 describe('app events reach the active note (plan section 10.3)', () => {
-  it('app:flush-request flushes the active note, then acknowledges, also when the flush failed', async () => {
+  it('app:flush-request flushes the active note, then answers whether the text is safe; a failure says why (D-072)', async () => {
     const { services, fake } = await setupServices();
     const a = await makeNote(fake, undefined, 'A');
     await services.tabs.openNote(a.id);
     await vi.advanceTimersByTimeAsync(0);
     typeInto(services.tabs.activeController()!, 'closing now');
-    fake.emit('app:flush-request', { flushId: '55555555-5555-4555-8555-000000000001' });
+    fake.emit('app:flush-request', { flushId: '55555555-5555-4555-8555-000000000001', reason: 'close' });
     await vi.advanceTimersByTimeAsync(0);
     const order = fake.calls.map((c) => c.channel).filter((ch) => ch === 'note:save' || ch === 'app:flushed');
     expect(order).toEqual(['note:save', 'app:flushed']);
-    expect(fake.callsTo('app:flushed')[0]!.req).toEqual({ flushId: '55555555-5555-4555-8555-000000000001' });
+    expect(fake.callsTo('app:flushed')[0]!.req).toEqual({ flushId: '55555555-5555-4555-8555-000000000001', saved: true });
 
+    const texts = () => services.notices.store.getState().notices.map((n) => n.text);
     typeInto(services.tabs.activeController()!, 'refused');
     fake.failNext('note:save', { code: 'LIMIT_EXCEEDED' });
-    fake.emit('app:flush-request', { flushId: '55555555-5555-4555-8555-000000000002' });
+    fake.emit('app:flush-request', { flushId: '55555555-5555-4555-8555-000000000002', reason: 'close' });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fake.callsTo('app:flushed')).toHaveLength(2);
+    expect(fake.callsTo('app:flushed')[1]!.req).toEqual({ flushId: '55555555-5555-4555-8555-000000000002', saved: false });
+    expect(texts()).toContain('Could not save this note. The window stays open.');
+
+    fake.failNext('note:save', { code: 'LIMIT_EXCEEDED' });
+    fake.emit('app:flush-request', { flushId: '55555555-5555-4555-8555-000000000003', reason: 'quit' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.callsTo('app:flushed')[2]!.req).toEqual({ flushId: '55555555-5555-4555-8555-000000000003', saved: false });
+    expect(texts()).toContain('Could not save this note, so Infinity Notes did not quit. Quit again to quit without saving it.');
+
+    // A save main refused but kept as a draft is safe: the window may close.
+    Object.assign(fake.data.notes.find((n) => n.id === a.id)!, { revision: 99 });
+    typeInto(services.tabs.activeController()!, ' conflicting');
+    fake.emit('app:flush-request', { flushId: '55555555-5555-4555-8555-000000000004', reason: 'close' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.callsTo('app:flushed')[3]!.req).toEqual({ flushId: '55555555-5555-4555-8555-000000000004', saved: true });
   });
 
   it('note:revision from another view reloads the active note; note:lease updates it; release requests hand it over', async () => {
@@ -80,5 +95,40 @@ describe('app events reach the active note (plan section 10.3)', () => {
     expect(fake.callsTo('note:create')[0]!.req).toMatchObject({ format: 'plain', sticky: false });
     await vi.advanceTimersByTimeAsync(0);
     expect(services.tabs.activeController()!.store.getState()).toMatchObject({ format: 'plain', content: '' });
+  });
+
+  it('the note opens main queued during load open with edit control (D-071)', async () => {
+    const { createFakeBridge } = await import('../support/fake-bridge');
+    const fake = createFakeBridge();
+    const a = await makeNote(fake, undefined, 'Docked');
+    fake.data.heldElsewhere.add(a.id);
+    const { services } = await setupServices({ fake, initialOpens: [{ noteId: a.id, takeEdit: true }] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(services.tabs.store.getState().session.activeTabId).toBe(`note:${a.id}`);
+    expect(services.tabs.activeController()!.store.getState().status).toBe('ready');
+    expect(fake.callsTo('lease:take')).toHaveLength(1);
+  });
+
+  it('app:openNote opens or activates the tab, taking edit control when asked', async () => {
+    const { services, fake } = await setupServices();
+    const a = await makeNote(fake, undefined, 'A');
+    fake.emit('app:openNote', { noteId: a.id, takeEdit: false });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(services.tabs.store.getState().session.activeTabId).toBe(`note:${a.id}`);
+    expect(fake.callsTo('lease:take')).toHaveLength(0);
+    await services.tabs.activate('home');
+    fake.data.heldElsewhere.add(a.id);
+    fake.emit('app:openNote', { noteId: a.id, takeEdit: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(services.tabs.store.getState().session.activeTabId).toBe(`note:${a.id}`);
+    expect(services.tabs.activeController()!.store.getState().status).toBe('ready');
+    expect(fake.callsTo('lease:take')).toHaveLength(1);
+  });
+
+  it('dispose unsubscribes every event listener', async () => {
+    const { services, fake } = await setupServices();
+    expect(fake.subscriberCount()).toBeGreaterThan(0);
+    await services.dispose();
+    expect(fake.subscriberCount()).toBe(0);
   });
 });

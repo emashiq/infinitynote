@@ -10,8 +10,8 @@ export interface AppHandlerDeps {
   shell: ShellAdapter;
   dataDir: string;
   quit(): void;
-  /** Records a renderer's flush acknowledgment; false for an unknown flush or a different sender. */
-  flushed(webContentsId: number, flushId: string): boolean;
+  /** Records a renderer's flush answer (is its text saved); false for an unknown flush or a different sender. */
+  flushed(webContentsId: number, flushId: string, saved: boolean): boolean;
 }
 
 /** Channels that work even when the database failed to open. */
@@ -28,7 +28,7 @@ export function registerAppHandlers(router: IpcRouter, deps: AppHandlerDeps): vo
   });
   router.register('capabilities:get', () => deps.getCapabilities());
   router.register('app:flushed', (req, ctx) => {
-    if (!deps.flushed(ctx.webContentsId, req.flushId)) throw new AppError('VALIDATION_FAILED', 'Unknown flush request');
+    if (!deps.flushed(ctx.webContentsId, req.flushId, req.saved)) throw new AppError('VALIDATION_FAILED', 'Unknown flush request');
     return {};
   });
   // Links open only as http(s) in the default browser, never through a shell command line (INF-SEC-01).

@@ -1,9 +1,11 @@
 import type { z } from 'zod';
 import { INVOKE_CHANNELS, type InvokeChannel } from '../../shared/contracts/channel-names';
+import { isChannelAllowed } from '../../shared/contracts/channel-roles';
 import { CHANNEL_SCHEMAS, type ChannelRequest, type ChannelResponse } from '../../shared/contracts/channels';
 import { fail, ok, type Result } from '../../shared/contracts/envelope';
 import { AppError, errorDetail } from '../services/app-error';
 import type { Logger } from '../services/logger';
+import type { SenderInfo } from '../windows/window-registry';
 import type { IpcEventLike, SenderPolicy } from './sender-policy';
 
 export const DEFAULT_MAX_PAYLOAD_BYTES = 5 * 1024 * 1024;
@@ -15,6 +17,7 @@ export interface IpcMainLike {
 
 export interface HandlerContext {
   webContentsId: number;
+  sender: SenderInfo;
 }
 
 export type Handler<C extends InvokeChannel> = (
@@ -47,9 +50,16 @@ function firstIssuePath(error: z.ZodError): string {
   return issue ? issue.path.map(String).join('.') : '';
 }
 
+/** A sticky window may only name its own note (D-064); requests without a noteId are not about a note. */
+function ownsRequest(sender: SenderInfo, request: unknown): boolean {
+  if (sender.role !== 'sticky' || request === null || typeof request !== 'object' || !('noteId' in request)) return true;
+  return (request as { noteId: unknown }).noteId === sender.noteId;
+}
+
 /**
- * Wraps every handler with the sender policy, a payload size limit, Zod request validation, optional
- * response validation (development builds) and the `{ok, data} | {ok:false, error}` envelope.
+ * Wraps every handler with the sender policy and its role allowlist, a payload size limit, Zod request validation,
+ * the sticky note-ownership rule, optional response validation (development builds) and the
+ * `{ok, data} | {ok:false, error}` envelope.
  */
 export function createIpcRouter(options: {
   ipcMain: IpcMainLike;
@@ -67,8 +77,13 @@ export function createIpcRouter(options: {
     event: IpcEventLike,
     payload: unknown,
   ): Promise<Result<unknown>> {
-    if (!senderPolicy(event)) {
+    const sender = senderPolicy(event);
+    if (!sender) {
       logger.warn(`ipc: forbidden sender channel=${channel}`);
+      return fail('FORBIDDEN', 'Not allowed');
+    }
+    if (!isChannelAllowed(sender.role, channel)) {
+      logger.warn(`ipc: channel not allowed for role=${sender.role} channel=${channel}`);
       return fail('FORBIDDEN', 'Not allowed');
     }
     let size: number;
@@ -85,8 +100,12 @@ export function createIpcRouter(options: {
       const where = firstIssuePath(parsed.error);
       return fail('VALIDATION_FAILED', where ? `Invalid request: ${where}` : 'Invalid request');
     }
+    if (!ownsRequest(sender, parsed.data)) {
+      logger.warn(`ipc: note not owned by the sticky sender channel=${channel}`);
+      return fail('FORBIDDEN', 'Not allowed');
+    }
     try {
-      const data = await handler(parsed.data, { webContentsId: event.sender.id });
+      const data = await handler(parsed.data, { webContentsId: event.sender.id, sender });
       if (validateResponses) {
         const check = response.safeParse(data);
         if (!check.success) {

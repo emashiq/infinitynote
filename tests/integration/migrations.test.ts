@@ -51,28 +51,28 @@ let tick = 0;
 const uniqueNow = () => new Date(Date.UTC(2026, 9, 8, 12, 0, 0) + 1000 * tick++);
 
 describe('migrations (INF-FND-05)', () => {
-  it('fresh: schema v2, wal, foreign keys and synchronous FULL', async () => {
+  it('fresh: schema v4, wal, foreign keys and synchronous FULL', async () => {
     const t = await openFresh();
-    expect(t.db.pragmaValue('user_version')).toBe(3);
+    expect(t.db.pragmaValue('user_version')).toBe(4);
     expect(String(t.db.pragmaValue('journal_mode')).toLowerCase()).toBe('wal');
     expect(t.db.pragmaValue('foreign_keys')).toBe(1);
     expect(t.db.pragmaValue('synchronous')).toBe(2);
     expect(tableNames(t.db)).toEqual(
       expect.arrayContaining([
-        'settings', 'projects', 'folders', 'notes', 'trash_reanchored', 'notes_fts', 'note_versions', 'note_drafts', 'attachments', 'note_attachments',
+        'settings', 'projects', 'folders', 'notes', 'trash_reanchored', 'window_state', 'notes_fts', 'note_versions', 'note_drafts', 'attachments', 'note_attachments',
       ]),
     );
     expect(fs.existsSync(t.preMigrationDir) ? fs.readdirSync(t.preMigrationDir) : []).toEqual([]);
-    expect(t.logger.lines.some((l) => l.includes('db open driver=better-sqlite3') && l.includes('schema=3') && l.includes('preMigrationCopy=no'))).toBe(true);
+    expect(t.logger.lines.some((l) => l.includes('db open driver=better-sqlite3') && l.includes('schema=4') && l.includes('preMigrationCopy=no'))).toBe(true);
   });
 
-  it('reopening a v3 database makes no pre-migration copy and no change', async () => {
+  it('reopening a v4 database makes no pre-migration copy and no change', async () => {
     const t = await openFresh();
     t.db.close();
     const again = await openDatabase({ dbFile: t.dbFile, preMigrationDir: t.preMigrationDir });
     if (!again.ok) throw new Error('reopen failed');
     trackDb(again.db);
-    expect(again.migratedFrom).toBe(3);
+    expect(again.migratedFrom).toBe(4);
     expect(again.preMigrationCopy).toBe(false);
     expect(fs.existsSync(t.preMigrationDir) ? fs.readdirSync(t.preMigrationDir) : []).toEqual([]);
   });
@@ -124,7 +124,7 @@ describe('migrations (INF-FND-05)', () => {
   });
 
   const failing: Migration = {
-    version: 4,
+    version: 5,
     name: 'broken',
     sql: 'CREATE TABLE part_two(a TEXT); CREATE TABLE part_three(a TEXT); THIS IS NOT SQL;',
   };
@@ -142,11 +142,11 @@ describe('migrations (INF-FND-05)', () => {
     });
     expect(result).toMatchObject({ ok: false, code: 'MIGRATION_FAILED' });
     const check = trackDb(openBetterSqlite(t.dbFile, { readonly: true, fileMustExist: true }));
-    expect(check.pragmaValue('user_version')).toBe(3);
+    expect(check.pragmaValue('user_version')).toBe(4);
     expect(tableNames(check)).not.toContain('part_two');
     expect(tableNames(check)).not.toContain('part_three');
     expect(fs.readdirSync(t.preMigrationDir)).toHaveLength(1);
-    expect(logger.lines.some((l) => l.includes('migration failed version=4'))).toBe(true);
+    expect(logger.lines.some((l) => l.includes('migration failed version=5'))).toBe(true);
   });
 
   it('migrateDatabase throws MigrationError carrying the failing version', async () => {
@@ -155,22 +155,22 @@ describe('migrations (INF-FND-05)', () => {
     try {
       migrateDatabase(t.db, [...MIGRATIONS, failing]);
     } catch (err) {
-      expect((err as MigrationError).version).toBe(4);
+      expect((err as MigrationError).version).toBe(5);
     }
-    expect(t.db.pragmaValue('user_version')).toBe(3);
+    expect(t.db.pragmaValue('user_version')).toBe(4);
   });
 
   it('foreign key violation rolls back', async () => {
     const t = await openFresh();
     const violating: Migration = {
-      version: 4,
+      version: 5,
       name: 'fk',
       sql:
         'PRAGMA defer_foreign_keys = ON;' +
         ` INSERT INTO notes(id, project_id, format, content_text, created_at, updated_at) VALUES ('${randomUUID()}', '${randomUUID()}', 'plain', '', 1, 1);`,
     };
     expect(() => migrateDatabase(t.db, [...MIGRATIONS, violating])).toThrow(MigrationError);
-    expect(t.db.pragmaValue('user_version')).toBe(3);
+    expect(t.db.pragmaValue('user_version')).toBe(4);
     expect(t.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM notes').get()?.n).toBe(0);
   });
 
@@ -308,7 +308,7 @@ describe('migration 002 (D-044)', () => {
     const v2 = await openDatabase({ dbFile, preMigrationDir });
     if (!v2.ok) throw new Error('v2 open failed');
     const db = trackDb(v2.db);
-    expect(v2.schemaVersion).toBe(3);
+    expect(v2.schemaVersion).toBe(4);
     expect(v2.migratedFrom).toBe(1);
     expect(v2.preMigrationCopy).toBe(true);
     const count = (table: string) => db.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()?.n;

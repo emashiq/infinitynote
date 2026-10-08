@@ -6,6 +6,7 @@ import './styles/base.css';
 import './styles/shell.css';
 import './styles/components.css';
 import './styles/editor.css';
+import './styles/stickies.css';
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Missing #root');

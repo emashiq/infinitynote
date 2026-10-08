@@ -24,6 +24,9 @@ export function StickiesPage() {
               {n.color ? <span className={`dot dot-${n.color}`} aria-hidden /> : null}
               <span className="sticky-title">{displayTitle(n.title)}</span>
               <span className="muted sticky-path">{pathOf(index, { projectId: n.projectId, folderId: n.folderId }).join(' › ')}</span>
+              <button type="button" className="btn" aria-label={`Float ${displayTitle(n.title)}`} onClick={() => void commands.float(n.id)}>
+                Float
+              </button>
               <button type="button" className="btn" aria-label={`Open ${displayTitle(n.title)}`} onClick={() => void tabs.openNote(n.id)}>
                 Open
               </button>

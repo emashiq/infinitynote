@@ -52,6 +52,7 @@ export function TreeContextMenu() {
     case 'note': {
       const noteId = target.id;
       add('open', 'Open', () => noteId && void openNoteFromTree(services, noteId));
+      add('float', 'Float as sticky', () => noteId && void services.commands.float(noteId));
       rename();
       add('move', 'Move to…', () => ui.openDialog({ kind: 'move', key }));
       add('pin', target.pinned ? 'Unpin from Home' : 'Pin to Home', () => noteId && void tree.setPinned(noteId, !target.pinned).then((r) => report(services, r)));

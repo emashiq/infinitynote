@@ -6,6 +6,7 @@ export type CommandId =
   | 'note.new'
   | 'note.newPlain'
   | 'note.find'
+  | 'note.float'
   | 'sticky.new'
   | 'project.new'
   | 'folder.new'
@@ -24,10 +25,16 @@ export interface CommandRunner {
   run(id: CommandId): Promise<void>;
   /** Where a new note, sticky or folder would be created right now. */
   currentLocation(): LocationType;
+  /** Opens (or focuses) the note's sticky window; an open tab of the note is flushed first (INF-STKY-01). */
+  float(noteId: string): Promise<void>;
+  /** Creates a sticky at the location (the current one by default) and floats it; no tab opens (D-069). */
+  newSticky(location?: LocationType): Promise<void>;
 }
 
-export function createCommandRunner(services: Pick<AppServices, 'tree' | 'tabs' | 'home' | 'layout' | 'ui' | 'notices'>): CommandRunner {
-  const { tree, tabs, home, layout, ui, notices } = services;
+export function createCommandRunner(
+  services: Pick<AppServices, 'bridge' | 'tree' | 'tabs' | 'home' | 'layout' | 'ui' | 'notices'>,
+): CommandRunner {
+  const { bridge, tree, tabs, home, layout, ui, notices } = services;
 
   const currentLocation = (): LocationType => {
     const t = tree.store.getState();
@@ -45,8 +52,8 @@ export function createCommandRunner(services: Pick<AppServices, 'tree' | 'tabs' 
   };
 
   /** Creates a note where the user is working (rich text unless a plain-text note is asked for) and opens it. */
-  const newNote = async (sticky: boolean, format?: 'plain'): Promise<void> => {
-    const res = await tree.createNote(currentLocation(), { sticky, ...(format ? { format } : {}) });
+  const newNote = async (format?: 'plain'): Promise<void> => {
+    const res = await tree.createNote(currentLocation(), { sticky: false, ...(format ? { format } : {}) });
     if (!res.ok) {
       notices.push(res.message, 'error');
       return;
@@ -55,23 +62,50 @@ export function createCommandRunner(services: Pick<AppServices, 'tree' | 'tabs' 
     ui.requestFocus({ target: 'noteTitle', noteId: res.data.note.id });
   };
 
+  const activeNoteId = (): string | null => {
+    const session = tabs.store.getState().session;
+    const active = session.tabs.find((t) => t.id === session.activeTabId);
+    return active?.kind === 'note' ? active.noteId : null;
+  };
+
+  const float = async (noteId: string): Promise<void> => {
+    if (tabs.activeController()?.noteId === noteId) await tabs.flushActive();
+    const res = await bridge.sticky.float({ noteId });
+    if (!res.ok) notices.push(res.error.message, 'error');
+  };
+
+  const newSticky = async (location: LocationType = currentLocation()): Promise<void> => {
+    const res = await tree.createNote(location, { sticky: true });
+    if (!res.ok) {
+      notices.push(res.message, 'error');
+      return;
+    }
+    await float(res.data.note.id);
+  };
+
   return {
     currentLocation,
+    float,
+    newSticky,
     async run(id) {
       switch (id) {
         case 'note.new':
-          return newNote(false);
+          return newNote();
         case 'note.newPlain':
-          return newNote(false, 'plain');
+          return newNote('plain');
         case 'note.find': {
           // Only a note tab has a find bar (D-058).
-          const session = tabs.store.getState().session;
-          const active = session.tabs.find((t) => t.id === session.activeTabId);
-          if (active?.kind === 'note') ui.requestFocus({ target: 'noteFind', noteId: active.noteId });
+          const noteId = activeNoteId();
+          if (noteId) ui.requestFocus({ target: 'noteFind', noteId });
+          return;
+        }
+        case 'note.float': {
+          const noteId = activeNoteId();
+          if (noteId) await float(noteId);
           return;
         }
         case 'sticky.new':
-          return newNote(true);
+          return newSticky();
         case 'project.new':
           ui.openDialog({ kind: 'newProject' });
           return;

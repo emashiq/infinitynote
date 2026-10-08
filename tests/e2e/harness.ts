@@ -1,6 +1,6 @@
-import { test, type ElectronApplication, type Page } from '@playwright/test';
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import type Database from 'better-sqlite3';
-import { closeApp, dbFileOf, launchApp, makeUserDataDir, openDb, removeDir, type Launched } from './fixtures';
+import { closeApp, dbFileOf, launchApp, makeUserDataDir, openDb, readMainLog, removeDir, type Launched } from './fixtures';
 
 export interface Harness {
   readonly userData: string;
@@ -18,8 +18,11 @@ export interface Harness {
   setting(key: string): unknown;
 }
 
-/** Registers per-test userData and teardown hooks; call at the top level of a spec file. */
-export function useApp(): Harness {
+/**
+ * Registers per-test userData and teardown hooks; call at the top level of a spec file. With `failOnMainErrors`,
+ * a test fails when main logged an uncaught exception or an unhandled rejection during it.
+ */
+export function useApp(options: { failOnMainErrors?: boolean } = {}): Harness {
   let userData = '';
   let launched: Launched | null = null;
 
@@ -29,7 +32,9 @@ export function useApp(): Harness {
   test.afterEach(async () => {
     await closeApp(launched?.app);
     launched = null;
+    const mainErrors = options.failOnMainErrors ? readMainLog(userData).split('\n').filter((l) => /uncaughtException|unhandledRejection/.test(l)) : [];
     await removeDir(userData);
+    expect(mainErrors, 'main process errors in main.log').toEqual([]);
   });
 
   const h: Harness = {

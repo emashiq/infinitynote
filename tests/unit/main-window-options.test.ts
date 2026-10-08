@@ -16,6 +16,19 @@ describe('mainWindowOptions (INF-SHELL-06)', () => {
 
   it('keeps the sizes and the secure web preferences', () => {
     expect(opts).toMatchObject({ width: 1100, height: 720, minWidth: 720, minHeight: 480, show: false });
+    expect(opts.webPreferences).toEqual({
+      preload: '/p/preload.js',
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      webviewTag: false,
+      navigateOnDragDrop: false,
+      spellcheck: false,
+      safeDialogs: true,
+    });
     expect(opts.webPreferences).toMatchObject({
       preload: '/p/preload.js',
       contextIsolation: true,

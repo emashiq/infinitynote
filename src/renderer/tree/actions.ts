@@ -14,10 +14,15 @@ export function effectiveKey(node: TreeNode): string {
   return node.kind === 'favorite' && node.targetKey ? node.targetKey : node.key;
 }
 
+/** Creates a note at the tree node's location and opens it; a new sticky floats instead (D-069). */
 export async function createNoteAt(services: AppServices, key: string, sticky: boolean): Promise<void> {
   const location = services.tree.locationFor(key);
   if (!location) return;
-  const res = await services.tree.createNote(location, { sticky });
+  if (sticky) {
+    await services.commands.newSticky(location);
+    return;
+  }
+  const res = await services.tree.createNote(location, { sticky: false });
   if (!report(services, res)) return;
   await services.tabs.openNote(res.data.note.id);
   services.ui.requestFocus({ target: 'noteTitle', noteId: res.data.note.id });

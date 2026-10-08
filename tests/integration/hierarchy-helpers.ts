@@ -13,7 +13,7 @@ import { fixedClock, openFresh, randomIds } from './helpers';
  * The production service graph (createMainServices) over a fresh temp database with an injectable clock, a
  * queued fake file dialog and recorded events.
  */
-export async function setupServices(opts: { testFaults?: MainServicesDeps['testFaults'] } = {}) {
+export async function setupServices(opts: { testFaults?: MainServicesDeps['testFaults']; onTreeChanged?: (e: TreeChangedEventType) => void } = {}) {
   const t = await openFresh();
   const clock = fixedClock(1_800_000_000_000);
   const ids = randomIds();
@@ -40,7 +40,10 @@ export async function setupServices(opts: { testFaults?: MainServicesDeps['testF
       },
     },
     onSettingsChanged: (p) => settingsEvents.push(p),
-    onTreeChanged: (e) => events.push(e),
+    onTreeChanged: (e) => {
+      events.push(e);
+      opts.onTreeChanged?.(e);
+    },
     onNoteRevision: (e) => revisions.push(e),
     onLeaseChanged: (e) => leaseEvents.push(e),
     requestLeaseRelease: (holder, noteId) => releaseRequests.push({ holder, noteId }),

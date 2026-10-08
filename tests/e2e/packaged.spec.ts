@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dbFileOf, packagedExe, readMainLog, rendererSandbox } from './fixtures';
 import { useApp } from './harness';
+import { stickyPage } from './sticky-ui';
 import { activate, railGo } from './ui';
 
 const h = useApp();
@@ -20,7 +21,7 @@ test('packaged app starts, reports diagnostics and persists the theme @packaged'
   });
   expect(info?.isPackaged).toBe(true);
   expect(info?.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
-  expect(info?.schemaVersion).toBe(3);
+  expect(info?.schemaVersion).toBe(4);
   expect(info?.startup).toEqual({ status: 'ok' });
 
   await railGo(page, 'Settings');
@@ -58,7 +59,7 @@ test('packaged override honored and test hooks absent @packaged', async () => {
   // Real packaged renderer: served from the asar through the custom scheme, in the OS sandbox.
   expect(page.url().startsWith('infinity-app://renderer/')).toBe(true);
   const prefs = await app.evaluate(({ BrowserWindow }) => {
-    const wc = BrowserWindow.getAllWindows()[0]!.webContents as unknown as { getLastWebPreferences(): { sandbox: boolean; contextIsolation: boolean } };
+    const wc = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.webContents as unknown as { getLastWebPreferences(): { sandbox: boolean; contextIsolation: boolean } };
     return wc.getLastWebPreferences();
   });
   expect(prefs.sandbox).toBe(true);
@@ -66,4 +67,33 @@ test('packaged override honored and test hooks absent @packaged', async () => {
   const sandbox = await rendererSandbox(app);
   console.log(`renderer sandbox: ${sandbox.evidence}`);
   expect(sandbox.osSandboxed, sandbox.evidence).toBe(true);
+});
+
+test('packaged sticky window is sandboxed and test seams are ignored @packaged', async () => {
+  const { app, page } = await h.start({ INFINITY_NOTES_TEST_CAPS: JSON.stringify({ tray: 'unsupported', alwaysOnTop: 'unsupported' }) });
+  const caps = await page.evaluate(async () => {
+    const r = await window.infinity.capabilities.get();
+    return r.ok ? r.data : null;
+  });
+  expect(JSON.stringify(caps)).not.toContain('test-override');
+  expect(readMainLog(h.userData)).not.toContain('INFINITY_NOTES_TEST_CAPS');
+
+  const id = await page.evaluate(async () => {
+    const r = await window.infinity.note.create({ location: { projectId: null, folderId: null }, sticky: true, title: 'Packaged sticky' });
+    return r.ok ? r.data.note.id : '';
+  });
+  expect(await page.evaluate((n) => window.infinity.sticky.float({ noteId: n }), id)).toMatchObject({ ok: true, data: { created: true } });
+  const sticky = await stickyPage(app, id);
+  expect(sticky.url()).toBe(`infinity-app://renderer/index.html#/sticky/${id}`);
+  const prefs = await app.evaluate(({ BrowserWindow }, n) => {
+    const wc = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith(`#/sticky/${n}`))!.webContents as unknown as {
+      getLastWebPreferences(): { sandbox: boolean; contextIsolation: boolean; nodeIntegration: boolean };
+    };
+    return wc.getLastWebPreferences();
+  }, id);
+  expect(prefs).toMatchObject({ sandbox: true, contextIsolation: true, nodeIntegration: false });
+  const sandbox = await rendererSandbox(app, `#/sticky/${id}`);
+  console.log(`packaged sticky renderer sandbox: ${sandbox.evidence}`);
+  expect(sandbox.osSandboxed, sandbox.evidence).toBe(true);
+  expect(await app.evaluate(() => typeof globalThis.__infinityTest)).toBe('undefined');
 });

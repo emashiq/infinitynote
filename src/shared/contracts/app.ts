@@ -53,10 +53,15 @@ export const Capabilities = z.strictObject({
 });
 export type CapabilitiesType = z.infer<typeof Capabilities>;
 
-/** Acknowledged flush before a window closes or the app quits (INF-SAVE-01): main asks, the renderer answers. */
-export const AppFlushRequestEvent = z.strictObject({ flushId: Uuid });
+/**
+ * Acknowledged flush before a window closes or the app quits (INF-SAVE-01, D-072): main asks why, the renderer
+ * answers whether its text is saved (or kept by main as a draft).
+ */
+export const FlushReason = z.enum(['close', 'quit']);
+export type FlushReasonType = z.infer<typeof FlushReason>;
+export const AppFlushRequestEvent = z.strictObject({ flushId: Uuid, reason: FlushReason });
 export type AppFlushRequestEventType = z.infer<typeof AppFlushRequestEvent>;
-export const AppFlushedRequest = z.strictObject({ flushId: Uuid });
+export const AppFlushedRequest = z.strictObject({ flushId: Uuid, saved: z.boolean() });
 
 export const ShellOpenExternalRequest = z.strictObject({ url: z.string().min(1).max(MAX_URL_LENGTH) });
 export const ShellOpenExternalResponse = z.strictObject({ opened: z.literal(true) });

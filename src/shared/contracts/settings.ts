@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DEFAULT_DOCUMENT_MAX_MB, DEFAULT_IMAGE_MAX_MB, DOCUMENT_MAX_MB_RANGE, IMAGE_MAX_MB_RANGE } from '../attachments/limits';
 import { HomeScope } from './home';
 import { DEFAULT_SESSION, TabSession } from './session';
+import { CloseBehavior } from './windows';
 
 export const ThemeSetting = z.enum(['system', 'light', 'dark']);
 
@@ -31,6 +32,8 @@ export const SETTINGS = {
     default: DEFAULT_DOCUMENT_MAX_MB,
     public: true,
   },
+  'app.closeBehavior': { version: 1, schema: CloseBehavior, default: 'ask', public: true },
+  'stickies.restoreOnStartup': { version: 1, schema: z.boolean(), default: false, public: true },
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;

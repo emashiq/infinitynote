@@ -1,0 +1,167 @@
+/* Sticky windows (D-070, UX_SPEC sections 5 and 10). The native frame stays; there are no drag regions. */
+
+.sticky-window {
+  --sticky-bg: #fff4b8;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--sticky-bg);
+}
+
+.sticky-window[data-sticky-color='green'] {
+  --sticky-bg: #ddf5d8;
+}
+.sticky-window[data-sticky-color='blue'] {
+  --sticky-bg: #dcebff;
+}
+.sticky-window[data-sticky-color='pink'] {
+  --sticky-bg: #ffe0ec;
+}
+.sticky-window[data-sticky-color='violet'] {
+  --sticky-bg: #ece6ff;
+}
+.sticky-window[data-sticky-color='gray'] {
+  --sticky-bg: #ecedf1;
+}
+
+:root[data-theme='dark'] .sticky-window {
+  --sticky-bg: #4a4320;
+}
+:root[data-theme='dark'] .sticky-window[data-sticky-color='green'] {
+  --sticky-bg: #24402a;
+}
+:root[data-theme='dark'] .sticky-window[data-sticky-color='blue'] {
+  --sticky-bg: #22344f;
+}
+:root[data-theme='dark'] .sticky-window[data-sticky-color='pink'] {
+  --sticky-bg: #4a2634;
+}
+:root[data-theme='dark'] .sticky-window[data-sticky-color='violet'] {
+  --sticky-bg: #342c52;
+}
+:root[data-theme='dark'] .sticky-window[data-sticky-color='gray'] {
+  --sticky-bg: #2e3038;
+}
+
+/* Header: 36 px, usable down to the 220 px minimum width. */
+.sticky-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.sticky-header .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.sticky-header .icon-btn:focus-visible,
+.sticky-title-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.sticky-color-btn .dot {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 25%, transparent);
+}
+
+.sticky-title-input {
+  flex: 1 1 64px;
+  min-width: 40px;
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+
+.sticky-title-input:hover,
+.sticky-title-input:focus {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+}
+
+.sticky-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sticky-pin[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sticky-pin[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sticky-pin[aria-disabled='true']:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+/* Body: hidden (editor kept mounted) while collapsed. */
+.sticky-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 4px 8px 8px;
+}
+
+.sticky-body[hidden] {
+  display: none;
+}
+
+.sticky-body .banner {
+  font-size: 12px;
+}
+
+.note-editor-sticky .editor-toolbar {
+  flex-wrap: wrap;
+  min-height: 0;
+  margin-bottom: 4px;
+  overflow-x: visible;
+}
+
+.note-editor-sticky .editor-toolbar .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.note-editor-sticky .note-editor-content {
+  padding-bottom: 16px;
+}
+
+.sticky-trash {
+  padding: 12px 4px;
+}
+
+.sticky-message {
+  padding: 8px 4px;
+}
+
+.sticky-window .toasts {
+  right: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+}

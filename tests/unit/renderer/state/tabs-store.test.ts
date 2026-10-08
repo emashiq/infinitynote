@@ -255,4 +255,24 @@ describe('TabsStore', () => {
     const tab = services.tabs.store.getState().session.tabs.find((t) => t.id === `note:${a.id}`);
     expect(tab).toMatchObject({ scrollTop: 240 });
   });
+
+  it('openNote with takeEdit takes edit control: a new tab takes on open, an active mirror takes in place (D-065)', async () => {
+    const { services, fake } = await setupServices();
+    const a = await makeNote(fake, undefined, 'A');
+    const b = await makeNote(fake, undefined, 'B');
+    fake.data.heldElsewhere.add(a.id);
+    await services.tabs.openNote(a.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(services.tabs.activeController()!.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'lease' });
+    expect(await services.tabs.openNote(a.id, { takeEdit: true })).toBe(true);
+    expect(fake.callsTo('lease:take').map((c) => (c.req as { noteId: string }).noteId)).toEqual([a.id]);
+    expect(services.tabs.activeController()!.store.getState().status).toBe('ready');
+
+    fake.data.heldElsewhere.add(b.id);
+    expect(await services.tabs.openNote(b.id, { takeEdit: true })).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(services.tabs.activeController()).toMatchObject({ noteId: b.id });
+    expect(services.tabs.activeController()!.store.getState().status).toBe('ready');
+    expect(fake.callsTo('lease:take')).toHaveLength(2);
+  });
 });

@@ -7,6 +7,7 @@ import { makePng } from '../support/png';
 import { createNote, importImage, reloadUi, saveDoc, saveText, seedNotebook, type Notebook } from './seed';
 import { activate, openByPalette, openFromTree, railGo, tabItem, treeByKey, titleInput } from './ui';
 import { editor, fakeView, findInput } from './editor-ui';
+import { stickyHeader, stickyPage } from './sticky-ui';
 
 const SHOTS = process.env.INFINITY_SCREENSHOT_DIR ?? path.join(repoRoot, 'test-results', 'screens');
 const h = useApp();
@@ -15,11 +16,12 @@ test.beforeEach(() => {
   fs.mkdirSync(SHOTS, { recursive: true });
 });
 
-async function shot(page: Page, name: string): Promise<void> {
+/** Saves a screenshot; a sticky window is small (and a collapsed one only a header), so its floor is lower. */
+async function shot(page: Page, name: string, minBytes = 10_000): Promise<void> {
   const file = path.join(SHOTS, name);
   await page.screenshot({ path: file });
   expect(fs.existsSync(file)).toBe(true);
-  expect(fs.statSync(file).size).toBeGreaterThan(10_000);
+  expect(fs.statSync(file).size).toBeGreaterThan(minBytes);
 }
 
 async function boot(): Promise<{ nb: Notebook; page: Page; app: ElectronApplication }> {
@@ -216,4 +218,68 @@ test('760x560 light: editor toolbar', async () => {
   await expect(page.getByRole('toolbar', { name: 'Formatting' })).toBeVisible();
   await expect(editor(page)).toContainText('Launch plan');
   await shot(page, '760x560-light-editor-toolbar.png');
+});
+
+/** Phase 04 screenshots: sticky windows, the Stickies page, Settings > Windows and tray and the tab Float button. */
+async function floatedSticky(extraEnv?: Record<string, string>) {
+  const { app, page } = await h.start(extraEnv);
+  const nb = await seedNotebook(page);
+  await saveText(page, nb.sticky, 'Call Maya about the venue\nBring the budget sheet');
+  await page.evaluate((id) => window.infinity.sticky.float({ noteId: id }), nb.sticky);
+  const sp = await stickyPage(app, nb.sticky);
+  await expect(editor(sp)).toContainText('Call Maya about the venue');
+  return { app, page, nb, sp };
+}
+
+test('sticky light, collapsed and color menu', async () => {
+  const { sp } = await floatedSticky();
+  await shot(sp, 'sticky-light.png', 3_000);
+  await activate(stickyHeader(sp).getByRole('button', { name: 'Sticky color' }));
+  await expect(sp.getByRole('menu', { name: 'Sticky color' })).toBeVisible();
+  await shot(sp, 'sticky-color-menu.png', 3_000);
+  await sp.keyboard.press('Escape');
+  await activate(stickyHeader(sp).getByRole('button', { name: 'Collapse sticky' }));
+  await expect(editor(sp)).toBeHidden();
+  await shot(sp, 'sticky-collapsed.png', 500);
+});
+
+test('sticky dark', async () => {
+  const { page, sp } = await floatedSticky();
+  await page.evaluate(() => window.infinity.settings.set({ key: 'appearance.theme', value: 'dark' }));
+  await expect(sp.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await shot(sp, 'sticky-dark.png', 3_000);
+});
+
+test('sticky read-only banner and trash state', async () => {
+  const { page, nb, sp } = await floatedSticky();
+  await openByPalette(page, 'Call Maya');
+  await activate(page.getByRole('button', { name: 'Take edit control' }));
+  await expect(sp.getByText('This note is being edited in another window')).toBeVisible();
+  await shot(sp, 'sticky-read-only-banner.png', 3_000);
+  await page.evaluate((id) => window.infinity.note.trash({ noteId: id }), nb.sticky);
+  await expect(sp.getByRole('heading', { name: 'This note is in Trash' })).toBeVisible();
+  await shot(sp, 'sticky-trash-state.png', 3_000);
+});
+
+test('sticky pin unsupported', async () => {
+  const { sp } = await floatedSticky({ INFINITY_NOTES_TEST_CAPS: JSON.stringify({ alwaysOnTop: 'unsupported' }) });
+  const pin = stickyHeader(sp).getByRole('button', { name: 'Keep on top' });
+  await expect(pin).toHaveAttribute('aria-disabled', 'true');
+  await pin.focus();
+  await shot(sp, 'sticky-pin-unsupported.png', 3_000);
+});
+
+test('1100x720 light: stickies page, settings windows and tray, tab float button', async () => {
+  const { app, page } = await boot();
+  await setContentSize(app, page, 1100, 720);
+  await railGo(page, 'Stickies');
+  await expect(page.locator('.sticky-row')).toHaveCount(1);
+  await shot(page, 'stickies-page.png');
+  await railGo(page, 'Settings');
+  await expect(page.getByRole('radiogroup', { name: 'When the main window closes' })).toBeVisible();
+  await shot(page, 'settings-windows-and-tray.png');
+  await openByPalette(page, 'Launch plan');
+  await expect(titleInput(page)).toHaveValue('Launch plan');
+  await page.getByRole('button', { name: 'Float as sticky' }).focus();
+  await shot(page, 'tab-float-button.png');
 });

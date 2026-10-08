@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { NoteSummary } from './hierarchy';
 import { Uuid } from './ids';
 
+/** A save that fails with INTERNAL is retried this often, this far apart (the renderer), before it gives up. */
+export const SAVE_RETRIES = 3;
+export const SAVE_RETRY_DELAY_MS = 1000;
+
 export const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
 
 export const RichDoc = z.looseObject({ type: z.literal('doc'), content: z.array(z.unknown()).optional() });

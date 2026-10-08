@@ -22,6 +22,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: 'tab.next', label: 'Next tab', shortcut: 'Ctrl+Tab' },
   { id: 'tab.prev', label: 'Previous tab', shortcut: 'Ctrl+Shift+Tab' },
   { id: 'note.find', label: 'Find in note', shortcut: 'Ctrl+F' },
+  { id: 'note.float', label: 'Float current note' },
 ];
 
 /** Case-insensitive substring or word-prefix match; keeps list order. An empty query returns everything. */

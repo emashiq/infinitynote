@@ -29,7 +29,7 @@ export interface AttachmentServiceDeps {
   ids: IdGenerator;
   logger: Logger;
   settings: SettingsService;
-  dialog: DialogAdapter;
+  dialog: Pick<DialogAdapter, 'showOpenFiles'>;
   /** `<userData>/data`; managed files live under `attachments/` inside it. */
   dataDir: string;
   /** Test-only delay before an import starts (E2E hooks), to make the "Adding image…" state observable. */

@@ -3,6 +3,7 @@ import { useApp } from './harness';
 import { createFolder, createNote, createProject, reloadUi } from './seed';
 import { activate, arrowToRow, expandRows, openFromTree, railGo, tabs, titleInput, treeByKey } from './ui';
 import { editor } from './editor-ui';
+import { stickyNoteIds, stickyPage } from './sticky-ui';
 
 const h = useApp();
 
@@ -25,6 +26,16 @@ async function seed(page: import('@playwright/test').Page) {
   await reloadUi(page);
   await expandRows(page, [`project:${alpha}`, `folder:${l1}`, `folder:${l2}`]);
   return { alpha, l1, l2, l3, n };
+}
+
+/** A new sticky floats in its own window and opens no tab (D-069). */
+async function expectNewStickyFloated(app: import('@playwright/test').ElectronApplication, page: import('@playwright/test').Page, expectedCount: number, floated: string[]): Promise<Loc> {
+  await expect.poll(count).toBe(expectedCount);
+  const created = newest();
+  await stickyPage(app, created.id);
+  await expect.poll(() => stickyNoteIds(app)).toEqual([...floated, created.id].sort());
+  await expect(tabs(page).filter({ hasText: 'Untitled' })).toHaveCount(0);
+  return created;
 }
 
 async function expectNewNoteActive(page: import('@playwright/test').Page, expectedCount: number): Promise<void> {
@@ -65,25 +76,23 @@ test('ctrl+n', async () => {
 });
 
 test('ctrl+shift+n', async () => {
-  const { page } = await h.start();
+  const { app, page } = await h.start();
   const s = await seed(page);
+  const tabsBefore = await tabs(page).count();
 
   // (a) Home with the Common filter.
   await railGo(page, 'Home');
   await activate(page.getByRole('radio', { name: 'Common', exact: true }));
   await page.keyboard.press('Control+Shift+N');
-  await expectNewNoteActive(page, 2);
-  const a = newest();
+  const a = await expectNewStickyFloated(app, page, 2, []);
   expect(a).toMatchObject({ project_id: null, folder_id: null, sticky_enabled: 1, color: 'yellow' });
-  await expect(page.locator(`[id="tab-note:${a.id}"] svg.lucide-sticky-note`)).toBeVisible();
   await expect(treeByKey(page, `note:${a.id}`).locator('svg.lucide-sticky-note')).toBeVisible();
 
   // (c) The tree focused on folder L3.
   await arrowToRow(page, `folder:${s.l3}`);
   await page.keyboard.press('Control+Shift+N');
-  await expectNewNoteActive(page, 3);
-  const c = newest();
+  const c = await expectNewStickyFloated(app, page, 3, [a.id]);
   expect(c).toMatchObject({ project_id: s.alpha, folder_id: s.l3, sticky_enabled: 1, color: 'yellow' });
-  await expect(page.locator(`[id="tab-note:${c.id}"] svg.lucide-sticky-note`)).toBeVisible();
   await expect(treeByKey(page, `note:${c.id}`).locator('svg.lucide-sticky-note')).toBeVisible();
+  expect(await tabs(page).count()).toBe(tabsBefore);
 });

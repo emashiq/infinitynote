@@ -1,10 +1,12 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { Fragment, useEffect, useRef, type KeyboardEvent } from 'react';
 
 export interface MenuItem {
   id: string;
   label: string;
   disabled?: boolean;
   checked?: boolean;
+  /** Draws a separator line above this item. */
+  separatorBefore?: boolean;
   onSelect: () => void;
 }
 
@@ -87,21 +89,23 @@ export function Menu({
   return (
     <div ref={ref} role="menu" aria-label={label} className="menu" style={{ left, top }} onKeyDown={onKeyDown}>
       {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          role={itemRole}
-          aria-checked={itemRole === 'menuitemradio' ? !!item.checked : undefined}
-          disabled={item.disabled}
-          tabIndex={-1}
-          className="menu-item"
-          onClick={() => {
-            onClose();
-            item.onSelect();
-          }}
-        >
-          {item.label}
-        </button>
+        <Fragment key={item.id}>
+          {item.separatorBefore ? <div role="separator" className="menu-separator" /> : null}
+          <button
+            type="button"
+            role={itemRole}
+            aria-checked={itemRole === 'menuitemradio' ? !!item.checked : undefined}
+            disabled={item.disabled}
+            tabIndex={-1}
+            className="menu-item"
+            onClick={() => {
+              onClose();
+              item.onSelect();
+            }}
+          >
+            {item.label}
+          </button>
+        </Fragment>
       ))}
     </div>
   );

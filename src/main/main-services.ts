@@ -21,6 +21,7 @@ import { NoteWriter, type SaveFaults } from './services/note-writer';
 import { PaletteService } from './services/palette-service';
 import { SessionService } from './services/session-service';
 import { SettingsService } from './services/settings-service';
+import { StickyService } from './services/sticky-service';
 import { TrashService } from './services/trash-service';
 import { VersionService } from './services/version-service';
 
@@ -39,6 +40,7 @@ export interface MainServices {
   drafts: DraftService;
   formats: FormatService;
   attachments: AttachmentService;
+  stickies: StickyService;
   /** The single writer of note content (used by the services above and the E2E fake view). */
   content: NoteContent;
 }
@@ -50,7 +52,7 @@ export interface MainServicesDeps {
   logger: Logger;
   /** `<userData>/data` (attachments live under it). */
   dataDir: string;
-  dialog: DialogAdapter;
+  dialog: Pick<DialogAdapter, 'showOpenFiles'>;
   onSettingsChanged: (payload: SettingsChangedPayload) => void;
   onTreeChanged: (event: TreeChangedEventType) => void;
   onNoteRevision: (event: NoteRevisionEventType) => void;
@@ -73,6 +75,7 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     settings,
     hierarchy: new HierarchyService({ db, clock, ids, logger, onChange: deps.onTreeChanged }),
     trash: new TrashService({ db, clock, ids, logger, onChange: deps.onTreeChanged }),
+    stickies: new StickyService({ db, clock, logger, onChange: deps.onTreeChanged }),
     home: new HomeService(db),
     sessions: new SessionService(db, settings, clock),
     palette: new PaletteService(db),

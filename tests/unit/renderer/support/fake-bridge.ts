@@ -1,6 +1,8 @@
+import type { CapabilitiesType } from '../../../../src/shared/contracts/app';
 import type { AttachmentDtoType, AttachmentImportDialogResponseType } from '../../../../src/shared/contracts/attachments';
 import type { InfinityBridge } from '../../../../src/shared/contracts/bridge';
 import { EVENT_CHANNELS, type EventChannel } from '../../../../src/shared/contracts/channel-names';
+import type { ChannelResponse } from '../../../../src/shared/contracts/channels';
 import { fail, ok, type ErrorCode, type Result } from '../../../../src/shared/contracts/envelope';
 import type {
   FolderDtoType,
@@ -13,6 +15,8 @@ import type { HomeScopeType } from '../../../../src/shared/contracts/home';
 import { DEFAULT_SESSION, type TabSessionType } from '../../../../src/shared/contracts/session';
 import { SETTINGS, type SettingKey } from '../../../../src/shared/contracts/settings';
 import type { ContentOpBaseType, DraftsResolveResponseType, NoteContentResponseType } from '../../../../src/shared/contracts/notes';
+import type { StickyStateType } from '../../../../src/shared/contracts/stickies';
+import type { WindowGetStateResponseType } from '../../../../src/shared/contracts/windows';
 import { extractPlainText } from '../../../../src/shared/text/plain-text';
 import { textToDoc } from '../../../../src/shared/text/textarea-doc';
 import { buildPathIndex, pathOf } from '../../../../src/shared/tree/paths';
@@ -67,6 +71,8 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const folders: Array<FolderDtoType & { deletedAt: number | null; batch: string | null }> = [];
   const notes: FakeNote[] = [];
   const leases = new Map<string, string>();
+  /** Notes whose lease another window holds: acquire is refused until a take (or a test) frees them. */
+  const heldElsewhere = new Set<string>();
   const drafts: FakeDraft[] = [];
   const versions: FakeVersion[] = [];
   const imports: Array<{ kind: string; originalName?: string; size: number }> = [];
@@ -76,6 +82,10 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const subscribers = new Map<string, Set<(payload: unknown) => void>>();
   const failures = new Map<string, Array<{ code: ErrorCode; message: string; details?: unknown }>>();
   const calls: Array<{ channel: string; req: unknown }> = [];
+  /** Notes whose sticky window is open, with its collapse and pin state. */
+  const floating = new Map<string, { collapsed: boolean; alwaysOnTop: boolean; activation: number }>();
+  let windowState: WindowGetStateResponseType = { role: 'main', openNotes: [] };
+  let capabilities: CapabilitiesType | null = null;
   let clock = 1_000;
 
   const emit = (channel: EventChannel, payload: unknown) => {
@@ -107,6 +117,18 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     return rest;
   };
   const liveNotes = () => notes.filter((n) => n.deletedAt === null);
+  const stickyState = (n: FakeNote): StickyStateType => {
+    const w = floating.get(n.id) ?? { collapsed: false, alwaysOnTop: false, activation: 0 };
+    return {
+      noteId: n.id,
+      title: n.title,
+      color: n.color ?? 'yellow',
+      path: pathOf(pathIndex(), { projectId: n.projectId, folderId: n.folderId }),
+      trashed: n.deletedAt === null ? null : { batchId: n.batch },
+      ...w,
+    };
+  };
+  const stickyNote = (noteId: string): FakeNote | Result<never> => notes.find((x) => x.id === noteId) ?? fail('NOT_FOUND', 'This note no longer exists');
 
   const trashNoteIds = (ids: string[], batch: string) => {
     for (const n of notes) if (ids.includes(n.id) && n.deletedAt === null) Object.assign(n, { deletedAt: clock, batch });
@@ -146,7 +168,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
             arch: 'x64',
             versions: { electron: '0', chrome: '0', node: '0' },
             sqlite: { driver: 'fake', version: '3.0.0', fts5: true, json: true },
-            schemaVersion: 3,
+            schemaVersion: 4,
             startup: { status: 'ok' as const },
           }),
         ),
@@ -239,7 +261,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           return ok(payload);
         }),
     },
-    capabilities: { get: () => handle('capabilities:get', {}, () => fail('UNSUPPORTED', 'not faked')) },
+    capabilities: { get: () => handle('capabilities:get', {}, () => (capabilities ? ok(capabilities) : fail('UNSUPPORTED', 'not faked'))) },
     tree: {
       list: () =>
         handle('tree:list', {}, () =>
@@ -445,7 +467,8 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     },
     lease: {
       acquire: (req) =>
-        handle('lease:acquire', req, () => {
+        handle<ChannelResponse<'lease:acquire'>>('lease:acquire', req, () => {
+          if (heldElsewhere.has(req.noteId)) return ok({ granted: false as const, holderViewId: '99999999-9999-4999-8999-999999999999' });
           const token = `lease-${req.noteId}-${req.viewId}`;
           leases.set(req.noteId, token);
           return ok({ granted: true as const, leaseToken: token });
@@ -458,6 +481,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
         }),
       take: (req) =>
         handle('lease:take', req, () => {
+          heldElsewhere.delete(req.noteId);
           const token = 'take-' + req.noteId + '-' + uid();
           leases.set(req.noteId, token);
           return ok({ leaseToken: token });
@@ -549,6 +573,69 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           return ok({ results: liveNotes().filter((n) => (n.title || 'Untitled').toLowerCase().includes(q)).map(summary) });
         }),
     },
+    sticky: {
+      float: (req) =>
+        handle('sticky:float', req, () => {
+          const n = notes.find((x) => x.id === req.noteId);
+          if (!n) return fail('NOT_FOUND', 'This note no longer exists');
+          if (n.deletedAt !== null) return fail('NOT_FOUND', 'This note is in Trash', { trashed: true, trashBatchId: n.batch });
+          const changed = !n.sticky || n.color === null;
+          Object.assign(n, { sticky: true, color: n.color ?? 'yellow' });
+          if (changed) treeChanged('sticky');
+          const w = floating.get(n.id);
+          if (w) w.activation += 1;
+          else floating.set(n.id, { collapsed: false, alwaysOnTop: false, activation: 1 });
+          return ok({ noteId: n.id, created: !w });
+        }),
+      dock: (req) => handle('sticky:dock', req, () => (floating.delete(req.noteId), ok({}))),
+      hide: (req) => handle('sticky:hide', req, () => (floating.delete(req.noteId), ok({}))),
+      remove: (req) =>
+        handle('sticky:remove', req, () => {
+          const n = stickyNote(req.noteId);
+          if ('ok' in n) return n;
+          floating.delete(n.id);
+          n.sticky = false;
+          treeChanged('sticky');
+          return ok({});
+        }),
+      setColor: (req) =>
+        handle('sticky:setColor', req, () => {
+          const n = stickyNote(req.noteId);
+          if ('ok' in n) return n;
+          if (!n.sticky) return fail('VALIDATION_FAILED', 'This note is not a sticky');
+          n.color = req.color;
+          treeChanged('sticky');
+          return ok(floating.has(n.id) ? stickyState(n) : null);
+        }),
+      setPinned: (req) =>
+        handle('sticky:setPinned', req, () => {
+          const n = stickyNote(req.noteId);
+          if ('ok' in n) return n;
+          const w = floating.get(n.id);
+          if (w) w.alwaysOnTop = req.pinned;
+          return ok(stickyState(n));
+        }),
+      setCollapsed: (req) =>
+        handle('sticky:setCollapsed', req, () => {
+          const n = stickyNote(req.noteId);
+          if ('ok' in n) return n;
+          const w = floating.get(n.id);
+          if (w) w.collapsed = req.collapsed;
+          return ok(stickyState(n));
+        }),
+      restore: (req) =>
+        handle('sticky:restore', req, () => {
+          const n = stickyNote(req.noteId);
+          if ('ok' in n) return n;
+          if (n.deletedAt === null) return fail('VALIDATION_FAILED', 'This note is not in Trash');
+          Object.assign(n, { deletedAt: null, batch: null });
+          treeChanged('restore');
+          return ok({ kind: 'note' as const, id: n.id, relocated: false, location: { projectId: null, folderId: null }, path: ['Common'], restoredNoteIds: [n.id] });
+        }),
+    },
+    window: {
+      getState: () => handle('window:getState', {}, () => ok(windowState)),
+    },
     subscribe(channel, cb) {
       if (!(EVENT_CHANNELS as readonly string[]).includes(channel)) throw new Error('Unknown event channel');
       let set = subscribers.get(channel);
@@ -575,8 +662,12 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
       failures.set(channel, list);
     },
     callsTo: (channel: string) => calls.filter((c) => c.channel === channel),
+    /** Live event subscriptions over every channel (dispose checks). */
+    subscriberCount: () => [...subscribers.values()].reduce((n, set) => n + set.size, 0),
+    /** The sticky window state a note would have in main. */
+    stickyState: (noteId: string) => stickyState(notes.find((n) => n.id === noteId)!),
     /** Direct access for arranging state in tests. */
-    data: { setDropped: (d: typeof dropped) => (dropped = d), settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
+    data: { setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, heldElsewhere, settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
   };
 }
 

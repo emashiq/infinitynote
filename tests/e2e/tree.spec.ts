@@ -17,6 +17,7 @@ import {
   treeByKey,
   treeItem,
 } from './ui';
+import { stickyNoteIds, stickyPage } from './sticky-ui';
 
 const h = useApp();
 
@@ -49,7 +50,7 @@ async function newFolderIn(page: Page, parentLabel: string, name: string): Promi
 }
 
 test('Common protected', async () => {
-  const { page } = await h.start();
+  const { app, page } = await h.start();
   const common = treeByKey(page, 'common');
   await common.focus();
   await expect(common).toHaveAttribute('aria-level', '1');
@@ -77,6 +78,7 @@ test('Common protected', async () => {
   await expect.poll(() => h.all('SELECT id FROM notes WHERE project_id IS NULL AND folder_id IS NULL AND sticky_enabled = 0').length).toBe(1);
   await chooseMenu(page, treeByKey(page, 'common'), 'New sticky');
   await expect.poll(() => h.all('SELECT id FROM notes WHERE project_id IS NULL AND folder_id IS NULL AND sticky_enabled = 1').length).toBe(1);
+  await expect.poll(async () => (await stickyNoteIds(app)).length).toBe(1);
   await newFolderIn(page, 'Common', 'Inbox');
   expect(h.all('SELECT name FROM projects')).toHaveLength(0);
 });
@@ -193,7 +195,7 @@ test('create note in folder', async () => {
 });
 
 test('sticky in folder', async () => {
-  const { page } = await h.start();
+  const { app, page } = await h.start();
   const alpha = await createProject(page, 'Alpha');
   const l1 = await createFolder(page, { projectId: alpha, parentId: null }, 'L1');
   await reloadUi(page);
@@ -205,7 +207,10 @@ test('sticky in folder', async () => {
   const treeRow = treeByKey(page, `note:${row.id}`);
   await expect(treeRow.locator('svg.lucide-sticky-note')).toBeVisible();
   await expect(treeRow.locator('.dot-yellow')).toBeVisible();
-  await expect(page.locator(`[id="tab-note:${row.id}"] svg.lucide-sticky-note`)).toBeVisible();
+  // The new sticky floats in its own window and opens no tab (D-069).
+  await stickyPage(app, row.id);
+  await expect.poll(() => stickyNoteIds(app)).toEqual([row.id]);
+  await expect(page.locator(`[id="tab-note:${row.id}"]`)).toHaveCount(0);
 
   await railGo(page, 'Stickies');
   const stickyRow = page.locator('.sticky-row');

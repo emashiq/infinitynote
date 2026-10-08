@@ -409,3 +409,105 @@ describe('NoteController: conversion, versions and drafts (INF-EDIT-05, INF-SAVE
     expect(c.store.getState()).toMatchObject({ conflict: null, drafts: [] });
   });
 });
+
+describe('NoteController: edit control between tab and sticky (INF-STKY-07, D-065)', () => {
+  /** A bridge where another view holds the lease until `holder.free = true`; every acquire is counted. */
+  const heldElsewhere = (fake: FakeBridge, holder = { free: false, acquires: 0 }): InfinityBridge & { holder: typeof holder } => ({
+    ...fake.bridge,
+    holder,
+    lease: {
+      ...fake.bridge.lease,
+      acquire: async (req) => {
+        holder.acquires += 1;
+        return holder.free ? fake.bridge.lease.acquire(req) : { ok: true, data: { granted: false, holderViewId: OTHER_VIEW } };
+      },
+    },
+  });
+
+  it("open('take') takes a lease held elsewhere; open('acquire') stays a read-only mirror", async () => {
+    const { fake, make } = await setup();
+    const mirror = make(heldElsewhere(fake));
+    await mirror.open('acquire');
+    expect(mirror.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'lease' });
+    expect(fake.callsTo('lease:take')).toHaveLength(0);
+    const taker = make(heldElsewhere(fake));
+    await taker.open('take');
+    expect(taker.store.getState()).toMatchObject({ status: 'ready', readOnlyReason: null, holderElsewhere: false });
+    expect(fake.callsTo('lease:take')).toHaveLength(1);
+  });
+
+  it('ensureEditing waits for the open, takes control of a read-only view and does nothing for an editable one', async () => {
+    const { fake, make } = await setup();
+    const c = make(heldElsewhere(fake));
+    const opening = c.open();
+    const ensured = c.ensureEditing();
+    await opening;
+    expect(await ensured).toEqual({ ok: true });
+    expect(c.store.getState().status).toBe('ready');
+    expect(fake.callsTo('lease:take')).toHaveLength(1);
+    expect(await c.ensureEditing()).toEqual({ ok: true });
+    expect(fake.callsTo('lease:take')).toHaveLength(1);
+  });
+
+  it('a lease mirror acquires the lease when the holder goes away; a lost-lease view keeps its banner', async () => {
+    const { fake, make } = await setup();
+    const bridge = heldElsewhere(fake);
+    const c = make(bridge);
+    await c.open();
+    expect(bridge.holder.acquires).toBe(1);
+    bridge.holder.free = true;
+    c.onLease({ noteId: c.noteId, holderViewId: null });
+    expect(c.store.getState().busy).toBe('take');
+    // A second event while the acquire is in flight does not start another one.
+    c.onLease({ noteId: c.noteId, holderViewId: null });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bridge.holder.acquires).toBe(2);
+    expect(c.store.getState()).toMatchObject({ status: 'ready', readOnlyReason: null, holderElsewhere: false, busy: null });
+    const editor = new TestSource(c);
+    editor.type('typing after the sticky closed');
+    expect(await c.flush()).toEqual({ ok: true });
+    expect(saves(fake)).toHaveLength(1);
+
+    const lostBridge = heldElsewhere(fake);
+    const lost = make(lostBridge);
+    await lost.open();
+    lost.store.setState({ readOnlyReason: 'leaseLost' });
+    lostBridge.holder.free = true;
+    lost.onLease({ noteId: lost.noteId, holderViewId: null });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lost.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'leaseLost' });
+    expect(lostBridge.holder.acquires).toBe(1);
+  });
+
+  it('no auto-acquire while a take is in flight', async () => {
+    const { fake, make } = await setup();
+    const bridge = heldElsewhere(fake);
+    const c = make(bridge);
+    await c.open();
+    bridge.holder.free = true;
+    const taking = c.takeEditControl();
+    c.onLease({ noteId: c.noteId, holderViewId: null });
+    await taking;
+    expect(bridge.holder.acquires).toBe(1);
+    expect(fake.callsTo('lease:take')).toHaveLength(1);
+    expect(c.store.getState().status).toBe('ready');
+  });
+
+  it('handleTrashed flushes pending edits into a trashed draft, releases and shows the trash state; reopen brings it back', async () => {
+    const { fake, opened, stored } = await setup();
+    const { c, editor } = await opened();
+    editor.type('pending words');
+    Object.assign(stored(), { deletedAt: 5, batch: OTHER_VIEW });
+    const flushed = await c.handleTrashed(OTHER_VIEW);
+    expect(flushed).toMatchObject({ ok: false, code: 'CONFLICT', details: { reason: 'trashed' } });
+    expect(fake.data.drafts).toHaveLength(1);
+    expect(JSON.stringify(fake.data.drafts[0]!.content)).toContain('pending words');
+    expect(fake.callsTo('lease:release')).toHaveLength(1);
+    expect(c.store.getState()).toMatchObject({ status: 'trashed', trashBatchId: OTHER_VIEW, save: 'saved' });
+
+    Object.assign(stored(), { deletedAt: null, batch: null });
+    await c.reopen();
+    expect(c.store.getState()).toMatchObject({ status: 'ready', trashBatchId: undefined, conflict: null });
+    expect(c.store.getState().drafts).toHaveLength(1);
+  });
+});

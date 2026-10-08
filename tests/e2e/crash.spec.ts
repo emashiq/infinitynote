@@ -26,7 +26,7 @@ async function typedAndSaved(text: string) {
  */
 function inWindow<T>(app: ElectronApplication, script: string): Promise<T | null> {
   return app.evaluate(async ({ BrowserWindow }, js) => {
-    const wc = BrowserWindow.getAllWindows()[0]!.webContents;
+    const wc = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.webContents;
     if (wc.isCrashed() || wc.isLoading()) return null;
     // A document that is going away never answers; give up after 2 s and let the caller poll again.
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000));
@@ -36,7 +36,7 @@ function inWindow<T>(app: ElectronApplication, script: string): Promise<T | null
 
 test('renderer crash keeps acked text and reloads editable (INF-SAVE-05)', async () => {
   const { app, id } = await typedAndSaved('acknowledged before the crash');
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.forcefullyCrashRenderer());
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.webContents.forcefullyCrashRenderer());
   await expect.poll(() => /renderer-gone reason=(crashed|killed)/.test(readMainLog(h.userData))).toBe(true);
   await expect.poll(() => (readMainLog(h.userData).match(/renderer:loaded/g) ?? []).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(3);
   // Main reloads the crashed window after 500 ms; the reloaded app restores the note tab.

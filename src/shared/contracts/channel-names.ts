@@ -41,6 +41,15 @@ export const INVOKE_CHANNELS = [
   'attachment:importFromDialog',
   'shell:openExternal',
   'app:flushed',
+  'sticky:float',
+  'sticky:dock',
+  'sticky:hide',
+  'sticky:setColor',
+  'sticky:setPinned',
+  'sticky:setCollapsed',
+  'sticky:remove',
+  'sticky:restore',
+  'window:getState',
 ] as const;
 
 export const EVENT_CHANNELS = [
@@ -50,6 +59,8 @@ export const EVENT_CHANNELS = [
   'note:lease',
   'lease:release-request',
   'app:flush-request',
+  'sticky:state',
+  'app:openNote',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

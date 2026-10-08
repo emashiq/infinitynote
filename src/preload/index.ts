@@ -59,6 +59,17 @@ const bridge: InfinityBridge = {
   home: { summary: call('home:summary') },
   session: { get: call('session:get'), set: call('session:set') },
   palette: { searchTitles: call('palette:searchTitles') },
+  sticky: {
+    float: call('sticky:float'),
+    dock: call('sticky:dock'),
+    hide: call('sticky:hide'),
+    setColor: call('sticky:setColor'),
+    setPinned: call('sticky:setPinned'),
+    setCollapsed: call('sticky:setCollapsed'),
+    remove: call('sticky:remove'),
+    restore: call('sticky:restore'),
+  },
+  window: { getState: call('window:getState') },
   subscribe,
 };
 

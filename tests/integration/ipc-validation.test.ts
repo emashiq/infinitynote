@@ -8,7 +8,9 @@ import { AppError } from '../../src/main/services/app-error';
 import { memoryLogger } from '../../src/main/services/logger';
 import { SettingsService } from '../../src/main/services/settings-service';
 import { fixedClock, openFresh } from './helpers';
-import { fakeIpcMain, rendererEvent as goodEvent } from './ipc-helpers';
+import { INVOKE_CHANNELS, type InvokeChannel } from '../../src/shared/contracts/channel-names';
+import { STICKY_ALLOWED_CHANNELS, isChannelAllowed } from '../../src/shared/contracts/channel-roles';
+import { fakeIpcMain, rendererEvent as goodEvent, rolesRegistry } from './ipc-helpers';
 
 function makeRouter(opts: { validateResponses?: boolean; devOrigin?: string | null; registered?: number[] } = {}) {
   const ipc = fakeIpcMain();
@@ -16,7 +18,7 @@ function makeRouter(opts: { validateResponses?: boolean; devOrigin?: string | nu
   const registered = new Set(opts.registered ?? [1]);
   const router = createIpcRouter({
     ipcMain: ipc.ipcMain,
-    senderPolicy: createSenderPolicy({ registry: { has: (id) => registered.has(id) }, devOrigin: opts.devOrigin }),
+    senderPolicy: createSenderPolicy({ registry: { info: (id) => (registered.has(id) ? { role: 'main' as const } : undefined) }, devOrigin: opts.devOrigin }),
     logger,
     validateResponses: opts.validateResponses ?? true,
   });
@@ -24,12 +26,12 @@ function makeRouter(opts: { validateResponses?: boolean; devOrigin?: string | nu
 }
 
 describe('IPC router (INF-FND-04)', () => {
-  it('valid call returns ok and reaches the handler with the webContents id', async () => {
+  it('valid call returns ok and reaches the handler with the webContents id and sender role', async () => {
     const r = makeRouter();
     const handler = vi.fn(() => ({}));
     r.router.register('app:quit', handler);
     expect(await r.call('app:quit', {})).toEqual({ ok: true, data: {} });
-    expect(handler).toHaveBeenCalledWith({}, { webContentsId: 1 });
+    expect(handler).toHaveBeenCalledWith({}, { webContentsId: 1, sender: { role: 'main' } });
   });
 
   it('invalid payload gives VALIDATION_FAILED naming the path and does not call the handler', async () => {
@@ -114,7 +116,7 @@ describe('IPC router (INF-FND-04)', () => {
 
   it('refuses channels outside the catalogue and duplicates; dispose removes handlers', () => {
     const r = makeRouter();
-    expect(() => r.router.register('sticky:float' as never, () => ({}) as never)).toThrow(/catalogue/);
+    expect(() => r.router.register('reminder:create' as never, () => ({}) as never)).toThrow(/catalogue/);
     r.router.register('app:quit', () => ({}));
     expect(() => r.router.register('app:quit', () => ({}))).toThrow(/already/);
     expect(r.handlers.size).toBe(1);
@@ -171,5 +173,73 @@ describe('handlers over the router', () => {
     expect(quit).not.toHaveBeenCalled();
     await new Promise((resolve) => setImmediate(resolve));
     expect(quit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('role allowlist and note ownership (D-064)', () => {
+  const OWN = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const OTHER = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+  const U = '2c1d7a3e-8f6b-4c0d-9a5e-1b2c3d4e5f60';
+
+  function rolesRouter() {
+    const ipc = fakeIpcMain();
+    const logger = memoryLogger();
+    const router = createIpcRouter({ ipcMain: ipc.ipcMain, senderPolicy: createSenderPolicy({ registry: rolesRegistry(OWN) }), logger, validateResponses: false });
+    const calls: string[] = [];
+    for (const channel of INVOKE_CHANNELS) router.register(channel, () => (calls.push(channel), {}) as never);
+    const asSticky = (channel: string, payload: unknown) => ipc.call(channel, payload, goodEvent({ sender: { id: 3 } }));
+    const asMain = (channel: string, payload: unknown) => ipc.call(channel, payload, goodEvent({ sender: { id: 1 } }));
+    return { calls, logger, asSticky, asMain };
+  }
+
+  it('the allowlist has exactly the planned sticky channels', () => {
+    expect([...STICKY_ALLOWED_CHANNELS].sort()).toEqual(
+      [
+        'app:getInfo', 'app:quit', 'app:flushed', 'capabilities:get', 'settings:get', 'note:open', 'note:save', 'note:rename', 'note:trash',
+        'note:convertFormat', 'lease:acquire', 'lease:release', 'lease:take', 'versions:list', 'versions:restore', 'drafts:list',
+        'drafts:resolve', 'attachment:importBytes', 'attachment:importFromDialog', 'shell:openExternal', 'window:getState', 'sticky:dock',
+        'sticky:hide', 'sticky:setColor', 'sticky:setPinned', 'sticky:setCollapsed', 'sticky:remove', 'sticky:restore',
+      ].sort(),
+    );
+    for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('main', channel)).toBe(true);
+  });
+
+  it('every main-only channel group answers FORBIDDEN to a sticky window and never reaches its handler', async () => {
+    const r = rolesRouter();
+    const mainOnly = INVOKE_CHANNELS.filter((c) => !STICKY_ALLOWED_CHANNELS.has(c));
+    for (const group of ['session:', 'settings:set', 'tree:', 'trash:', 'project:', 'folder:', 'item:', 'note:create', 'note:move', 'home:', 'palette:', 'app:showDataFolder', 'sticky:float']) {
+      expect(mainOnly.some((c) => c.startsWith(group)), group).toBe(true);
+    }
+    for (const channel of mainOnly) {
+      expect(await r.asSticky(channel, { noteId: OWN }), channel).toEqual({ ok: false, error: { code: 'FORBIDDEN', message: 'Not allowed' } });
+    }
+    expect(r.calls).toEqual([]);
+    expect(r.logger.lines.some((l) => l.includes('ipc: channel not allowed for role=sticky channel=session:set'))).toBe(true);
+    // The same requests from the main window pass the role check.
+    expect(await r.asMain('tree:list', {})).toMatchObject({ ok: true });
+    expect(r.calls).toEqual(['tree:list']);
+  });
+
+  it('a sticky may name only its own note; requests without a note id are not affected', async () => {
+    const r = rolesRouter();
+    const op = (noteId: string) => ({ noteId, viewId: U, leaseToken: U, baseRevision: 1, requestId: U });
+    const cases: Array<[InvokeChannel, (noteId: string) => unknown]> = [
+      ['note:open', (noteId) => ({ noteId })],
+      ['note:rename', (noteId) => ({ noteId, title: 't' })],
+      ['note:trash', (noteId) => ({ noteId })],
+      ['lease:acquire', (noteId) => ({ noteId, viewId: U })],
+      ['lease:take', (noteId) => ({ noteId, viewId: U })],
+      ['versions:list', (noteId) => ({ noteId })],
+      ['drafts:list', (noteId) => ({ noteId })],
+      ['drafts:resolve', (noteId) => ({ action: 'dismiss', noteId, draftId: U })],
+      ['drafts:resolve', (noteId) => ({ action: 'restore', ...op(noteId), draftId: U })],
+    ];
+    for (const [channel, payload] of cases) {
+      expect(await r.asSticky(channel, payload(OTHER)), `${channel} other`).toEqual({ ok: false, error: { code: 'FORBIDDEN', message: 'Not allowed' } });
+      expect(await r.asSticky(channel, payload(OWN)), `${channel} own`).toMatchObject({ ok: true });
+      expect(await r.asMain(channel, payload(OTHER)), `${channel} main`).toMatchObject({ ok: true });
+    }
+    expect(await r.asSticky('app:getInfo', {})).toMatchObject({ ok: true });
+    expect(r.logger.lines.some((l) => l.includes('ipc: note not owned by the sticky sender channel=note:open'))).toBe(true);
   });
 });

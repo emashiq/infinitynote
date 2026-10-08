@@ -262,7 +262,7 @@ test('reloading the renderer leaves no extra main-process listeners', async () =
   const { app, page } = await h.start();
   const counts = () =>
     app.evaluate(({ BrowserWindow, ipcMain }) => {
-      const wc = BrowserWindow.getAllWindows()[0]!.webContents;
+      const wc = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.webContents;
       return {
         webContentsEvents: Object.fromEntries(wc.eventNames().map((n) => [String(n), wc.listenerCount(n)])),
         ipcMainEvents: Object.fromEntries(ipcMain.eventNames().map((n) => [String(n), ipcMain.listenerCount(n)])),

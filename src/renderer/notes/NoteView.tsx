@@ -1,45 +1,30 @@
 import type { Editor } from '@tiptap/core';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { VersionSummaryType } from '../../shared/contracts/notes';
+import { PictureInPicture2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { NoteEditor } from '../editor/NoteEditor';
 import { useServices, useStore } from '../state/use-store';
-import { ConfirmDialog } from '../ui/ConfirmDialog';
-import { CompareDialog } from './CompareDialog';
+import { IconButton } from '../ui/IconButton';
 import { useLiveNote } from './live-note';
 import { NoteBanners } from './NoteBanners';
 import type { ActionResult, NoteController } from './note-controller';
-import { VersionsDialog } from './VersionsDialog';
+import { NoteDialogs, type NoteDialog } from './NoteDialogs';
+import { NoteTitleInput } from './NoteTitleInput';
 
 const SAVE_LABEL = { saved: 'Saved', pending: 'Editing…', saving: 'Saving…', retrying: 'Not saved - retrying', error: 'Not saved' } as const;
 
-export const CONVERT_TITLE = 'Convert to plain text?';
-export const CONVERT_BODY = 'Formatting, checklists, links and images will be removed. A version of the current note is saved so you can restore it.';
-export const RESTORE_VERSION_TITLE = 'Restore this version?';
-export const RESTORE_VERSION_BODY = 'The current content is saved as a version first.';
-
-type NoteDialog = { kind: 'convert' } | { kind: 'versions' } | { kind: 'restoreVersion'; version: VersionSummaryType } | { kind: 'compare'; draftId: string };
-
 export function NoteView({ controller, tabId }: { controller: NoteController; tabId: string }) {
   const services = useServices();
-  const { tabs, tree, ui, notices, now } = services;
+  const { tabs, tree, ui, notices, commands, now } = services;
   const state = useStore(controller.store);
   const uiState = useStore(ui.store);
   const session = useStore(tabs.store).session;
   const live = useLiveNote(controller);
   const liveTitle = live?.title ?? state.title;
-  // Text typed into the title field; null means the field shows the current title from the tree.
-  const [typed, setTyped] = useState<string | null>(null);
-  const title = typed ?? liveTitle;
   const titleRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const [dialog, setDialog] = useState<NoteDialog | null>(null);
   const tab = session.tabs.find((t) => t.id === tabId);
   const savedScroll = tab?.kind === 'note' ? (tab.scrollTop ?? 0) : 0;
-
-  // Follow renames from elsewhere (tree, other windows) unless the field has focus: in-progress typing is never replaced.
-  useEffect(() => {
-    if (document.activeElement !== titleRef.current) setTyped(null);
-  }, [liveTitle]);
 
   // Focus request after creating a note; Ctrl+F requests are handed to the editor below.
   const request = uiState.focusRequest;
@@ -57,7 +42,6 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
       if (!r.ok) notices.push(r.message, 'error');
     });
   };
-  const loadVersions = useCallback(() => controller.listVersions(), [controller]);
 
   if (state.status === 'loading') {
     return (
@@ -115,31 +99,14 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
 
   const readOnly = state.status === 'readOnly';
   const note = state.note;
-  const compareDraft = dialog?.kind === 'compare' ? (state.drafts.find((d) => d.id === dialog.draftId) ?? null) : null;
   return (
     <div className="note-view">
       <h2 className="sr-only">{liveTitle.trim() === '' ? 'Untitled note' : liveTitle}</h2>
       <div className="note-header">
-        <input
-          ref={titleRef}
-          aria-label="Title"
-          className="note-title"
-          placeholder="Untitled"
-          value={title}
-          readOnly={readOnly}
-          onChange={(e) => {
-            setTyped(e.target.value);
-            controller.rename(e.target.value);
-          }}
-          onBlur={() => void controller.flush()}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              void controller.flush();
-              editorRef.current?.commands.focus('start');
-            }
-          }}
-        />
+        <div className="note-title-row">
+          <NoteTitleInput controller={controller} liveTitle={liveTitle} readOnly={readOnly} className="note-title" inputRef={titleRef} editorRef={editorRef} />
+          <IconButton label="Float as sticky" icon={PictureInPicture2} onClick={() => void commands.float(controller.noteId)} />
+        </div>
         <div className="note-meta">
           {note?.sticky ? (
             <span className="badge">
@@ -191,54 +158,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         onConvert={(target) => (target === 'plain' ? setDialog({ kind: 'convert' }) : report(controller.convert('rich')))}
         onOpenVersions={() => setDialog({ kind: 'versions' })}
       />
-      {dialog?.kind === 'convert' ? (
-        <ConfirmDialog
-          title={CONVERT_TITLE}
-          body={CONVERT_BODY}
-          confirmLabel="Convert"
-          confirmFirst={false}
-          onClose={() => setDialog(null)}
-          onConfirm={() => {
-            setDialog(null);
-            report(controller.convert('plain'));
-          }}
-        />
-      ) : null}
-      {dialog?.kind === 'versions' ? (
-        <VersionsDialog
-          load={loadVersions}
-          now={now()}
-          canRestore={!readOnly}
-          onClose={() => setDialog(null)}
-          onRestore={(version) => setDialog({ kind: 'restoreVersion', version })}
-        />
-      ) : null}
-      {dialog?.kind === 'restoreVersion' ? (
-        <ConfirmDialog
-          title={RESTORE_VERSION_TITLE}
-          body={RESTORE_VERSION_BODY}
-          confirmLabel="Restore"
-          confirmFirst
-          onClose={() => setDialog(null)}
-          onConfirm={() => {
-            const { version } = dialog;
-            setDialog(null);
-            report(controller.restoreVersion(version.id));
-          }}
-        />
-      ) : null}
-      {compareDraft ? (
-        <CompareDialog
-          current={controller.currentText()}
-          draft={compareDraft}
-          canRestore={!readOnly}
-          onClose={() => setDialog(null)}
-          onRestore={() => {
-            setDialog(null);
-            report(controller.restoreDraft(compareDraft.id));
-          }}
-        />
-      ) : null}
+      <NoteDialogs controller={controller} dialog={dialog} onDialog={setDialog} readOnly={readOnly} now={now()} report={report} />
     </div>
   );
 }

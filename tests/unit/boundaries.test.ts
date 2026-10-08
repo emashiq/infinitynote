@@ -54,11 +54,12 @@ describe('import boundaries', () => {
     expect(files.filter((f) => /\buseEditor\(/.test(f.text)).map((f) => f.file)).toEqual(['editor/NoteEditor.tsx']);
   });
 
-  it('the preload surface and router expose no Phase 04 channels', async () => {
+  it('the preload surface and router expose no Phase 05 channels', async () => {
     const fs = await import('node:fs');
     const preload = fs.readFileSync('src/preload/index.ts', 'utf8');
-    expect(preload).toContain("call('lease:take')");
-    expect(preload).not.toMatch(/sticky:float|window:getState|note:trashed|sticky:state/);
+    expect(preload).toContain("call('sticky:float')");
+    expect(preload).toContain("call('window:getState')");
+    expect(preload).not.toMatch(/reminder:create|widget:show|reminder:changed|note:trashed/);
     expect(preload).not.toMatch(/exposeInMainWorld\('(?!infinity')/);
     const ipcSources = fs
       .readdirSync('src/main/ipc', { recursive: true, encoding: 'utf8' })
@@ -66,7 +67,39 @@ describe('import boundaries', () => {
       .map((f) => fs.readFileSync(`src/main/ipc/${f}`, 'utf8'))
       .join('\n');
     // Positive control: the pattern below must be able to see how channels are registered.
-    expect(ipcSources).toContain("router.register('note:save'");
-    expect(ipcSources).not.toMatch(/'(sticky:float|window:getState|note:trashed|sticky:state)'/);
+    expect(ipcSources).toContain("router.register('sticky:float'");
+    expect(ipcSources).not.toMatch(/'(reminder:create|widget:show|reminder:changed|note:trashed)'/);
+  });
+
+  it('no code forces an ozone platform (INF-STKY-13, D-050)', async () => {
+    const fs = await import('node:fs');
+    const sources = fs
+      .readdirSync('src', { recursive: true, encoding: 'utf8' })
+      .filter((f) => /\.(ts|tsx)$/.test(f))
+      .map((f) => ({ file: f, text: fs.readFileSync(`src/${f}`, 'utf8') }));
+    expect(sources.some((s) => s.text.includes("getSwitchValue('ozone-platform')"))).toBe(true);
+    for (const { file, text } of sources) {
+      expect(text, file).not.toMatch(/appendSwitch\(\s*['"]ozone-platform|--ozone-platform|enable-features=UseOzonePlatform/);
+    }
+  });
+
+  it('the window and sticky logic modules do not import electron at runtime (plan section 3.1)', async () => {
+    const fs = await import('node:fs');
+    for (const file of [
+      'src/main/windows/sticky-manager.ts',
+      'src/main/windows/main-window-controller.ts',
+      'src/main/windows/display-clamp.ts',
+      'src/main/windows/display-provider.ts',
+      'src/main/services/sticky-service.ts',
+      'src/main/db/repositories/window-state-repo.ts',
+      'src/main/services/tray-probe.ts',
+      'src/main/services/close-dialog.ts',
+      'src/main/test-hooks.ts',
+    ]) {
+      const text = fs.readFileSync(file, 'utf8');
+      expect(text, file).not.toMatch(/^import (?!type )[^;]*from 'electron';/m);
+    }
+    // Positive control: an adapter does import it.
+    expect(fs.readFileSync('src/main/windows/sticky-window.ts', 'utf8')).toMatch(/^import (?!type )[^;]*from 'electron';/m);
   });
 });

@@ -13,7 +13,7 @@ import type {
 } from '../../shared/contracts/hierarchy';
 import { buildPathIndex, pathOf } from '../../shared/tree/paths';
 import { ancestorsOf, buildTreeModel, locationOfNode, type NodeKey, type TreeModel } from '../../shared/tree/tree-model';
-import { closedTabsNotice, type NoticeStore } from './notice-store';
+import { closedTabsNotice, restoreNotice, type NoticeStore } from './notice-store';
 import { createDebouncer, createStore, failOutcome, okOutcome, type Outcome, type Store, type Timers } from './store';
 import type { TabsStore } from './tabs-store';
 
@@ -292,13 +292,7 @@ export class TreeStore {
   async restore(batchId: string): Promise<Outcome<TrashRestoreResponseType>> {
     const res = await this.deps.bridge.trash.restore({ batchId });
     if (!res.ok) return this.fail(res);
-    const where = res.data.path.join(' › ');
-    this.deps.notices.push(
-      res.data.relocated
-        ? `Restored to ${where} because its original location is in Trash or no longer exists`
-        : `Restored to ${where}`,
-      'info',
-    );
+    this.deps.notices.push(restoreNotice(res.data), 'info');
     await this.afterChange(`${res.data.kind}:${res.data.id}`);
     return okOutcome(res.data);
   }

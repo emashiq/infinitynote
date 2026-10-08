@@ -91,5 +91,18 @@ export interface InfinityBridge {
   readonly palette: {
     searchTitles: Call<'palette:searchTitles'>;
   };
+  readonly sticky: {
+    float: Call<'sticky:float'>;
+    dock: Call<'sticky:dock'>;
+    hide: Call<'sticky:hide'>;
+    setColor: Call<'sticky:setColor'>;
+    setPinned: Call<'sticky:setPinned'>;
+    setCollapsed: Call<'sticky:setCollapsed'>;
+    remove: Call<'sticky:remove'>;
+    restore: Call<'sticky:restore'>;
+  };
+  readonly window: {
+    getState: Query<'window:getState'>;
+  };
   subscribe<C extends EventChannel>(channel: C, cb: (payload: EventPayload<C>) => void): () => void;
 }

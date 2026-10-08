@@ -6,6 +6,7 @@ import { PROD_CSP } from '../../src/shared/csp';
 import { makePng } from '../support/png';
 import { readMainLog, rendererSandbox } from './fixtures';
 import { useApp } from './harness';
+import { stickyPage } from './sticky-ui';
 
 const h = useApp();
 test.beforeEach(async () => {
@@ -52,7 +53,7 @@ test('navigation blocked', async () => {
   }
   // The page is still the original renderer document (Playwright's locator waits stall after a cancelled navigation).
   expect(await page().evaluate(() => document.querySelector('h1')?.textContent)).toBe('Infinity Notes');
-  expect(await app().evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getURL())).toBe('infinity-app://renderer/index.html#/');
+  expect(await app().evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.webContents.getURL())).toBe('infinity-app://renderer/index.html#/');
   expect(readMainLog(h.userData)).toContain('blocked navigation url=https://example.com');
 });
 
@@ -73,7 +74,7 @@ test('permissions denied', async () => {
 
 test('web preferences hardened', async () => {
   const prefs = await app().evaluate(({ BrowserWindow }) => {
-    const wc = BrowserWindow.getAllWindows()[0]!.webContents as unknown as { getLastWebPreferences(): Record<string, unknown> };
+    const wc = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.webContents as unknown as { getLastWebPreferences(): Record<string, unknown> };
     const p = wc.getLastWebPreferences();
     return {
       contextIsolation: p.contextIsolation,
@@ -107,7 +108,7 @@ test('bridge surface', async () => {
     const keys = (o: unknown) => Object.keys(o as object).sort();
     let subscribeError = '';
     try {
-      window.infinity.subscribe('sticky:state' as never, () => {});
+      window.infinity.subscribe('reminder:changed' as never, () => {});
     } catch (e) {
       subscribeError = (e as Error).message;
     }
@@ -143,10 +144,12 @@ test('bridge surface', async () => {
       'session',
       'settings',
       'shell',
+      'sticky',
       'subscribe',
       'trash',
       'tree',
       'versions',
+      'window',
     ],
     namespaces: {
       app: ['flushed', 'getInfo', 'quit', 'showDataFolder'],
@@ -163,9 +166,11 @@ test('bridge surface', async () => {
       session: ['get', 'set'],
       settings: ['get', 'set'],
       shell: ['openExternal'],
+      sticky: ['dock', 'float', 'hide', 'remove', 'restore', 'setCollapsed', 'setColor', 'setPinned'],
       trash: ['list', 'purge', 'restore'],
       tree: ['list'],
       versions: ['list', 'restore'],
+      window: ['getState'],
     },
     frozen: true,
     allFrozen: true,
@@ -280,4 +285,49 @@ test('attachment protocol', async () => {
     { pngId, pdfId, unknown: randomUUID() },
   );
   expect(loads).toEqual({ ok: 2, unknown: -1, traversal: -1, encoded: -1, notUuid: -1, document: -1 });
+});
+
+test('sticky windows are hardened (INF-FND-03, INF-FND-04, D-064)', async () => {
+  const own = await page().evaluate(async () => {
+    const r = await window.infinity.note.create({ location: { projectId: null, folderId: null }, sticky: true, title: 'Hardened' });
+    return r.ok ? r.data.note.id : '';
+  });
+  const other = await page().evaluate(async () => {
+    const r = await window.infinity.note.create({ location: { projectId: null, folderId: null }, sticky: false, title: 'Other' });
+    return r.ok ? r.data.note.id : '';
+  });
+  await page().evaluate((id) => window.infinity.sticky.float({ noteId: id }), own);
+  const sticky = await stickyPage(app(), own);
+  expect(sticky.url()).toBe(`infinity-app://renderer/index.html#/sticky/${own}`);
+
+  const prefs = await app().evaluate(({ BrowserWindow }, id) => {
+    const of = (suffix: string) =>
+      (BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith(suffix))!.webContents as unknown as { getLastWebPreferences(): Record<string, unknown> }).getLastWebPreferences();
+    const pick = (p: Record<string, unknown>) =>
+      Object.fromEntries(['contextIsolation', 'nodeIntegration', 'sandbox', 'webSecurity', 'webviewTag', 'allowRunningInsecureContent', 'navigateOnDragDrop', 'spellcheck'].map((k) => [k, p[k]]));
+    return { main: pick(of('#/')), sticky: pick(of(`#/sticky/${id}`)) };
+  }, own);
+  expect(prefs.sticky).toEqual(prefs.main);
+  expect(prefs.sticky).toMatchObject({ contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, webviewTag: false });
+  const sandbox = await rendererSandbox(app(), `#/sticky/${own}`);
+  console.log(`sticky renderer sandbox: ${sandbox.evidence}`);
+  expect(sandbox.osSandboxed, sandbox.evidence).toBe(true);
+
+  const answers = await sticky.evaluate(
+    async ([mine, theirs]) => {
+      const code = (r: { ok: boolean; error?: { code: string } }) => (r.ok ? 'ok' : r.error!.code);
+      const b = window.infinity;
+      return {
+        sessionSet: code(await b.session.set({ session: { version: 1, tabs: [{ id: 'home', kind: 'home' }], activeTabId: 'home' } } as never)),
+        treeList: code(await b.tree.list()),
+        trashPurge: code(await b.trash.purge({ target: { kind: 'all' }, confirmed: true })),
+        float: code(await b.sticky.float({ noteId: mine! })),
+        openOther: code(await b.note.open({ noteId: theirs! })),
+        openOwn: code(await b.note.open({ noteId: mine! })),
+      };
+    },
+    [own, other],
+  );
+  expect(answers).toEqual({ sessionSet: 'FORBIDDEN', treeList: 'FORBIDDEN', trashPurge: 'FORBIDDEN', float: 'FORBIDDEN', openOther: 'FORBIDDEN', openOwn: 'ok' });
+  expect(readMainLog(h.userData)).toContain('ipc: channel not allowed for role=sticky channel=session:set');
 });

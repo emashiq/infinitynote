@@ -24,7 +24,7 @@ Tables and essential columns (camelCase in TypeScript, snake_case in SQL):
 - `note_versions(id, note_id, revision, format, content_snapshot, attachment_ids JSON, reason 'auto'|'conversion'|'conflict'|'restore'|'import', created_at)`.
 - `note_drafts(id, note_id, view_id, base_revision, format, title NULL, content, reason 'conflict'|'lease_lost', created_at, resolved_at)`.
 - `attachments(id, managed_relative_path, sha256 UNIQUE, mime, size_bytes, original_name, kind 'image'|'document', created_at, unreferenced_since NULL)`; `note_attachments(note_id, attachment_id, block_id NULL)`.
-- `window_state(key PK, bounds JSON, display_id, open, collapsed, always_on_top, updated_at)` with key `sticky:<noteId>`, `widget` or `main`.
+- `window_state(key PK, note_id NULL REFERENCES notes(id) ON DELETE CASCADE, bounds JSON NULL, display_id NULL, open, collapsed, always_on_top, updated_at)` with key `sticky:<noteId>` (where `note_id` is set), `widget` or `main` (reserved). `bounds` holds the outer bounds of the expanded window `{x|null, y|null, width, height}`; `x`/`y` are null where positioning is unsupported (migration 004, D-062).
 - `reminders`, `occurrences`, `alert_deliveries` per section 8, with an index on `occurrences(next_alert_at_utc)` where not null.
 - `reminder_sources(reminder_id PK, note_id, block_id, source_text, span_start, span_end, reference_instant_utc, reference_zone, parser_version, source_state 'ok'|'changed'|'missing')`; `suggestion_dismissals(dedupe_key PK, note_id, created_at)` where the dedupe key is the SHA-256 of noteId, blockId, normalized span text, span start and the reference date in the zone.
 - `note_references(id, source_note_id, source_block_id NULL, target_note_id, target_block_id NULL, target_title_snapshot)`; `tags(id, name UNIQUE)`; `note_tags(note_id, tag_id)`.
@@ -51,7 +51,7 @@ Tab kinds: `home` (singleton, index 0), `note` (one per noteId), singleton pages
 
 ## 4. IPC conventions and catalogue
 
-Channel names are `domain:action`, request and response via `invoke`; responses are `{ok:true, data}` or `{ok:false, error:{code, message, details?}}` (`details` is optional JSON, for example `CONFLICT {currentRevision, draftId}`; D-042) with codes `VALIDATION_FAILED, NOT_FOUND, CONFLICT, LEASE_REQUIRED, CYCLE, LIMIT_EXCEEDED, UNSUPPORTED, FORBIDDEN, INTERNAL`. Main-to-renderer events use the whitelisted `subscribe`, which returns an unsubscribe function. Every handler validates the sender frame URL and the Zod payload.
+Channel names are `domain:action`, request and response via `invoke`; responses are `{ok:true, data}` or `{ok:false, error:{code, message, details?}}` (`details` is optional JSON, for example `CONFLICT {currentRevision, draftId}`; D-042) with codes `VALIDATION_FAILED, NOT_FOUND, CONFLICT, LEASE_REQUIRED, CYCLE, LIMIT_EXCEEDED, UNSUPPORTED, FORBIDDEN, INTERNAL`. Main-to-renderer events use the whitelisted `subscribe`, which returns an unsubscribe function. Every handler validates the sender frame URL and the Zod payload. From Phase 04 each sender also has a window role (D-064). Main windows may call every channel. Sticky windows may call only an allowlist: note, lease, content, attachment and link channels, settings read, capabilities, the flush acknowledgment, quit, their own `sticky:*` channels and `window:getState`. A `noteId` field in a sticky's request must name its own note.
 
 Catalogue (later phase plans may add channels but must update this list):
 
@@ -60,8 +60,8 @@ Catalogue (later phase plans may add channels but must update this list):
 | 01 | `app:getInfo`, `app:showDataFolder`, `app:quit`, `settings:get`, `settings:set`, `capabilities:get` | `settings:changed` |
 | 02 | `tree:list`, `project:create\|rename\|trash`, `folder:create\|rename\|move\|trash`, `note:create\|rename\|move\|trash`, `trash:list\|restore\|purge`, `note:setPinned`, `item:setFavorite`, `home:summary`, `session:get\|set`, `palette:searchTitles`; moved from 03 by D-045: `note:open`, `note:save`, `lease:acquire\|release` | `tree:changed` |
 | 03 | `lease:take`, `note:convertFormat`, `versions:list\|restore`, `drafts:list\|resolve`, `attachment:importBytes` (images and documents; renamed from `importImageBytes`), `attachment:importFromDialog`, `app:flushed`; moved from 07 by D-052: `shell:openExternal`; `note:create` gains optional `format` | `note:revision`, `note:lease`, `lease:release-request` (sent to the holder only), `app:flush-request` (sent per window) |
-| 04 | `sticky:float\|dock\|hide\|setColor\|setPinned\|setCollapsed\|removeSticky`, `window:getState` | `sticky:state`; moved from 03 by D-052: `note:trashed` |
-| 05 | `reminder:create\|update\|delete\|undoDelete\|listForNote\|listView`, `occurrence:complete\|snooze`, `reminders:summary`, `widget:show\|hide\|setPinned\|setCollapsed`, `zones:list` | `reminder:changed`, `app:openNote` |
+| 04 | `sticky:float\|dock\|hide\|setColor\|setPinned\|setCollapsed\|remove\|restore`, `window:getState` (D-063) | `sticky:state` (one sticky window only; carries the trash state, so `note:trashed` is not added); `app:openNote` (main window only; moved from 05 by D-063) |
+| 05 | `reminder:create\|update\|delete\|undoDelete\|listForNote\|listView`, `occurrence:complete\|snooze`, `reminders:summary`, `widget:show\|hide\|setPinned\|setCollapsed`, `zones:list` | `reminder:changed` (notification clicks reuse `app:openNote` from 04) |
 | 06 | `reminder:createFromSuggestion`, `suggestion:dismiss\|listDismissed`, `reminder:updateFromSource` | |
 | 07 | `refs:list`, `search:query`, `notes:pick`, `attachment:open\|showInFolder`, `tags:list\|set` (`shell:openExternal` moved to 03, D-052) | |
 | 08 | `backup:create\|restore`, `export:markdown\|portable`, `import:portable`, `autostart:set`, `shortcut:setGlobal` | |
@@ -70,11 +70,19 @@ Test-only hooks (fake clock control, captured notifications, simulated notificat
 
 ## 5. Windows and Capabilities
 
-- Main window: native frame, single instance (second launch focuses it).
-- Sticky windows: main keeps `Map<noteId, BrowserWindow>`; a second Float focuses the existing window; main validates the noteId (UUID, exists, not purged) before creating a window and the renderer route re-validates through IPC. The OS close button hides the window (stores `open = 0`) and never deletes. Dock closes the window and opens or focuses the note tab. Floating an ordinary note sets `stickyEnabled = 1`; "Remove from stickies" clears it.
-- Window state is persisted in `window_state`. Restore clamps bounds to a connected display work area (fallback primary display, default size 320x300, minimum 220x120). On Wayland only size and collapsed state are restored. Restoring open stickies on startup is the setting `stickies.restoreOnStartup`, default off.
+- Main window: native frame, single instance (second launch focuses it, or recreates it after it was closed to the background).
+- Sticky windows (Phase 04, D-065, D-070): `StickyManager` in main keeps `Map<noteId, window>`, so a second Float focuses the existing window. Main validates the noteId (UUID, exists, not trashed or purged) before creating a window. The window loads `#/sticky/<noteId>`, and the renderer re-validates the route through `window:getState`, because the registry, not the hash, decides which note a sticky window may use (D-064).
+  - Every sticky window uses the same hardened `webPreferences` as the main window, a native frame, no application menu, and a 36 px in-content header.
+  - Hide (the OS close button, Hide, Ctrl+W) flushes, stores `open = 0` and closes the window; it never deletes. Dock does the same and then opens the note tab with edit control. Floating an ordinary note sets `stickyEnabled = 1`; "Remove from stickies" clears it and opens the note in the app.
+  - Float is an implicit lease take (the `activation` counter in `sticky:state`).
+  - A trashed note shows a trash state with Restore and Close window; purge closes the window.
+- Window state is persisted in `window_state`. Bounds are saved 500 ms after move or resize, and on hide and quit. Restore uses the pure `computeStickyBounds` (D-068): a window whose top strip is still reachable stays on its display, clamped inside it; otherwise it goes to the hint display or the primary display. Default size is 320x300, minimum 220x120. Display changes re-clamp only unreachable windows. Where programmatic positioning is unsupported (Wayland, WSLg), only size, collapsed and pin state are restored. Restoring open stickies on startup is the setting `stickies.restoreOnStartup`, default off; restored windows are shown inactive.
 - Widget: optional, default off, uses the main ReminderService; hiding it does not stop scheduling.
-- Close, tray and quit lifecycle (D-027): the first main-window close asks to keep running in the background or quit; the choice is remembered and editable; menus always have Quit; Quit flushes every view and closes all windows. If no tray host exists, launching the app again focuses the running instance.
+- Close, tray and quit lifecycle (D-027, D-066, D-067):
+  - The setting `app.closeBehavior` is `ask` (default), `background` or `quit`. `ask` shows a native dialog: "Keep running in background", "Quit", "Cancel", and "Remember my choice".
+  - Background closes the main window after a flush while stickies and the process keep running (`window-all-closed` does not quit).
+  - Menus, the tray and the sticky actions menu always have Quit. Quit flushes every view and closes all windows.
+  - Windows always has a tray. On Linux a tray is created only when a StatusNotifier host owns `org.kde.StatusNotifierWatcher` on the session bus. Where no tray host exists, launching the app again shows (recreates) the main window.
 
 ### Capabilities
 
@@ -86,7 +94,7 @@ Detected at runtime by one `PlatformCapabilities` service in main (`src/main/ser
 | Programmatic position set and restore | yes | yes (window manager may adjust) | no (Wayland prohibits global coordinates) | treated as Wayland: no | restore size, collapsed and pin only; compositor places the window |
 | Display clamping of restored bounds | yes | yes | not applicable | not applicable | skip |
 | Always-on-top (sticky pin, widget pin) | yes | window-manager dependent | no | no | control disabled with tooltip; X11 is not forced |
-| Tray icon | yes | needs a StatusNotifier host | extension dependent | no host detected | close dialog explains background behavior; relaunch focuses the running instance; Quit in the app menu |
+| Tray icon | yes | needs a StatusNotifier host (detected through `NameHasOwner org.kde.StatusNotifierWatcher`, D-067) | extension dependent (same detection) | no host detected (`gdbus` answers false) | no tray is created; close dialog and Settings explain background behavior; relaunch shows the main window; Quit in the app menu and the sticky actions menu |
 | Native notifications | yes (AppUserModelID; installed shortcut for packaged build) | libnotify plus a running notification server | yes | no notification server detected | in-app banner, Reminders/Home/widget overdue lists, taskbar attention (`flashFrame`); outcome recorded as `failed`, `unsupported` or `uncertain` |
 | Notification click opens note | yes | server dependent | yes | not applicable without a server | open from the in-app banner or widget |
 | Native notification action buttons | not used | no | no | no | none in V1 on any OS (D-026); Snooze, Done and Open are in the app and widget |
@@ -101,9 +109,9 @@ The app never promises notifications while fully quit and never promises guarant
 - Main is the only writer. The renderer debounces edits 400 ms and sends `note:save {noteId, viewId, leaseToken, baseRevision, requestId, title?, format, content}`; content JSON larger than 5 MB is rejected with `LIMIT_EXCEEDED`.
 - In one transaction main verifies the lease, verifies `baseRevision == notes.revision`, writes content, extracted `plainText`, the FTS row, references (Phase 07) and attachment links, increments `revision`, commits, replies `{ok, revision, requestId}` (the acknowledgment) and broadcasts `note:revision {noteId, revision, sourceViewId}` to other views.
 - Stale base revision: nothing is overwritten; the submitted content is stored in `note_drafts` (reason `conflict`) and the reply is `CONFLICT {currentRevision, draftId}`. The UI offers Compare, Restore draft (creates a version of the current content first, then saves the draft as a new revision) and Dismiss.
-- Flush points with acknowledgment: blur, tab switch, tab close, window close, lease hand-off, format conversion and app quit. Window close and quit wait up to 2000 ms per view.
+- Flush points with acknowledgment: blur, tab switch, tab close, window close, lease hand-off, format conversion and app quit. Window close and quit wait up to 5000 ms per view (2000 ms until Phase 04 Repair 1, D-072).
 - Lease: main holds `Map<noteId, {viewId, token, acquiredAt}>`. The first editing view gets the lease; other views are read-only with the banner and a Take edit control button. Take: main sends `lease:release-request` to the holder, waits up to 3000 ms for the flush acknowledgment, grants the lease to the requester and broadcasts `note:lease`. If the holder does not answer or is destroyed the lease is revoked; any later save with the revoked token is stored as a `lease_lost` draft and rejected with `LEASE_REQUIRED`. Float is an implicit take request by the sticky. Read-only mirrors reload content on `note:revision`.
-- Phase 03 refinements (D-055): when a window's renderer document goes away (main-frame cross-document `did-navigate`, such as a reload, or `render-process-gone`), main revokes every lease held by that `webContents` and forgets its `viewId` bindings, so the new document can acquire the lease again; a late save from the old document is kept as a `lease_lost` draft, never discarded. Main reloads a crashed main window (at most 3 times per minute). Window close and quit go through one `FlushCoordinator`: main sends `app:flush-request {flushId}` to each window and waits for `app:flushed` or 2000 ms. A stale or trashed save retried with the same `requestId` returns the same `CONFLICT` and draft without a second draft row (F-01-3).
+- Phase 03 refinements (D-055): when a window's renderer document goes away (main-frame cross-document `did-navigate`, such as a reload, or `render-process-gone`), main revokes every lease held by that `webContents` and forgets its `viewId` bindings, so the new document can acquire the lease again; a late save from the old document is kept as a `lease_lost` draft, never discarded. Main reloads a crashed main window (at most 3 times per minute). Window close and quit go through one `FlushCoordinator`: main sends `app:flush-request {flushId, reason}` to each window and waits for `app:flushed {flushId, saved}` or 5000 ms; a window whose text is not saved is not closed, and the first Quit is canceled (D-072). A stale or trashed save retried with the same `requestId` returns the same `CONFLICT` and draft without a second draft row (F-01-3).
 
 Text sequence for a normal save:
 
@@ -205,11 +213,15 @@ References are ID-based (`note_references`) with a target title snapshot for mis
 
 CSP: `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' infinity-attachment: blob:; font-src 'self'; connect-src 'self'` (plus the dev server and websocket in development only); `object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'`.
 
-`will-navigate` is blocked, `setWindowOpenHandler` denies, and all permission requests are denied. External links open only on Ctrl+Click or the link popover Open, only http and https, through `shell.openExternal` after URL parsing. Renderers have no arbitrary file, SQL or shell access. Production never disables the Chromium sandbox. There are no outbound network requests at runtime.
+Sticky windows (Phase 04) are created with the same `secureWebPreferences`, load only the same renderer origin, and get the per-role channel allowlist with note ownership (D-064). `will-navigate` is blocked, `setWindowOpenHandler` denies, and all permission requests are denied. External links open only on Ctrl+Click or the link popover Open, only http and https, through `shell.openExternal` after URL parsing. Renderers have no arbitrary file, SQL or shell access. Production never disables the Chromium sandbox. There are no outbound network requests at runtime.
 
 ## 15. Testing architecture
 
-- Seams: `Clock`, `NotificationAdapter`, `DisplayProvider` (screens and work areas), `PlatformCapabilities`, `AttachmentStore` root path and the DB adapter.
+- Seams: `Clock`, `NotificationAdapter`, `DisplayProvider` (screens and work areas), `PlatformCapabilities`, `AttachmentStore` root path and the DB adapter. Phase 04 adds:
+  - the sticky window factory and the main window factory (electron-free managers tested in Node);
+  - unpackaged-E2E-only environment seams: `INFINITY_NOTES_TEST_DISPLAYS` (fake display set that a hook can change) and `INFINITY_NOTES_TEST_CAPS` (capability override);
+  - a close-dialog answer queue.
+  Tests identify windows by role or URL, never by `getAllWindows()` order.
 - Integration tests run in Node 24 against real better-sqlite3 temporary databases (the same N-API binary as Electron). E2E launches the built Electron app with `INFINITY_NOTES_USER_DATA_DIR` pointing to a temporary directory. Linux E2E runs in WSL as the unprivileged user `infinity` (Chromium refuses root without disabling the sandbox; D-039), both in the WSLg session and under `xvfb-run` (application logic only); native compositor behavior is recorded separately in the native OS matrix.
 - Test-type legend: U unit, I integration, E Electron E2E, N native OS validation, V visual or accessibility review, P performance, R review.
 - Standard npm scripts: `dev, lint, typecheck, test:unit, test:integration, test:e2e, check, build, package:current, package:win, package:linux`. Scripts that do not yet apply must print their real status and exit non-zero rather than silently pass.

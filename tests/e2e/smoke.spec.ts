@@ -15,7 +15,7 @@ test('starts a real window with temp userData', async () => {
   await expect(page.getByText('Version 0.1.0')).toBeVisible();
   const windows = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
   expect(windows).toBe(1);
-  const nativeTitle = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getTitle());
+  const nativeTitle = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.getTitle());
   expect(nativeTitle).toBe('Infinity Notes');
 });
 
@@ -54,7 +54,7 @@ test('db diagnostics', async () => {
   expect(info).not.toBeNull();
   expect(info!.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
   expect(info!.sqlite!.version).toMatch(/^3\.\d+\.\d+$/);
-  expect(info!.schemaVersion).toBe(3);
+  expect(info!.schemaVersion).toBe(4);
   expect(info!.startup).toEqual({ status: 'ok' });
   expect(info!.isPackaged).toBe(false);
   expect(info!.versions.electron).toBe('44.7.0');
@@ -107,22 +107,40 @@ test('invalid stored setting falls back', async () => {
 
 test('second instance focuses first', async () => {
   const { app } = await h.start();
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.hide());
-  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible())).toBe(false);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.hide());
+  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.isVisible())).toBe(false);
 
   const second = await spawnAndWait(appExecutable(), appArgs(), appEnv(h.userData), 15_000);
   expect(second.timedOut).toBe(false);
   expect(second.code).toBe(0);
 
   await expect
-    .poll(async () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible()), { timeout: 10_000 })
+    .poll(async () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.isVisible()), { timeout: 10_000 })
     .toBe(true);
   const state = await app.evaluate(({ BrowserWindow }) => {
     const wins = BrowserWindow.getAllWindows();
-    return { count: wins.length, minimized: wins[0]!.isMinimized() };
+    return { count: wins.length, minimized: wins.find((w) => w.webContents.getURL().endsWith('#/'))!.isMinimized() };
   });
   expect(state).toEqual({ count: 1, minimized: false });
   await expect.poll(() => readMainLog(h.userData)).toContain('second-instance received');
+});
+
+test('second instance recreates a main window closed to background (INF-DESK-02, D-066)', async () => {
+  const { app } = await h.start();
+  await app.evaluate(({ BrowserWindow }) => {
+    globalThis.__infinityTest!.closeChoices.push({ choice: 'background', remember: false });
+    BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.close();
+  });
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(0);
+  expect(app.process().exitCode).toBeNull();
+
+  const second = await spawnAndWait(appExecutable(), appArgs(), appEnv(h.userData), 15_000);
+  expect(second.timedOut).toBe(false);
+  expect(second.code).toBe(0);
+  await expect
+    .poll(async () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => ({ url: w.webContents.getURL(), visible: w.isVisible() }))), { timeout: 15_000 })
+    .toEqual([{ url: 'infinity-app://renderer/index.html#/', visible: true }]);
+  await expect.poll(() => readMainLog(h.userData)).toContain('window: main recreated');
 });
 
 test('no network requests', async () => {

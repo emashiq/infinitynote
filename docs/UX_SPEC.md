@@ -57,17 +57,38 @@ UI 13 px; editor body 15 px with line height 1.55; H1 22 px, H2 18 px, H3 15 px 
 - Tab strip: Home, note tabs, singleton pages (Stickies, Reminders, Settings). Overflow scrolls horizontally with scroll buttons and an "All tabs" list button.
 - Note editor: title field and a slim formatting toolbar (H, B, I, bullet list, numbered list, checklist, link, code block, image, more); no giant toolbar. Image size presets. Save indicator in the header.
 - Context panel: collapsible sections for the active note: Info (Phase 02-03), Reminders (Phase 05), Outgoing references and Backlinks (Phase 07). Non-note tabs show "Open a note to see its details".
-- Stickies page: grid of colored cards with Float and Open actions, New sticky.
-- Sticky window: native frame; 36 px header with color button (6 presets), title, source badge ("Common" or "Project > Folder"), pin (always on top, disabled with a tooltip where unsupported), collapse, overflow menu (Open in app/Dock, Change color, Remove from stickies, Move to Trash). The OS close button hides the window and never deletes. Default size 320x300, minimum 220x120.
+- Stickies page: sticky notes from every scope with a color dot and path, each with Float (`Float <title>`) and Open (`Open <title>`) actions, and New sticky (Phase 04 keeps the accepted Phase 02 list layout).
+- Float (Phase 04): note tab header icon button "Float as sticky", tree note menu "Float as sticky", palette "Float current note". New sticky (Ctrl+Shift+N, Home tile, tree, Stickies page, palette, tray) creates the sticky where the user is working and floats it; no tab opens (D-069).
+- Sticky window (D-070):
+  - Native frame and no application menu. The window background is the sticky color.
+  - 36 px header, left to right:
+    - color button "Sticky color" (menu of 6 radio items Yellow, Green, Blue, Pink, Violet, Gray);
+    - title field "Title" (placeholder "Untitled");
+    - source badge with the path joined by " › " ("Common" at the Common root; full path as tooltip);
+    - pin toggle "Keep on top" (always on top), disabled with the tooltip "Not supported by this desktop" where unsupported;
+    - collapse toggle "Collapse sticky" / "Expand sticky";
+    - menu "Sticky actions": Open in app, Change color, Hide, Remove from stickies, Move to Trash, Quit Infinity Notes.
+  - Body: banners, the shared editor with a wrapping toolbar, notices. Collapsed shows only the header and cannot be resized.
+  - The OS close button, Hide and Ctrl+W hide the window and never delete. Open in app docks it into a tab with edit control. Remove from stickies clears the sticky flag and opens the note in the app. Move to Trash asks "Move to Trash?" with the tree's copy.
+  - Default size 320x300, minimum 220x120. At most 50 open stickies: "You have 50 open stickies. Hide some to open more."
 - Reminders page: tabs Today, Upcoming, Overdue, Completed.
 - Reminder widget: default 300x420, minimum 240x160; header with collapse, pin, hide; rows show the selected-zone time and the local time when different, the title and the source; actions Open, Snooze menu, Done.
-- Settings: sections General, Appearance, Notes and attachments, Reminders, Windows and tray, Backup, Keyboard.
+- Settings: sections General, Appearance, Notes and attachments, Reminders, Windows and tray, Backup, Keyboard. Phase 04 adds Windows and tray:
+  - segmented control "When the main window closes" with Ask, Keep running and Quit (`app.closeBehavior`);
+  - the text "Reminders and stickies only work while the app is running.";
+  - where no tray is supported, "No tray icon is available on this desktop. Launch Infinity Notes again to bring the main window back.";
+  - switch "Restore open stickies on startup" (`stickies.restoreOnStartup`, default off).
+- Tray (where supported, D-067): tooltip "Infinity Notes"; left click opens the main window. Menu: "Open Infinity Notes", "New sticky", "Quit Infinity Notes"; "Show widget" is added in Phase 05.
 - Command palette (Ctrl+K): actions plus results (titles first, full-text in Phase 07).
 
 ## 6. Dialogs and banners (exact copy)
 
 Dialogs:
-- Close behavior: "Keep Infinity Notes running in the background? Reminders and stickies only work while the app is running." Buttons "Keep running in background" and "Quit"; checkbox "Remember my choice". Linux adds: "If no tray icon appears, launching Infinity Notes again brings this window back."
+- Close behavior (native message box, D-066):
+  - message "Keep Infinity Notes running in the background?", detail "Reminders and stickies only work while the app is running.";
+  - buttons "Keep running in background" (default), "Quit" and "Cancel" (Escape);
+  - checkbox "Remember my choice", checked by default.
+  - Linux, and any desktop without a supported tray, adds to the detail: "If no tray icon appears, launching Infinity Notes again brings this window back."
 - Plain-text conversion: "Convert to plain text? Formatting, checklists, links and images will be removed. A version of the current note is saved so you can restore it."
 - Move dialog: scope and folder picker, keyboard accessible, shows the path; cycle attempts show "A folder cannot be moved into itself or one of its subfolders."
 - Delete confirmations: "Move to Trash?" for items; "Delete forever?" and "Empty trash?" for permanent deletion with the number of items.
@@ -77,7 +98,9 @@ Dialogs:
 Banners and states:
 - Read-only lease banner: "This note is being edited in another window" with a "Take edit control" button.
 - Conflict banner: "This note changed elsewhere. Your edits were kept as a recovered draft" with Compare, Restore draft, Dismiss.
-- Trash overlay (sticky and tab): "This note is in Trash" with Restore and Close window; editing disabled.
+- Trash overlay (sticky and tab): "This note is in Trash" with Restore and Close window (Close tab in a tab); editing disabled. In a sticky, Restore shows the existing restore notice ("Restored to <path>" or the relocated variant), and pending edits made just before the trash show the recovered-draft notice (Phase 04).
+- Invalid window route: "This window could not be opened." with Close (also when the URL does not match what main says the window is, D-072).
+- Unsaved text when a window closes (D-072): "Could not save this note. The window stays open." (sticky Hide, Open in app, Remove from stickies, the OS close button, and closing the main window to the background); on Quit: "Could not save this note, so Infinity Notes did not quit. Quit again to quit without saving it."
 - Overdue summary banner on startup when overdue occurrences exist: "N reminders are overdue" with an action to open Reminders > Overdue.
 - Migration failure screen: "Database upgrade failed; your data was not changed" with "Show data folder" and "Quit".
 - Newer-schema screen (D-040): "This notebook was created by a newer version of Infinity Notes. Your data was not changed." with "Show data folder" and "Quit".
@@ -127,6 +150,8 @@ Editor copy added in Phase 03 (D-053 to D-058; exact strings):
 | Ctrl+Enter | Toggle the checklist item at the cursor (Phase 03) |
 | Ctrl+Click | Open a link (http and https only) |
 | Enter / Shift+Enter in find | Next / previous match |
+
+In a sticky window (Phase 04): Ctrl+W hides the sticky, Ctrl+F finds in the note, Escape closes popovers, and the editor keys above apply. Ctrl+Shift+N in the main window floats the new sticky (D-069).
 
 The global quick-sticky shortcut is optional and off by default; registration failure is shown in Settings.
 

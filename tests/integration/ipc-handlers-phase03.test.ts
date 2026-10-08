@@ -32,7 +32,7 @@ async function setup() {
     },
     dataDir: '/data',
     quit: () => {},
-    flushed: (webContentsId, flushId) => coordinator.ack(webContentsId, flushId),
+    flushed: (webContentsId, flushId, saved) => coordinator.ack(webContentsId, flushId, saved),
   };
   const r = catalogueRouter(s.services, app);
   /** A rich note with the lease held by window 1. */
@@ -178,12 +178,13 @@ describe('Phase 03 IPC handlers (D-052)', () => {
 
   it('app:flushed accepts only the window the flush was sent to', async () => {
     const { call, coordinator, flushSent } = await setup();
-    expect(await call('app:flushed', { flushId: id() })).toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED' } });
-    const pending = coordinator.flush([1]);
+    expect(await call('app:flushed', { flushId: id(), saved: true })).toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED' } });
+    const pending = coordinator.flush([1], 'close');
     const { flushId } = flushSent[0]!;
-    expect(await call('app:flushed', { flushId }, 2)).toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED' } });
-    expect(await call('app:flushed', { flushId }, 1)).toEqual({ ok: true, data: {} });
-    expect(await pending).toEqual({ acked: [1], timedOut: [] });
+    expect(await call('app:flushed', { flushId })).toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid request: saved' } });
+    expect(await call('app:flushed', { flushId, saved: false }, 2)).toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED' } });
+    expect(await call('app:flushed', { flushId, saved: false }, 1)).toEqual({ ok: true, data: {} });
+    expect(await pending).toEqual({ acked: [1], unsaved: [1], timedOut: [] });
   });
 
   it('new storage channels report storage-unavailable when the database failed to open', async () => {

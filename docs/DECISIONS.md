@@ -136,7 +136,7 @@ Toolchain floor: Node `>=24.15.0 <25` for development on both hosts (engines fie
 - Decision: no OS offers action buttons in V1; Snooze, Done and Open are always in the app and the widget. Context: Linux server support is inconsistent. Consequences: INF-REM-16. Status: accepted. Evidence: capability table.
 
 ### D-027 Close and tray behavior
-- Decision: the first main-window close shows a choice dialog (keep running in the background or quit), remembered and editable; menus always have Quit; a fully quit app stops reminders. Context: honest lifecycle messaging. Consequences: tray-less desktops rely on single-instance relaunch. Status: accepted. Evidence: UX_SPEC dialogs.
+- Decision: the first main-window close shows a choice dialog (keep running in the background or quit), remembered and editable; menus always have Quit; a fully quit app stops reminders. Context: honest lifecycle messaging. Consequences: tray-less desktops rely on single-instance relaunch. Status: accepted (refined by D-066: Cancel button, remember checkbox checked by default, background mode closes the main window). Evidence: UX_SPEC dialogs.
 
 ### D-028 Sticky windows
 - Decision: sticky windows use native OS frames (no custom drag regions in V1) and there is one window per note ID. Context: reliable move and resize. Consequences: header is in-content. Status: accepted. Evidence: ARCHITECTURE section Windows.
@@ -317,7 +317,7 @@ Recorded by the Phase 03 planner on 2026-10-08. The implementation plan is `docs
 - Decision:
   - `attachment:importImageBytes` becomes `attachment:importBytes {kind:'image'|'document', originalName?, bytes: Uint8Array}`, because dropped and pasted documents use the same path as images. The router measures this channel as `bytes.byteLength` plus the JSON of the other fields; its ceiling is the largest configurable limit (200 MB) plus 64 KiB, and the service enforces the configured limit.
   - `shell:openExternal {url}` moves from Phase 07 to Phase 03 because INF-SEC-01 (Phase 03) needs it.
-  - `note:trashed` moves from Phase 03 to Phase 04: `tree:changed` already carries `trashedNoteIds` for the single main window, and only sticky windows need a dedicated event.
+  - `note:trashed` moves from Phase 03 to Phase 04: `tree:changed` already carries `trashedNoteIds` for the single main window, and only sticky windows need a dedicated event. (Superseded by D-063: the trash state travels in `sticky:state` instead.)
   - New: invoke `app:flushed {flushId}` and event `app:flush-request {flushId}` for acknowledged flush on window close and quit (INF-SAVE-01).
   - `note:create` accepts an optional `format` (`rich` default, or `plain`) for "New plain-text note".
   - `lease:release-request` and `app:flush-request` are sent to one `webContents` only; `note:revision` and `note:lease` are broadcast.
@@ -395,6 +395,101 @@ Recorded by the Phase 03 planner on 2026-10-08. The implementation plan is `docs
 - Status: accepted (implementer, Phase 03 Repair 1).
 - Evidence: `src/renderer/editor/doc-limits.ts`, `src/main/ipc/router.ts`, `src/main/ipc/handlers/note-handlers.ts`, `src/renderer/notes/NoteView.tsx`; `tests/unit/renderer/editor/paste-limits.test.ts`; `tests/integration/ipc-handlers-phase02.test.ts`; `tests/e2e/paste.spec.ts` (QA-1, QA-3 cases).
 
+## Phase 04 decisions
+
+Recorded by the Phase 04 planner on 2026-10-09. The implementation plan is `docs/plans/phase-04.md`; section numbers below refer to it. Probe output is in `.infinity-work/logs/phase-04/planner-probe-*.log`.
+
+### D-062 Migration 004 `window_state`
+- Context: D-051 gives 004 to Phase 04. Window state must survive trash and restore, and must disappear with a purged note.
+- Decision: `004_window_state.sql` creates `window_state(key PK, note_id NULL REFERENCES notes(id) ON DELETE CASCADE, bounds JSON NULL, display_id INTEGER NULL, open, collapsed, always_on_top, updated_at)` with a CHECK that a sticky key is `'sticky:' || note_id` and that other keys are `main` or `widget` (reserved). A unique index covers `note_id`. `bounds` holds the outer bounds of the expanded window, `{x|null, y|null, width, height}`; `x`/`y` are null where positioning is unsupported. Opening, collapsing, pinning or recoloring never changes `notes.revision` or `notes.updated_at`.
+- Consequences: `LATEST = 4`; purge removes window state through the cascade inside its transaction; tests that hard-coded schema version 3 change to 4.
+- Status: accepted.
+- Evidence: plan section 5.
+
+### D-063 Phase 04 IPC catalogue
+- Decision:
+  - Invoke: `sticky:float|dock|hide|setColor|setPinned|setCollapsed|remove|restore` and `window:getState`. `removeSticky` from the Phase 00 catalogue is named `sticky:remove`. `sticky:restore` restores the trash batch of the sticky's own note.
+  - Events: `sticky:state` (sent only to that sticky window) and `app:openNote` (sent only to the main window; moved from Phase 05 because Dock and Remove from stickies need it; Phase 05 notification clicks reuse it).
+  - `note:trashed` (D-052) is not added. The trash state travels inside `sticky:state` (`trashed: {batchId} | null`), so a sticky window has one source of state and the IPC surface stays smaller.
+  - `window:getState` is also the main renderer's ready handshake: main queues note opens for a main window that is still loading and returns them in the answer.
+  - `tree:changed` gains the reason `sticky` (flag or color change).
+- Consequences: ARCHITECTURE section 4 rows 04 and 05 updated; boundary tests now guard Phase 05 names.
+- Status: accepted.
+- Evidence: plan section 6.
+
+### D-064 Window roles, per-role channel allowlist and note ownership
+- Context: sticky windows share the preload and the renderer origin with the main window. Sender validation alone would give every sticky the full surface, including `session:set` and `trash:purge`.
+- Decision: the registry records each window's role (`main` or `sticky`, plus the sticky's note ID). The sender policy returns that information. The router refuses with `FORBIDDEN` any channel outside `STICKY_ALLOWED_CHANNELS` (plan section 6.4) for a sticky sender. A sticky's request that has a `noteId` must name its own note. The route hash is never trusted. Main windows keep the full surface. `getAllWindows()` is not in creation order (probe), so code and tests identify windows by registry role or URL.
+- Status: accepted.
+- Evidence: `planner-probe-windows-*.log`; plan section 6.4.
+
+### D-065 Sticky window lifecycle and edit-control transfer
+- Decision:
+  - Float validates the note, sets `sticky_enabled = 1` (color `yellow` if none), and opens or focuses the one window for that note ID. Float is an implicit take: `sticky:state.activation` counts explicit activations, and the sticky renderer takes edit control when it starts with `activation > 0` or sees it increase. Stickies restored at startup start at 0 and only acquire.
+  - Hide (OS close button, Hide, Ctrl+W, Close window in the trash state) flushes with acknowledgment, saves bounds, sets `open = 0`, resets the window's leases and destroys the window. The note and its sticky flag are unchanged, and reopening creates a fresh window from the stored state. No hidden renderer keeps a lease or memory.
+  - Dock runs the hide sequence and then opens the note in the main window with `takeEdit`. Remove from stickies does the same and clears the sticky flag and window state.
+  - Trash shows a recoverable trash state with Restore and Close window. Pending edits become a trashed-conflict draft first. Restore brings the editor back. Purge closes the window.
+  - A read-only mirror whose reason is `lease` acquires the lease by itself when `note:lease` reports no holder and it is not busy. A `leaseLost` mirror keeps its recovered-draft banner.
+  - At most 50 sticky windows are open at once.
+- Status: accepted.
+- Evidence: plan section 8.5 and 9.5.
+
+### D-066 Main window close, background mode and quit
+- Decision:
+  - Setting `app.closeBehavior` (`ask` default, `background`, `quit`; public, edited in Settings > Windows and tray).
+  - `ask` shows a native message box parented to the main window with the UX_SPEC copy, buttons "Keep running in background", "Quit" and "Cancel", and the checkbox "Remember my choice" (checked by default). On Linux, or wherever the tray is not supported, it adds the relaunch sentence.
+  - Background flushes the main window and closes (destroys) it. Stickies and the process keep running. `window-all-closed` no longer quits while storage is available.
+  - The second-instance handler, the tray and `app:openNote` recreate the main window when it is missing; session restore brings the tabs back.
+  - Quit (menu, tray, sticky menu, or the close choice) flushes every window, keeps `open = 1` for open stickies and exits.
+  - `session-end` and `shutdown` mark quitting without a dialog.
+  - The E2E dialog seam answers from a queue (empty means Cancel) and records the options.
+- Consequences: supersedes the "first close shows a choice dialog" detail of D-027 only by adding Cancel and the default checkbox state. `editor.spec › flush on window close` queues a Quit answer.
+- Status: accepted.
+- Evidence: plan section 8.7.
+
+### D-067 Tray detection and tray menu
+- Context: `new Tray()` succeeds silently on WSLg, which has no StatusNotifier host (probe). An invisible tray would make background mode look supported.
+- Decision: Windows always has a tray. Linux checks `NameHasOwner org.kde.StatusNotifierWatcher` on the session bus once at startup, through `gdbus` (fallback `dbus-send`) with `execFile`, no shell, and a 2000 ms bound. The result maps to `supported`, `unsupported` (`no-status-notifier-host`) or `unknown`. A tray is created only when supported. The menu is "Open Infinity Notes", "New sticky" and "Quit Infinity Notes"; "Show widget" arrives with the widget in Phase 05. Left click opens the main window.
+- Status: accepted.
+- Evidence: `planner-probe-tray-detect-wsl.log`.
+
+### D-068 Bounds persistence and display clamping
+- Decision:
+  - `move` and `resize` are debounced 500 ms and saved; bounds are also saved at hide, dock and quit. Probe: programmatic bounds changes emit these events on every host.
+  - Restore uses the pure `computeStickyBounds`. A window is reachable when its top 36 px strip overlaps a work area by at least 80 px. A reachable window is kept on the best-overlapping display and shifted fully inside it. An unreachable one goes to the hint display if it is still connected, else to the primary display, centered with a 24 px cascade. Size is clamped to 220x120 at minimum and to the work area at maximum.
+  - Where positioning is unsupported (Wayland, WSLg), only size, collapse and pin are restored, and `x`/`y` are stored as null. Display changes re-clamp only unreachable open windows.
+  - Restored windows are shown inactive, or shown normally under a Wayland session (probe: forced-Wayland `showInactive` stayed invisible).
+  - Test seams, only in unpackaged E2E runs: `INFINITY_NOTES_TEST_DISPLAYS` (fake display set with a hook to change it) and `INFINITY_NOTES_TEST_CAPS` (capability override).
+- Status: accepted.
+- Evidence: `planner-probe-windows-*.log`, `planner-probe-events-*.log`; plan section 8.6.
+
+### D-069 New sticky floats immediately
+- Context: a sticky is a note with sticky presentation. Opening a new sticky in a tab (Phase 02 behavior, before windows existed) hides the presentation the user asked for.
+- Decision: New sticky (Ctrl+Shift+N, the Home tile, the tree menu, the Stickies page, the palette and the tray) creates the sticky in the current location (D-047) and floats it. No tab opens. `keyboard.spec` and `tree.spec` assert the sticky window instead of the tab, with the same scope, sticky and color checks.
+- Status: accepted.
+- Evidence: plan section 9.6.
+
+### D-070 Sticky window presentation
+- Decision: native OS frame (D-028 kept; no drag regions). The application menu is removed from sticky windows. The 36 px in-content header holds color, title, source badge, pin ("Keep on top", disabled with "Not supported by this desktop" where unsupported), collapse and the actions menu (Open in app, Change color, Hide, Remove from stickies, Move to Trash, Quit Infinity Notes). The same `NoteEditor` uses `variant="sticky"` with a wrapping toolbar. Collapse sets the content height to 36 px and makes the window non-resizable; expand restores the stored size. The window background is the sticky color (light and dark palettes in UX_SPEC section 10). Ctrl+W hides and Ctrl+F finds.
+- Status: accepted.
+- Evidence: plan section 9.4.
+
+### D-071 Main window ready handshake and note-open queue
+- Decision: the main renderer calls `window:getState` once its tabs are initialized. Until then, main queues `app:openNote` requests for that window, de-duplicated by note, at most 50, and returns them in the answer. Afterward it sends `app:openNote` events. A recreated main window starts not ready.
+- Status: accepted (Repair 1: the renderer asks once at startup, before it builds its services, and uses the answer as its window identity, see D-072).
+- Evidence: plan section 8.7.
+
+### D-072 Closing windows only with safe text; window identity from main (Phase 04 Repair 1, QA-1, QA-2)
+- Context: QA-1 showed that Hide, Open in app, Remove and the OS close destroyed a sticky after its last save failed or did not finish within the 2000 ms flush wait, losing the typed text. That breaks D-055 ("a tab or the window is never closed after a failed flush unless main kept a draft"). QA-2 showed that a sticky document whose hash was changed to `#/` rendered the main shell.
+- Decision:
+  - `app:flush-request` carries a `reason` (`close` or `quit`) and `app:flushed` carries `saved`: true when the text is saved, or main kept it as a draft (`CONFLICT`, `LEASE_REQUIRED`), or the note is gone (`NOT_FOUND`); the same rule the tab uses on Ctrl+W. The flush wait is 5000 ms per window (the renderer's 3 save retries, 1 s apart, plus 2 s), so a save that succeeds on a retry is not cut off; a hung renderer still cannot block quitting.
+  - Closing one window (sticky Hide, Open in app, Remove from stickies, the OS close button, and the main window's "Keep running in background") happens only when its renderer answered `saved`. Otherwise the window stays open with its text and shows "Could not save this note. The window stays open."; Open in app opens no tab and Remove keeps the sticky flag. Sticky actions save first in the renderer and stop with the same notice when that fails.
+  - Quit: when a window answers that its text is not saved, the first Quit is canceled and that window shows "Could not save this note, so Infinity Notes did not quit. Quit again to quit without saving it." A repeated Quit goes ahead (an explicit escape when storage keeps failing). A renderer that does not answer within the wait does not block quitting, and the OS session end never waits (D-066).
+  - The renderer takes its window identity from `window:getState` at startup (main's registry), renders the main shell only for the main role and a sticky only for its own note, and shows "This window could not be opened." when the URL hash names anything else.
+- Consequences: D-055's 2000 ms close/quit bound becomes 5000 ms per window. The flush log line gains `unsaved=<n>`. Regression: `tests/e2e/save-failure.spec.ts`, `tests/unit/window-lifecycle.test.ts`, `integration/{flush-coordinator,sticky-manager,main-window-controller}.test.ts`, `unit/renderer/{sticky-header.test.tsx,state/app-events,state/sticky-services}`.
+- Status: accepted (implementer, Phase 04 Repair 1).
+- Evidence: `docs/progress/phase-04-qa.md` QA-1, QA-2; `docs/progress/phase-04.md` Repair 1.
+
 ## Risks carried forward
 
 - R-01 better-sqlite3 prebuild in Electron 44: N-API should load unchanged but V8 memory-cage rules may reject external buffers; Phase 01 proves loading (dev and packaged, Windows and WSL); fallback `node:sqlite`; builder must not trigger node-gyp.
@@ -406,6 +501,7 @@ Recorded by the Phase 03 planner on 2026-10-08. The implementation plan is `docs
 - R-07 FTS5 `categories` tokenizer with Bangla needs fixture verification; fallback trigram.
 - R-08 Windows toast visibility in development needs `app.setAppUserModelId`; packaged NSIS shortcut needed for reliable click activation.
 - R-09 Electron default ozone platform under WSLg must be logged (Wayland versus XWayland); production never forces X11. Phase 01 planner observation: Electron 44 picks `x11` (XWayland) under WSLg when `XDG_SESSION_TYPE` is unset; `--ozone-platform=wayland` also works (D-039). The app logs the actual value at startup.
+- R-10 (Phase 04) `getAllWindows()` is not in creation order and WSLg XWayland reports a 640x480 screen and shifts windows by the frame; code and tests select windows by registry role or URL, and WSLg is treated as positioning-unsupported (D-064, D-068).
 
 ## Verification log
 

@@ -94,6 +94,8 @@ describe('Phase 02 request schemas', () => {
       'session.tabs',
       'attachments.imageMaxMb',
       'attachments.documentMaxMb',
+      'app.closeBehavior',
+      'stickies.restoreOnStartup',
     ]);
   });
 

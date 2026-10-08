@@ -69,8 +69,13 @@ describe('Phase 03 contracts (plan section 6.1)', () => {
 
   it('app flush and shell', () => {
     const flushId = randomUUID();
-    expect(AppFlushRequestEvent.safeParse({ flushId }).success).toBe(true);
-    expect(AppFlushedRequest.safeParse({ flushId, extra: 1 }).success).toBe(false);
+    expect(AppFlushRequestEvent.safeParse({ flushId, reason: 'close' }).success).toBe(true);
+    expect(AppFlushRequestEvent.safeParse({ flushId, reason: 'quit' }).success).toBe(true);
+    expect(AppFlushRequestEvent.safeParse({ flushId }).success).toBe(false);
+    expect(AppFlushRequestEvent.safeParse({ flushId, reason: 'hide' }).success).toBe(false);
+    expect(AppFlushedRequest.safeParse({ flushId, saved: true }).success).toBe(true);
+    expect(AppFlushedRequest.safeParse({ flushId }).success).toBe(false);
+    expect(AppFlushedRequest.safeParse({ flushId, saved: true, extra: 1 }).success).toBe(false);
     expect(ShellOpenExternalRequest.safeParse({ url: 'https://example.com' }).success).toBe(true);
     expect(ShellOpenExternalRequest.safeParse({ url: 'x'.repeat(2049) }).success).toBe(false);
   });

@@ -157,6 +157,14 @@ export class HierarchyRepo {
     if (pinned) this.db.prepare<[number, string]>('UPDATE notes SET pinned_at = COALESCE(pinned_at, ?) WHERE id = ?').run(now, id);
     else this.db.prepare<[string]>('UPDATE notes SET pinned_at = NULL WHERE id = ?').run(id);
   }
+  /** Sticky presentation never changes the note's revision or updated_at (D-062). */
+  setSticky(id: string, enabled: boolean): void {
+    if (enabled) this.db.prepare<[string]>("UPDATE notes SET sticky_enabled = 1, color = COALESCE(color, 'yellow') WHERE id = ?").run(id);
+    else this.db.prepare<[string]>('UPDATE notes SET sticky_enabled = 0 WHERE id = ?').run(id);
+  }
+  setColor(id: string, color: string): void {
+    this.db.prepare<[string, string]>('UPDATE notes SET color = ? WHERE id = ?').run(color, id);
+  }
   setFavorite(kind: 'project' | 'folder' | 'note', id: string, favorite: boolean): void {
     const table = kind === 'project' ? 'projects' : kind === 'folder' ? 'folders' : 'notes';
     this.db.prepare<[number, string]>(`UPDATE ${table} SET favorite = ? WHERE id = ?`).run(favorite ? 1 : 0, id);

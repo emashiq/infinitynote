@@ -63,6 +63,15 @@ import {
 import { PaletteSearchRequest, PaletteSearchResponse } from './palette';
 import { SessionGetResponse, SessionSetRequest, SessionSetResponse } from './session';
 import {
+  StickyFloatResponse,
+  StickyNoteRequest,
+  StickySetCollapsedRequest,
+  StickySetColorRequest,
+  StickySetPinnedRequest,
+  StickyState,
+} from './stickies';
+import { AppOpenNoteEvent, WindowGetStateResponse } from './windows';
+import {
   SettingsChangedEvent,
   SettingsGetRequest,
   SettingsGetResponse,
@@ -119,6 +128,15 @@ export const CHANNEL_SCHEMAS = {
   'attachment:importFromDialog': { request: AttachmentImportDialogRequest, response: AttachmentImportDialogResponse },
   'shell:openExternal': { request: ShellOpenExternalRequest, response: ShellOpenExternalResponse },
   'app:flushed': { request: AppFlushedRequest, response: Empty },
+  'sticky:float': { request: StickyNoteRequest, response: StickyFloatResponse },
+  'sticky:dock': { request: StickyNoteRequest, response: Empty },
+  'sticky:hide': { request: StickyNoteRequest, response: Empty },
+  'sticky:setColor': { request: StickySetColorRequest, response: StickyState.nullable() },
+  'sticky:setPinned': { request: StickySetPinnedRequest, response: StickyState },
+  'sticky:setCollapsed': { request: StickySetCollapsedRequest, response: StickyState },
+  'sticky:remove': { request: StickyNoteRequest, response: Empty },
+  'sticky:restore': { request: StickyNoteRequest, response: TrashRestoreResponse },
+  'window:getState': { request: Empty, response: WindowGetStateResponse },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {
@@ -128,6 +146,8 @@ export const EVENT_SCHEMAS = {
   'note:lease': NoteLeaseEvent,
   'lease:release-request': LeaseReleaseRequestEvent,
   'app:flush-request': AppFlushRequestEvent,
+  'sticky:state': StickyState,
+  'app:openNote': AppOpenNoteEvent,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 type ChannelSchemas = typeof CHANNEL_SCHEMAS;

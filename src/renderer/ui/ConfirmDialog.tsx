@@ -1,4 +1,13 @@
+import { useState } from 'react';
+import type { Outcome } from '../state/store';
 import { Dialog } from './Dialog';
+
+/** The "Move to Trash?" confirmation used by the tree and sticky windows (UX_SPEC section 6). */
+export const TRASH_CONFIRM = {
+  title: 'Move to Trash?',
+  confirmLabel: 'Move to Trash',
+  body: (label: string) => `“${label}” will be moved to Trash. You can restore it from Trash.`,
+} as const;
 
 export function ConfirmDialog({
   title,
@@ -35,5 +44,40 @@ export function ConfirmDialog({
         </button>
       </div>
     </Dialog>
+  );
+}
+
+/** A confirmation that runs an action and stays open with the error when it fails. */
+export function ConfirmRunner({
+  title,
+  body,
+  confirmLabel,
+  confirmFirst,
+  run,
+  onClose,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  confirmFirst: boolean;
+  run: () => Promise<Outcome<unknown>>;
+  onClose: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <ConfirmDialog
+      title={title}
+      body={body}
+      confirmLabel={confirmLabel}
+      confirmFirst={confirmFirst}
+      error={error}
+      onClose={onClose}
+      onConfirm={() => {
+        void run().then((res) => {
+          if (res.ok) onClose();
+          else setError(res.message);
+        });
+      }}
+    />
   );
 }

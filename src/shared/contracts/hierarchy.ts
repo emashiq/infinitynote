@@ -68,7 +68,7 @@ export const TrashItem = z.strictObject({
 });
 export type TrashItemType = z.infer<typeof TrashItem>;
 
-export const TreeChangedReasons = ['create', 'rename', 'move', 'trash', 'restore', 'purge', 'pin', 'favorite'] as const;
+export const TreeChangedReasons = ['create', 'rename', 'move', 'trash', 'restore', 'purge', 'pin', 'favorite', 'sticky'] as const;
 export const TreeChangedEvent = z.strictObject({
   reason: z.enum(TreeChangedReasons),
   trashedNoteIds: z.array(Uuid),

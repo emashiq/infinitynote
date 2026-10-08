@@ -1,3 +1,6 @@
+import type { FlushReasonType } from '../../shared/contracts/app';
+import type { TrashRestoreResponseType } from '../../shared/contracts/hierarchy';
+import { STICKY_MESSAGES } from '../../shared/contracts/stickies';
 import { createStore, type Store, type Timers } from './store';
 
 export interface Notice {
@@ -45,4 +48,19 @@ export function closedTabsNotice(count: number, includesMissing: boolean): strin
 /** Shown when the active note was trashed elsewhere while it had unsaved edits that main kept as a draft (F-02-1). */
 export function trashedDraftNotice(title: string): string {
   return `Your unsaved edits to "${title}" were kept as a recovered draft. Restore the note from Trash to see them.`;
+}
+
+/** Where a restored item went (UX_SPEC section 6). */
+export function restoreNotice(res: Pick<TrashRestoreResponseType, 'path' | 'relocated'>): string {
+  const where = res.path.join(' › ');
+  return res.relocated ? `Restored to ${where} because its original location is in Trash or no longer exists` : `Restored to ${where}`;
+}
+
+/** A window kept open because its note could not be saved (D-072). */
+export const WINDOW_KEPT_NOTICE = STICKY_MESSAGES.notSaved;
+export const QUIT_CANCELED_NOTICE = 'Could not save this note, so Infinity Notes did not quit. Quit again to quit without saving it.';
+
+/** What a window says when main asked it to save before closing or quitting and the save failed. */
+export function unsavedFlushNotice(reason: FlushReasonType): string {
+  return reason === 'quit' ? QUIT_CANCELED_NOTICE : WINDOW_KEPT_NOTICE;
 }

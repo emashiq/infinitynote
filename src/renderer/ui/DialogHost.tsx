@@ -1,43 +1,8 @@
-import { useState } from 'react';
 import { MoveDialog } from '../tree/MoveDialog';
 import { useServices, useStore } from '../state/use-store';
 import type { Outcome } from '../state/store';
-import { ConfirmDialog } from './ConfirmDialog';
+import { ConfirmRunner, TRASH_CONFIRM } from './ConfirmDialog';
 import { NameDialog } from './NameDialog';
-
-function ConfirmRunner({
-  title,
-  body,
-  confirmLabel,
-  confirmFirst,
-  run,
-  onClose,
-}: {
-  title: string;
-  body: string;
-  confirmLabel: string;
-  confirmFirst: boolean;
-  run: () => Promise<Outcome<unknown>>;
-  onClose: () => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <ConfirmDialog
-      title={title}
-      body={body}
-      confirmLabel={confirmLabel}
-      confirmFirst={confirmFirst}
-      error={error}
-      onClose={onClose}
-      onConfirm={() => {
-        void run().then((res) => {
-          if (res.ok) onClose();
-          else setError(res.message);
-        });
-      }}
-    />
-  );
-}
 
 /** Renders whichever dialog UiStore.dialog names. */
 export function DialogHost() {
@@ -96,9 +61,9 @@ export function DialogHost() {
       const run = () => after(node.kind === 'project' ? tree.trashProject(id) : node.kind === 'folder' ? tree.trashFolder(id) : tree.trashNote(id), node.parentKey);
       return (
         <ConfirmRunner
-          title="Move to Trash?"
-          body={`“${node.label}” will be moved to Trash. You can restore it from Trash.`}
-          confirmLabel="Move to Trash"
+          title={TRASH_CONFIRM.title}
+          body={TRASH_CONFIRM.body(node.label)}
+          confirmLabel={TRASH_CONFIRM.confirmLabel}
           confirmFirst
           run={run}
           onClose={close}

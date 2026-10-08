@@ -55,24 +55,39 @@ export async function launchApp(options: { userDataDir: string; extraEnv?: Recor
   return { app, page };
 }
 
+/** Longer than one quit flush (every window answers within 5 s, D-072). */
+const QUIT_WAIT_MS = 8_000;
+
+/**
+ * Quits the app as a user does and waits until the process is gone. A first Quit is canceled while a window cannot save
+ * its text (D-072); like the user, teardown then quits again, which goes ahead.
+ */
 export async function closeApp(app: ElectronApplication | null | undefined): Promise<void> {
   if (!app) return;
-  let proc: ChildProcess | null = null;
+  let proc: ChildProcess;
   try {
     proc = app.process();
-    await app.close();
   } catch {
-    // already closed
+    return;
   }
-  if (proc) await waitForExit(proc);
+  // app.quit() returns at once; the quit itself runs in main. Playwright's own close() would issue a single quit and
+  // then wait for the process, so it is called only once the process is gone.
+  const quit = () => app.evaluate(({ app: electronApp }) => electronApp.quit()).catch(() => undefined);
+  await quit();
+  if (!(await waitForExit(proc, QUIT_WAIT_MS, { kill: false }))) await quit();
+  await waitForExit(proc);
+  await app.close().catch(() => undefined);
 }
 
-/** Resolves once the child has really exited (pipes closed) so a test never ends with a live Electron process. */
-export async function waitForExit(proc: ChildProcess, timeoutMs = 10_000): Promise<boolean> {
+/**
+ * Resolves once the child has really exited (pipes closed) so a test never ends with a live Electron process. After the
+ * timeout the process is killed, unless `kill` is false (then it just reports false).
+ */
+export async function waitForExit(proc: ChildProcess, timeoutMs = 10_000, opts: { kill?: boolean } = {}): Promise<boolean> {
   if (proc.exitCode !== null || proc.signalCode !== null) return true;
   return new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => {
-      proc.kill('SIGKILL');
+      if (opts.kill !== false) proc.kill('SIGKILL');
       resolve(false);
     }, timeoutMs);
     proc.once('exit', () => {
@@ -83,25 +98,28 @@ export async function waitForExit(proc: ChildProcess, timeoutMs = 10_000): Promi
 }
 
 export interface RendererSandbox {
-  /** Whether the OS confirms that the main window's renderer process runs in the Chromium sandbox. */
+  /** Whether the OS confirms that the window's renderer process runs in the Chromium sandbox. */
   osSandboxed: boolean;
   /** The raw OS evidence, for failure messages and logs. */
   evidence: string;
 }
 
 /**
- * Asks the OS whether the main window's renderer really runs in the Chromium sandbox. webPreferences.sandbox
+ * Asks the OS whether a window's renderer (the main window by default, else the window whose URL ends with
+ * `urlSuffix`) really runs in the Chromium sandbox. webPreferences.sandbox
  * and the --enable-sandbox renderer switch stay set under --no-sandbox, so neither can tell.
  * - Linux: --no-sandbox drops the namespace sandbox while seccomp-bpf stays (measured under WSLg), so the
  *   renderer must have its own user and PID namespaces and a seccomp filter ("Seccomp: 2").
  * - Windows: Electron's process metrics report whether the renderer process is sandboxed.
  */
-export async function rendererSandbox(app: ElectronApplication): Promise<RendererSandbox> {
-  const info = await app.evaluate(({ app: electronApp, BrowserWindow }) => {
-    const pid = BrowserWindow.getAllWindows()[0]!.webContents.getOSProcessId();
+export async function rendererSandbox(app: ElectronApplication, urlSuffix = '#/'): Promise<RendererSandbox> {
+  const info = await app.evaluate(({ app: electronApp, BrowserWindow }, suffix) => {
+    const pid = BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().endsWith(suffix))!
+      .webContents.getOSProcessId();
     const metric = electronApp.getAppMetrics().find((m) => m.pid === pid);
     return { pid, sandboxed: metric?.sandboxed ?? null, integrityLevel: metric?.integrityLevel ?? null };
-  });
+  }, urlSuffix);
   if (process.platform === 'linux') {
     const mainPid = app.process().pid;
     const ns = (pid: number | undefined, kind: string) => fs.readlinkSync(`/proc/${pid}/ns/${kind}`);
@@ -160,19 +178,19 @@ export function spawnAndWait(
 export const appArgs = (): string[] => (packagedExe !== '' ? [] : [repoRoot]);
 export const appExecutable = (): string => (packagedExe !== '' ? packagedExe : electronBinary());
 
-/** Sets the window's content size and waits until the renderer sees the new inner size. */
+/** Sets the main window's content size and waits until the renderer sees the new inner size. */
 export async function setContentSize(app: ElectronApplication, page: Page, width: number, height: number): Promise<void> {
   await app.evaluate(({ BrowserWindow }, [w, h]) => {
-    const win = BrowserWindow.getAllWindows()[0]!;
+    const win = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().endsWith('#/'))!;
     win.setContentSize(w!, h!);
   }, [width, height]);
   await page.waitForFunction(([w, h]) => window.innerWidth === w && window.innerHeight === h, [width, height], { timeout: 10_000 });
 }
 
-/** Sets the whole window size (frame included) for the visual specs. */
+/** Sets the whole main window size (frame included) for the visual specs. */
 export async function setWindowSize(app: ElectronApplication, page: Page, width: number, height: number): Promise<void> {
   await app.evaluate(({ BrowserWindow }, [w, h]) => {
-    const win = BrowserWindow.getAllWindows()[0]!;
+    const win = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().endsWith('#/'))!;
     win.setSize(w!, h!);
   }, [width, height]);
   await page.waitForFunction(() => window.innerWidth > 0);

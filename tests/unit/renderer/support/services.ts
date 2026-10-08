@@ -1,11 +1,11 @@
-import { createAppServices, type AppServices } from '../../../../src/renderer/state/app-services';
+import { createAppServices, type AppDeps, type AppServices } from '../../../../src/renderer/state/app-services';
 import { createFakeBridge, type FakeBridge, type FakeBridgeOptions } from './fake-bridge';
 
 let counter = 0;
 export const testUuid = () => `44444444-4444-4444-8444-${String(++counter).padStart(12, '0')}`;
 
 /** App services over the fake bridge with no DOM access: fixed viewport, no theme env, no lifecycle hooks. */
-export async function setupServices(opts: { width?: number; bridge?: FakeBridgeOptions; fake?: FakeBridge } = {}) {
+export async function setupServices(opts: { width?: number; bridge?: FakeBridgeOptions; fake?: FakeBridge; initialOpens?: AppDeps['initialOpens'] } = {}) {
   const fake = opts.fake ?? createFakeBridge(opts.bridge);
   let width = opts.width ?? 1280;
   const resize: Array<() => void> = [];
@@ -20,6 +20,7 @@ export async function setupServices(opts: { width?: number; bridge?: FakeBridgeO
     themeEnv: null,
     lifecycle: null,
     randomUUID: testUuid,
+    initialOpens: opts.initialOpens,
   });
   await services.ready;
   return {

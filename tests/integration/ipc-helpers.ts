@@ -1,9 +1,10 @@
 import type { AppHandlerDeps } from '../../src/main/ipc/handlers/app-handlers';
-import { registerIpcHandlers } from '../../src/main/ipc/register-handlers';
+import { registerIpcHandlers, type DesktopHandlerDeps } from '../../src/main/ipc/register-handlers';
 import { createIpcRouter, type IpcMainLike } from '../../src/main/ipc/router';
 import { createSenderPolicy, type IpcEventLike } from '../../src/main/ipc/sender-policy';
 import type { MainServices } from '../../src/main/main-services';
 import { memoryLogger } from '../../src/main/services/logger';
+import type { SenderInfo } from '../../src/main/windows/window-registry';
 import type { Result } from '../../src/shared/contracts/envelope';
 
 type Listener = (event: IpcEventLike, payload: unknown) => unknown;
@@ -41,19 +42,33 @@ export interface Loose {
   error?: { code: string; message: string; details?: unknown };
 }
 
+/** Windows 1 and 2 are main windows; window 3 is the sticky window of `stickyNoteId` when one is given. */
+export function rolesRegistry(stickyNoteId?: string) {
+  return {
+    info(wcId: number): SenderInfo | undefined {
+      if (wcId === 1 || wcId === 2) return { role: 'main' };
+      if (wcId === 3 && stickyNoteId) return { role: 'sticky', noteId: stickyNoteId };
+      return undefined;
+    },
+  };
+}
+
+/** A windows side without a main window renderer that is ready and without stickies. */
+export const NO_DESKTOP: DesktopHandlerDeps = { mainWindow: { rendererReady: () => [] }, stickies: null };
+
 /**
  * Every catalogue channel registered through registerIpcHandlers, as main does at startup, with response
- * validation on. Windows 1 and 2 are registered renderers.
+ * validation on. Windows 1 and 2 are main windows; window 3 is a sticky window when `stickyNoteId` is given.
  */
-export function catalogueRouter(services: MainServices | null, app: AppHandlerDeps) {
+export function catalogueRouter(services: MainServices | null, app: AppHandlerDeps, opts: { stickyNoteId?: string; desktop?: DesktopHandlerDeps } = {}) {
   const ipc = fakeIpcMain();
   const router = createIpcRouter({
     ipcMain: ipc.ipcMain,
-    senderPolicy: createSenderPolicy({ registry: { has: (wcId) => wcId === 1 || wcId === 2 } }),
+    senderPolicy: createSenderPolicy({ registry: rolesRegistry(opts.stickyNoteId) }),
     logger: memoryLogger(),
     validateResponses: true,
   });
-  registerIpcHandlers(router, { app, services });
+  registerIpcHandlers(router, { app, services, desktop: opts.desktop ?? NO_DESKTOP });
   const call = async (channel: string, payload: unknown, fromWebContents = 1): Promise<Loose> =>
     (await ipc.call(channel, payload, rendererEvent({ sender: { id: fromWebContents } }))) as Loose;
   return { handlers: ipc.handlers, call, router };

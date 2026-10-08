@@ -531,11 +531,19 @@ for (const how of ['window close', 'quit'] as const) {
     if (how === 'quit') {
       await app.evaluate(({ app: electronApp }) => electronApp.quit());
     } else {
-      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.close());
+      // Closing the main window asks first (D-066); the answer "Quit" quits, which flushes every window.
+      const asked = await app.evaluate(({ BrowserWindow }) => {
+        const hooks = globalThis.__infinityTest!;
+        hooks.closeChoices.push({ choice: 'quit', remember: false });
+        BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.close();
+        return hooks.closeDialogs.map((d) => d.message);
+      });
+      expect(asked).toEqual(['Keep Infinity Notes running in the background?']);
     }
     expect(await waitForExit(proc, 15_000)).toBe(true);
     expect(readMainLog(h.userData)).toContain('flush: requested=1 acked=1 timedOut=0');
     expect(noteRow(id).plain_text).toBe(`kept on ${how}`);
+    if (how === 'window close') expect(h.setting('app.closeBehavior')).toBeUndefined();
     const second = await h.restart();
     await expect.poll(() => editorText(second.page)).toBe(`kept on ${how}`);
   });
