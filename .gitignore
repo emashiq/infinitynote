@@ -1,0 +1,36 @@
+# Dependencies and build output
+node_modules/
+out/
+dist/
+release/
+coverage/
+*.tsbuildinfo
+
+# Test and runtime data (never commit user notebooks)
+test-results/
+playwright-report/
+.test-userdata/
+tmp-userdata*/
+
+# Private workflow evidence
+.infinity-work/
+docs/development/run-evidence/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.log
+!docs/**/*.log
+__pycache__/
+
+# Phase 00 additions: tooling caches and local databases/archives (user data never committed)
+.vite/
+.eslintcache
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm
+*.infinitybackup
+*.infinityexport
+!tests/fixtures/**

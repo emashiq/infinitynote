@@ -1,0 +1,62 @@
+[
+  {
+    "id": "00",
+    "title": "Scope, contracts and repository planning",
+    "file": "phases/00-scope-contracts-and-repository-planning.md",
+    "effort": "medium"
+  },
+  {
+    "id": "01",
+    "title": "Secure desktop foundation and persistence",
+    "file": "phases/01-secure-desktop-foundation-and-persistence.md",
+    "effort": "medium"
+  },
+  {
+    "id": "02",
+    "title": "Home, projects, folders and tabs",
+    "file": "phases/02-home-projects-folders-and-tabs.md",
+    "effort": "low"
+  },
+  {
+    "id": "03",
+    "title": "Rich notes, plain text and image paste",
+    "file": "phases/03-rich-notes-plain-text-and-image-paste.md",
+    "effort": "medium"
+  },
+  {
+    "id": "04",
+    "title": "Real floating sticky windows",
+    "file": "phases/04-real-floating-sticky-windows.md",
+    "effort": "medium"
+  },
+  {
+    "id": "05",
+    "title": "Time-zone reminders, notifications and widget",
+    "file": "phases/05-time-zone-reminders-notifications-and-widget.md",
+    "effort": "medium"
+  },
+  {
+    "id": "06",
+    "title": "Reminder suggestions from natural-language notes",
+    "file": "phases/06-reminder-suggestions-from-natural-language-notes.md",
+    "effort": "medium"
+  },
+  {
+    "id": "07",
+    "title": "References, backlinks and fast retrieval",
+    "file": "phases/07-references-backlinks-and-fast-retrieval.md",
+    "effort": "medium"
+  },
+  {
+    "id": "08",
+    "title": "Backup, export/import, preferences and polish",
+    "file": "phases/08-backup-export-import-preferences-and-polish.md",
+    "effort": "medium"
+  },
+  {
+    "id": "09",
+    "title": "Integrated testing, defect closure and native release",
+    "file": "phases/09-integrated-testing-defect-closure-and-native-release.md",
+    "effort": "medium"
+  }
+]
