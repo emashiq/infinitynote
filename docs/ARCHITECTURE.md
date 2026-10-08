@@ -19,10 +19,10 @@ Tables and essential columns (camelCase in TypeScript, snake_case in SQL):
 - `meta` (schema version in `PRAGMA user_version`); `settings(key PK, value JSON, updated_at)`.
 - `projects(id, name, favorite, sort_order, created_at, updated_at, deleted_at, trash_batch_id)`.
 - `folders(id, project_id NULL, parent_id NULL, name, favorite, sort_order, created_at, updated_at, deleted_at, trash_batch_id)`.
-- `notes(id, project_id NULL, folder_id NULL, title, format 'rich'|'plain', content_json NULL, content_text NULL, plain_text, revision, sticky_enabled, color, pinned_at NULL, favorite, created_at, updated_at, deleted_at, trash_batch_id)`.
-- `notes_fts` (FTS5: title, body; tokenizer per D-029; rowid mapped to an integer key of notes).
+- `notes(doc_key INTEGER PRIMARY KEY AUTOINCREMENT, id UNIQUE, project_id NULL, folder_id NULL, title, format 'rich'|'plain', content_json NULL, content_text NULL, plain_text, revision, sticky_enabled, color, pinned_at NULL, favorite, created_at, updated_at, deleted_at, trash_batch_id)`.
+- `notes_fts` (external-content FTS5 over `notes`: columns title, plain_text; `content_rowid='doc_key'`; tokenizer per D-029; kept in sync by triggers that index only rows with `deleted_at IS NULL`; D-036).
 - `note_versions(id, note_id, revision, format, content_snapshot, attachment_ids JSON, reason 'auto'|'conversion'|'conflict'|'restore'|'import', created_at)`.
-- `note_drafts(id, note_id, view_id, base_revision, format, content, reason 'conflict'|'lease_lost', created_at, resolved_at)`.
+- `note_drafts(id, note_id, view_id, base_revision, format, title NULL, content, reason 'conflict'|'lease_lost', created_at, resolved_at)`.
 - `attachments(id, managed_relative_path, sha256 UNIQUE, mime, size_bytes, original_name, kind 'image'|'document', created_at, unreferenced_since NULL)`; `note_attachments(note_id, attachment_id, block_id NULL)`.
 - `window_state(key PK, bounds JSON, display_id, open, collapsed, always_on_top, updated_at)` with key `sticky:<noteId>`, `widget` or `main`.
 - `reminders`, `occurrences`, `alert_deliveries` per section 8, with an index on `occurrences(next_alert_at_utc)` where not null.
@@ -51,13 +51,13 @@ Tab kinds: `home` (singleton, index 0), `note` (one per noteId), singleton pages
 
 ## 4. IPC conventions and catalogue
 
-Channel names are `domain:action`, request and response via `invoke`; responses are `{ok:true, data}` or `{ok:false, error:{code, message}}` with codes `VALIDATION_FAILED, NOT_FOUND, CONFLICT, LEASE_REQUIRED, CYCLE, LIMIT_EXCEEDED, UNSUPPORTED, FORBIDDEN, INTERNAL`. Main-to-renderer events use the whitelisted `subscribe`, which returns an unsubscribe function. Every handler validates the sender frame URL and the Zod payload.
+Channel names are `domain:action`, request and response via `invoke`; responses are `{ok:true, data}` or `{ok:false, error:{code, message, details?}}` (`details` is optional JSON, for example `CONFLICT {currentRevision, draftId}`; D-042) with codes `VALIDATION_FAILED, NOT_FOUND, CONFLICT, LEASE_REQUIRED, CYCLE, LIMIT_EXCEEDED, UNSUPPORTED, FORBIDDEN, INTERNAL`. Main-to-renderer events use the whitelisted `subscribe`, which returns an unsubscribe function. Every handler validates the sender frame URL and the Zod payload.
 
 Catalogue (later phase plans may add channels but must update this list):
 
 | Phase | Channels | Events |
 | --- | --- | --- |
-| 01 | `app:getInfo`, `settings:get`, `settings:set`, `capabilities:get` | `settings:changed` |
+| 01 | `app:getInfo`, `app:showDataFolder`, `app:quit`, `settings:get`, `settings:set`, `capabilities:get` | `settings:changed` |
 | 02 | `tree:list`, `project:create\|rename\|trash`, `folder:create\|rename\|move\|trash`, `note:create\|rename\|move\|trash`, `trash:list\|restore\|purge`, `note:setPinned`, `item:setFavorite`, `home:summary`, `session:get\|set`, `palette:searchTitles` | `tree:changed` |
 | 03 | `note:open`, `note:save`, `lease:acquire\|release\|take`, `note:convertFormat`, `versions:list\|restore`, `drafts:list\|resolve`, `attachment:importImageBytes`, `attachment:importFromDialog` | `note:revision`, `note:lease`, `note:trashed`, `lease:release-request` |
 | 04 | `sticky:float\|dock\|hide\|setColor\|setPinned\|setCollapsed\|removeSticky`, `window:getState` | `sticky:state` |
@@ -200,7 +200,7 @@ References are ID-based (`note_references`) with a target title snapshot for mis
 
 ## 14. Security
 
-`contextIsolation` true, `nodeIntegration` false, `sandbox` true for all renderers; a single preload exposes `window.infinity` with an explicit method list. Every `ipcMain.handle` validates the sender frame URL (packaged `file://` index or the electron-vite dev URL) and the payload with Zod; JSON payloads are limited to 5 MB except the image import channel (binary, bounded by the image limit).
+`contextIsolation` true, `nodeIntegration` false, `sandbox` true for all renderers; a single preload exposes `window.infinity` with an explicit method list. Built and packaged renderers load `infinity-app://renderer/index.html` from a privileged custom scheme restricted to the bundled renderer directory, never `file://` (D-035). Every `ipcMain.handle` validates that the sender is a top-level frame of a window created by main whose origin is `infinity-app://renderer` (or the electron-vite dev origin in development only) and the payload with Zod; JSON payloads are limited to 5 MB except the image import channel (binary, bounded by the image limit).
 
 CSP: `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' infinity-attachment: blob:; font-src 'self'; connect-src 'self'` (plus the dev server and websocket in development only); `object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'`.
 
@@ -209,7 +209,7 @@ CSP: `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; i
 ## 15. Testing architecture
 
 - Seams: `Clock`, `NotificationAdapter`, `DisplayProvider` (screens and work areas), `PlatformCapabilities`, `AttachmentStore` root path and the DB adapter.
-- Integration tests run in Node 24 against real better-sqlite3 temporary databases (the same N-API binary as Electron). E2E launches the built Electron app with `INFINITY_NOTES_USER_DATA_DIR` pointing to a temporary directory. Linux E2E runs under `xvfb-run` in WSL (application logic only); native compositor behavior is recorded separately in the native OS matrix.
+- Integration tests run in Node 24 against real better-sqlite3 temporary databases (the same N-API binary as Electron). E2E launches the built Electron app with `INFINITY_NOTES_USER_DATA_DIR` pointing to a temporary directory. Linux E2E runs in WSL as the unprivileged user `infinity` (Chromium refuses root without disabling the sandbox; D-039), both in the WSLg session and under `xvfb-run` (application logic only); native compositor behavior is recorded separately in the native OS matrix.
 - Test-type legend: U unit, I integration, E Electron E2E, N native OS validation, V visual or accessibility review, P performance, R review.
 - Standard npm scripts: `dev, lint, typecheck, test:unit, test:integration, test:e2e, check, build, package:current, package:win, package:linux`. Scripts that do not yet apply must print their real status and exit non-zero rather than silently pass.
 

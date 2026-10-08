@@ -1,0 +1,189 @@
+import { expect, test } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  appArgs,
+  appEnv,
+  appExecutable,
+  closeApp,
+  dbFileOf,
+  launchApp,
+  makeUserDataDir,
+  openDb,
+  readMainLog,
+  removeDir,
+  spawnAndWait,
+  waitForExit,
+  type Launched,
+} from './fixtures';
+
+let userData = '';
+let launched: Launched | null = null;
+
+test.beforeEach(() => {
+  userData = makeUserDataDir();
+});
+
+test.afterEach(async () => {
+  await closeApp(launched?.app);
+  launched = null;
+  await removeDir(userData);
+});
+
+test('starts a real window with temp userData', async () => {
+  launched = await launchApp({ userDataDir: userData });
+  const { app, page } = launched;
+  expect(await page.title()).toBe('Infinity Notes');
+  await expect(page.locator('h1')).toHaveText('Infinity Notes');
+  await expect(page.getByText('Version 0.1.0')).toBeVisible();
+  const windows = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+  expect(windows).toBe(1);
+  const nativeTitle = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getTitle());
+  expect(nativeTitle).toBe('Infinity Notes');
+});
+
+test('closeApp leaves no live Electron process (teardown race regression)', async () => {
+  launched = await launchApp({ userDataDir: userData });
+  const proc = launched.app.process();
+  const pid = proc.pid!;
+  expect(pid).toBeGreaterThan(0);
+  await closeApp(launched.app);
+  expect(proc.exitCode !== null || proc.signalCode !== null).toBe(true);
+  expect(await waitForExit(proc, 1000)).toBe(true);
+  let alive = true;
+  try {
+    process.kill(pid, 0);
+  } catch {
+    alive = false;
+  }
+  expect(alive).toBe(false);
+  launched = null;
+});
+
+test('temp userData used', async () => {
+  launched = await launchApp({ userDataDir: userData });
+  const reported = await launched.app.evaluate(({ app }) => app.getPath('userData'));
+  expect(path.resolve(reported)).toBe(path.resolve(userData));
+  expect(fs.existsSync(dbFileOf(userData))).toBe(true);
+  expect(fs.existsSync(path.join(userData, 'logs', 'main.log'))).toBe(true);
+  expect(readMainLog(userData)).toContain('userDataOverride=on');
+});
+
+test('db diagnostics', async () => {
+  launched = await launchApp({ userDataDir: userData });
+  const info = await launched.page.evaluate(async () => {
+    const r = await window.infinity.app.getInfo();
+    return r.ok ? r.data : null;
+  });
+  expect(info).not.toBeNull();
+  expect(info!.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
+  expect(info!.sqlite!.version).toMatch(/^3\.\d+\.\d+$/);
+  expect(info!.schemaVersion).toBe(1);
+  expect(info!.startup).toEqual({ status: 'ok' });
+  expect(info!.isPackaged).toBe(false);
+  expect(info!.versions.electron).toBe('44.7.0');
+  expect(JSON.stringify(info)).not.toContain(userData.replace(/\\/g, '\\\\'));
+  await expect(launched.page.getByText(/Storage ready \(SQLite 3\./)).toBeVisible();
+});
+
+test('setting survives relaunch', async () => {
+  launched = await launchApp({ userDataDir: userData });
+  await launched.page.getByLabel('Dark').check();
+  await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect.poll(async () => launched!.page.evaluate(async () => {
+    const r = await window.infinity.settings.get({ keys: ['appearance.theme'] });
+    return r.ok ? r.data.values['appearance.theme'] : null;
+  })).toBe('dark');
+  await closeApp(launched.app);
+
+  const db = openDb(dbFileOf(userData), { readonly: true });
+  const row = db.prepare("SELECT value, updated_at FROM settings WHERE key = 'appearance.theme'").get() as { value: string; updated_at: number };
+  db.close();
+  expect(row.value).toBe('{"v":1,"value":"dark"}');
+  expect(row.updated_at).toBeGreaterThan(0);
+
+  launched = await launchApp({ userDataDir: userData });
+  await expect(launched.page.getByLabel('Dark')).toBeChecked();
+  await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark');
+});
+
+test('invalid stored setting falls back', async () => {
+  launched = await launchApp({ userDataDir: userData });
+  await launched.page.getByLabel('Dark').check();
+  await expect.poll(async () => launched!.page.evaluate(async () => {
+    const r = await window.infinity.settings.get({ keys: ['appearance.theme'] });
+    return r.ok ? r.data.values['appearance.theme'] : null;
+  })).toBe('dark');
+  await closeApp(launched.app);
+
+  const db = openDb(dbFileOf(userData));
+  db.prepare("UPDATE settings SET value = '{\"v\":1,\"value\":\"neon\"}' WHERE key = 'appearance.theme'").run();
+  db.close();
+
+  launched = await launchApp({ userDataDir: userData });
+  await expect(launched.page.getByLabel('System')).toBeChecked();
+  expect(readMainLog(userData)).toContain('settings: invalid stored value key=appearance.theme');
+});
+
+test('second instance focuses first', async () => {
+  launched = await launchApp({ userDataDir: userData });
+  const { app } = launched;
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.hide());
+  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible())).toBe(false);
+
+  const second = await spawnAndWait(appExecutable(), appArgs(), appEnv(userData), 15_000);
+  expect(second.timedOut).toBe(false);
+  expect(second.code).toBe(0);
+
+  await expect
+    .poll(async () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible()), { timeout: 10_000 })
+    .toBe(true);
+  const state = await app.evaluate(({ BrowserWindow }) => {
+    const wins = BrowserWindow.getAllWindows();
+    return { count: wins.length, minimized: wins[0]!.isMinimized() };
+  });
+  expect(state).toEqual({ count: 1, minimized: false });
+  await expect.poll(() => readMainLog(userData)).toContain('second-instance received');
+});
+
+test('no network requests', async () => {
+  launched = await launchApp({ userDataDir: userData });
+  const { app, page } = launched;
+  const blocked = () => app.evaluate(() => globalThis.__infinityTest?.blockedRequests ?? ['hooks missing']);
+  expect(await blocked()).toEqual([]);
+
+  const rendererFetch = await page.evaluate(async () => {
+    try {
+      await fetch('https://example.com/');
+      return 'resolved';
+    } catch {
+      return 'rejected';
+    }
+  });
+  expect(rendererFetch).toBe('rejected');
+
+  const mainFetch = await app.evaluate(async ({ net }) => {
+    try {
+      await net.fetch('https://example.com/');
+      return 'resolved';
+    } catch {
+      return 'rejected';
+    }
+  });
+  expect(mainFetch).toBe('rejected');
+  expect(await blocked()).toContain('https://example.com/');
+
+  await closeApp(app);
+  launched = await launchApp({ userDataDir: userData });
+  expect(await launched.app.evaluate(() => globalThis.__infinityTest?.blockedRequests ?? ['hooks missing'])).toEqual([]);
+});
+
+test('Linux: main.log records the display and ozone line', async () => {
+  test.skip(process.platform !== 'linux', 'Linux only');
+  launched = await launchApp({ userDataDir: userData });
+  const line = readMainLog(userData)
+    .split('\n')
+    .find((l) => l.includes(' display ozone='));
+  expect(line).toBeTruthy();
+  console.log(`DISPLAY-LINE ${line}`);
+});

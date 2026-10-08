@@ -1,0 +1,41 @@
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-rail: #f5f6fa;
+  --bg-subtle: #f7f7fb;
+  --border: #e4e6ee;
+  --text: #1d2030;
+  --text-muted: #5f6475;
+  --accent: #6a5ae0;
+  --accent-hover: #5848d0;
+  --accent-soft: #efedfd;
+  --accent-border: #cfc9f7;
+  --danger: #c0392b;
+  --warning: #9a5b00;
+  --success: #2e7d4f;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #17181d;
+  --bg-rail: #1d1f26;
+  --bg-subtle: #22242c;
+  --border: #30333d;
+  --text: #e7e8ee;
+  --text-muted: #a0a4b3;
+  --accent: #8e80ff;
+  --accent-hover: #a196ff;
+  --accent-soft: #2b2747;
+  --accent-border: #4a4380;
+  --danger: #ff7a6e;
+  --warning: #f2b45c;
+  --success: #6bcb8f;
+}
+
+:root {
+  --radius-panel: 8px;
+  --radius-control: 6px;
+  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', Ubuntu, Cantarell, 'Noto Sans', 'Noto Sans Bengali', system-ui, sans-serif;
+  --font-code: 'Cascadia Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', monospace;
+}

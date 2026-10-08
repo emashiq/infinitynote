@@ -13,19 +13,19 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 <!-- BACKLOG-TABLE-START -->
 | ID | Requirement | Phase | Tests | Planned tests | Status |
 | --- | --- | --- | --- | --- | --- |
-| INF-FND-01 | One offline Electron app; no backend, accounts, sync, telemetry or AI calls; no outbound network requests at runtime | 01 | E,R | e2e/smoke.spec › no network requests; dependency review | planned |
-| INF-FND-02 | Single-instance lock; a second launch focuses the existing main window | 01 | E,N | e2e/smoke.spec › second instance focuses first | planned |
-| INF-FND-03 | Secure windows: contextIsolation, no nodeIntegration, sandbox, CSP, blocked navigation/window.open, permission requests denied | 01 | E,R | e2e/security.spec › renderer has no node/require; navigation blocked | planned |
-| INF-FND-04 | Narrow typed preload bridge; Zod-validated payloads; sender validation; payload size limits; renderer cannot read files, run SQL or shell | 01 | U,I,E | unit/contracts.test; integration/ipc-validation.test; e2e/security.spec › bridge surface | planned |
-| INF-FND-05 | Main-owned SQLite adapter with WAL, foreign keys, forward-only transactional migrations, pre-migration copy; failed migration rolls back and shows recoverable error; newer schema refused | 01 | I,E | integration/migrations.test › failure rolls back; e2e/migration-failure.spec | planned |
-| INF-FND-06 | Versioned settings repository persists across relaunch with defaults and validation | 01 | I,E | integration/settings.test; e2e/smoke.spec › setting survives relaunch | planned |
-| INF-FND-07 | User data under userData/data, never install dir; INFINITY_NOTES_USER_DATA_DIR isolates tests | 01 | I,E | integration/paths.test; e2e/smoke.spec › temp userData used | planned |
-| INF-FND-08 | Restricted infinity-attachment protocol serves only registered attachment IDs; no paths or traversal | 01 | I,E | integration/protocol.test › unknown id 404, traversal rejected | planned |
-| INF-FND-09 | Standard npm scripts exist and report real status (no silent passes) | 01 | R | review package.json scripts + logs | planned |
-| INF-FND-10 | Windows and Ubuntu CI definitions (not pushed) with build, tests, native-module check and artifacts | 01 | R | review .github/workflows files | planned |
-| INF-FND-11 | Stable app identity (appId, productName, AppUserModelID, icon placeholder) | 01 | R,N | review builder config; native toast identity check | planned |
-| INF-FND-12 | Native SQLite loads in Electron main with FTS5, BLOB and backup API on Windows and WSL Ubuntu | 01 | I,E,N | integration/sqlite-capabilities.test; e2e/smoke.spec › db diagnostics | planned |
-| INF-FND-13 | Save-revision and writer-lease contracts defined in shared contracts before UI | 01 | U,I | unit/contracts.test › note:save schema; integration/revision.test | planned |
+| INF-FND-01 | One offline Electron app; no backend, accounts, sync, telemetry or AI calls; no outbound network requests at runtime | 01 | E,R | e2e/smoke.spec › no network requests; dependency review | done |
+| INF-FND-02 | Single-instance lock; a second launch focuses the existing main window | 01 | E,N | e2e/smoke.spec › second instance focuses first | in_progress |
+| INF-FND-03 | Secure windows: contextIsolation, no nodeIntegration, sandbox, CSP, blocked navigation/window.open, permission requests denied | 01 | E,R | e2e/security.spec › renderer has no node/require; navigation blocked; e2e/security.spec › CSP enforced; › window.open denied; › permissions denied; › web preferences hardened | done |
+| INF-FND-04 | Narrow typed preload bridge; Zod-validated payloads; sender validation; payload size limits; renderer cannot read files, run SQL or shell | 01 | U,I,E | unit/contracts.test; integration/ipc-validation.test; e2e/security.spec › bridge surface; integration/ipc-validation.test; unit/boundaries.test; e2e/security.spec › validation errors; › renderer cannot read files | done |
+| INF-FND-05 | Main-owned SQLite adapter with WAL, foreign keys, forward-only transactional migrations, pre-migration copy; failed migration rolls back and shows recoverable error; newer schema refused | 01 | I,E | integration/migrations.test › failure rolls back; e2e/migration-failure.spec | done |
+| INF-FND-06 | Versioned settings repository persists across relaunch with defaults and validation | 01 | I,E | integration/settings.test; e2e/smoke.spec › setting survives relaunch | done |
+| INF-FND-07 | User data under userData/data, never install dir; INFINITY_NOTES_USER_DATA_DIR isolates tests | 01 | I,E | integration/paths.test; e2e/smoke.spec › temp userData used | done |
+| INF-FND-08 | Restricted infinity-attachment protocol serves only registered attachment IDs; no paths or traversal | 01 | I,E | integration/protocol.test › unknown id 404, traversal rejected; integration/protocol.test; e2e/security.spec › attachment protocol | done |
+| INF-FND-09 | Standard npm scripts exist and report real status (no silent passes) | 01 | R | review package.json scripts + logs; unit/scripts.test | done |
+| INF-FND-10 | Windows and Ubuntu CI definitions (not pushed) with build, tests, native-module check and artifacts | 01 | R | review .github/workflows files; unit/ci-config.test | done |
+| INF-FND-11 | Stable app identity (appId, productName, AppUserModelID, icon placeholder) | 01 | R,N | review builder config; native toast identity check; unit/app-identity.test | in_progress |
+| INF-FND-12 | Native SQLite loads in Electron main with FTS5, BLOB and backup API on Windows and WSL Ubuntu | 01 | I,E,N | integration/sqlite-capabilities.test; e2e/smoke.spec › db diagnostics; e2e/native.spec › self-test passes in Electron main; tools/verify-native.mjs logs | done |
+| INF-FND-13 | Save-revision and writer-lease contracts defined in shared contracts before UI | 01 | U,I | unit/contracts.test › note:save schema; integration/revision.test | done |
 | INF-SHELL-01 | Compact reference-inspired shell: rail (Home, Notes, Stickies, Reminders, Settings), header with search/command box, tab strip, document area, violet accent, no capture-specific labels | 02 | V,E | e2e/shell.spec › rail navigation; screenshot 1100x720 | planned |
 | INF-SHELL-02 | Collapsible, resizable tree pane 220-280 px, width persisted | 02 | E,V | e2e/shell.spec › tree toggle and width persists | planned |
 | INF-SHELL-03 | Collapsible right context panel 280-340 px with Info section; later Reminders and References sections | 02 | E,V | e2e/shell.spec › panel toggle | planned |
@@ -232,7 +232,7 @@ Work items are ordered; each lists the requirement IDs it satisfies. Phase 01 is
 ### Phase 01
 
 - W01-01 Scaffold electron-vite project (main, preload, renderer, shared), TypeScript 6.0.3 strict, ESLint 10 flat config. IDs: INF-FND-09
-- W01-02 Pinned dependency install from DECISIONS section 4 (exact versions, lockfile, engines >=24.15.0 <25). IDs: INF-FND-01, INF-FND-09
+- W01-02 Pinned dependency install from the DECISIONS "Pinned dependency table" (exact versions, lockfile, engines >=24.15.0 <25). IDs: INF-FND-01, INF-FND-09
 - W01-03 DB adapter (better-sqlite3 behind interface, WAL, foreign keys, synchronous=FULL), migration runner, migration 001, pre-migration backup, failure screen, newer-schema refusal. IDs: INF-FND-05
 - W01-04 Settings repository with Zod defaults and versioning. IDs: INF-FND-06
 - W01-05 User data paths and INFINITY_NOTES_USER_DATA_DIR override. IDs: INF-FND-07

@@ -159,6 +159,90 @@ Toolchain floor: Node `>=24.15.0 <25` for development on both hosts (engines fie
 ### D-034 Retention defaults
 - Decision: trash is never auto-purged (options Never, 30, 90 days); automatic versions kept 30 days and at most 100 per note; conversion, conflict and restore versions kept until the note is permanently deleted; attachment GC grace period 7 days. Context: data-loss avoidance. Consequences: configurable in Phase 08 (INF-PORT-07, INF-PORT-08). Status: accepted. Evidence: ARCHITECTURE.
 
+## Phase 01 decisions
+
+Recorded by the Phase 01 planner on 2026-10-08. Probe output is in `.infinity-work/logs/phase-01/planner-probes.log`. The implementation plan is `docs/plans/phase-01.md`.
+
+### D-035 Renderer origin is a privileged custom scheme, not file://
+- Context: ARCHITECTURE section 14 said the packaged renderer loads a `file://` index. The planner probe loaded a sandboxed, context-isolated window under the exact section 14 CSP. A `file://` page could still `fetch`, `XMLHttpRequest` and `<img>` arbitrary local files, because CSP `'self'` on a `file://` page matches every `file:` URL. The same page served from a custom scheme had all three blocked.
+- Decision: built and packaged renderers load `infinity-app://renderer/index.html` from a scheme that is registered privileged (`standard`, `secure`, `supportFetchAPI`) before `ready`. The scheme is served by `protocol.handle` from the bundled `out/renderer` directory only. It reads with asar-aware `fs`, uses a fixed MIME map, contains every path inside the renderer root and answers 404 otherwise. The HTML response also carries the CSP header. Development loads the electron-vite dev server URL, and only when `!app.isPackaged` and `ELECTRON_RENDERER_URL` is set. IPC sender validation accepts the origin `infinity-app://renderer`, plus the dev origin in development only.
+- Consequences: this supersedes the "packaged `file://` index" wording in ARCHITECTURE section 14. `will-navigate` is allowed only to the window's own renderer origin. Every other navigation is prevented.
+- Status: accepted.
+- Evidence: planner-probes.log, Probe E.
+
+### D-036 Stable integer key for notes_fts (follow-up F-2)
+- Context: `notes.id` is a UUID. FTS5 needs an integer rowid, and the implicit rowid of a table without an `INTEGER PRIMARY KEY` may change on `VACUUM`.
+- Decision: `notes.doc_key INTEGER PRIMARY KEY AUTOINCREMENT` is an explicit rowid alias, so VACUUM keeps it and AUTOINCREMENT never reuses it. `notes.id TEXT NOT NULL UNIQUE` stays the public key that every foreign key and IPC payload uses. `doc_key` never leaves main. `notes_fts` is an external-content FTS5 table: `content='notes'`, `content_rowid='doc_key'`, columns `title, plain_text`, tokenizer per D-029. It is kept in sync by `AFTER INSERT/UPDATE/DELETE` triggers on `notes`, which index only rows with `deleted_at IS NULL`. Trash removes a row from the index and restore re-adds it, inside the same transaction as the write.
+- Consequences: the ARCHITECTURE section 3 FTS columns are `title, plain_text` (previously "title, body"). Phase 01 integration tests check `doc_key` stability across VACUUM, the trigger behavior and `INSERT INTO notes_fts(notes_fts) VALUES('integrity-check')`.
+- Status: accepted.
+- Evidence: planner-probes.log, Probes A, B and K (`rowidAfterVacuum`, Bangla match with the `categories` tokenizer).
+
+### D-037 INFINITY_NOTES_USER_DATA_DIR in packaged builds (follow-up F-4)
+- Context: D-014 defines the override but does not say whether packaged builds honor it. The test hooks are gated by `!app.isPackaged`.
+- Decision: packaged builds honor the override too, so the Phase 01 and Phase 09 packaged smoke tests never touch a real notebook. The value must be an absolute path without NUL characters, and it is normalized. A relative or invalid value is ignored and a warning is logged. The override is applied with `app.setPath('userData')` before the single-instance lock and before `ready`, so the lock is scoped to that directory. When active, it is logged once. Test hooks (fake shell, diagnostics globals) stay limited to `!app.isPackaged && INFINITY_NOTES_E2E === '1'`, even when the override is set.
+- Consequences: unit tests cover the resolver for both values of `isPackaged`. The packaged E2E (`npm run test:e2e:packaged`) proves the override is honored and the hooks are absent.
+- Status: accepted.
+- Evidence: plan section 6.
+
+### D-038 Native module policy: prebuilt N-API binary, no source rebuild, no install scripts (follow-up F-3)
+- Context: the Phase 01 pack criterion "native-module rebuild works on the current host" assumes node-gyp, which needs Python (D-031). better-sqlite3 13.0.3 ships `prebuilds/<platform>-<arch>.node` (N-API 10) and sets `gypfile:false`. Electron 44.7.0 has no postinstall and downloads its binary lazily. npm 11.19 in WSL lists an implicit `node-gyp rebuild` install script for better-sqlite3 under its install-script approval feature.
+- Decision: for this project the criterion means "the prebuilt better-sqlite3 binary loads, with no source rebuild, in Electron main in development, in the packaged unpacked app and in the Linux AppImage on Windows and WSL, and passes the self-test". The self-test checks FTS5 with the D-029 tokenizer and a Bangla match, a BLOB round trip, `db.backup()`, `PRAGMA compile_options` (ENABLE_FTS5), JSON, migration to latest and `doc_key` stability. Proof is the self-test report, plus a SHA-256 match between the packaged `app.asar.unpacked/.../prebuilds/<platform>-<arch>.node` and the npm tarball copy, plus the absence of `node_modules/better-sqlite3/build/`. A repository `.npmrc` sets `ignore-scripts=true` and `engine-strict=true`, so no dependency install script runs under either npm version. The Electron binary is fetched explicitly with `npm run setup:electron`. electron-builder runs with `npmRebuild:false`, `nodeGypRebuild:false`, `buildDependenciesFromSource:false` and `asarUnpack: ["**/*.node"]`.
+- Fallback: the `node:sqlite` fallback (D-004) is not implemented in Phase 01. The planner probes show better-sqlite3 passing in Electron 44 main on Windows (dev and packaged) and on WSL (dev, linux-unpacked and AppImage). If the implementation-time self-test fails on either host, the implementer adds a `node:sqlite` driver behind the same `Db` interface. It must pass the identical self-test (FTS5 with the `categories` tokenizer, BLOB, backup, compile_options) in Electron 44 main and in the Node integration tests. If neither driver passes, that is recorded as a blocker, not a silent downgrade.
+- Status: accepted.
+- Evidence: planner-probes.log, Probes A to D, G, J, K, P and Q.
+
+### D-039 Linux leg runs as an unprivileged WSL user
+- Context: the only WSL account was root. Chromium aborts as root unless `--no-sandbox` is passed ("Running as root without --no-sandbox is not supported"), and disabling the sandbox is forbidden.
+- Decision: the WSL user `infinity` (created by the planner with `useradd -m -s /bin/bash infinity`) runs every Linux build, test and launch through `wsl -d Ubuntu -u infinity -- bash -lc '...'`. The build copy is `/home/infinity/infinity-notes` on ext4. It is synced from `/mnt/e/notecapt` with `rsync -a --delete`, excluding `node_modules/`, `out/`, `release/`, `.git/`, `.infinity-work/`, `test-results/`, `playwright-report/` and `coverage/`, and it has its own `node_modules` from `npm ci`. `WAYLAND_DISPLAY=/mnt/wslg/runtime-dir/wayland-0` is exported because the per-user runtime directory has no `wayland-0` socket. xvfb, fakeroot, dpkg-deb, git and rsync are already installed, so no apt package is installed. chrome-sandbox is not made SUID because the user-namespace sandbox works.
+- Observed (R-09): with no `XDG_SESSION_TYPE`, Electron 44 under WSLg selects ozone `x11` (XWayland). `--ozone-platform=wayland` also works. Production never forces either one. Results are labeled WSLg/Weston (WSLg 1.0.73), never GNOME.
+- Status: accepted.
+- Evidence: planner-probes.log, Probes H, I and L to N.
+
+### D-040 Migration runner and startup failure states
+- Decision:
+  - All pending migrations run in one `BEGIN IMMEDIATE` transaction together with `PRAGMA user_version`, and `PRAGMA foreign_key_check` runs before commit. Any failure rolls the whole set back, so "your data was not changed" is literally true.
+  - An existing database file is first probed read-only. A `user_version` above the app's latest refuses startup before any write, including the switch to WAL.
+  - The pre-migration copy (`db.backup()` into `data/pre-migration/infinity-notes-v<from>-<UTC timestamp>.sqlite3`, last 3 kept) is made only when an existing database with at least one table is upgraded.
+  - Tables are `STRICT`. Migration SQL files are LF-only (`.gitattributes`) and frozen by SHA-256 in `src/main/db/migrations/checksums.json`, which a unit test checks.
+  - Startup states are `MIGRATION_FAILED`, `SCHEMA_TOO_NEW` and `DB_OPEN_FAILED`. Each shows a full-window screen with Show data folder and Quit, using the copy in UX_SPEC section 6.
+- Status: accepted.
+- Evidence: ARCHITECTURE section 3.
+
+### D-041 Settings storage and the Phase 01 setting
+- Decision:
+  - Each settings row stores `{"v":<schemaVersion>,"value":<json>}`.
+  - A typed registry in `src/shared/contracts/settings.ts` maps each key to a Zod schema, a version and a default. Unknown keys and invalid values are rejected with `VALIDATION_FAILED` and nothing is written.
+  - A stored value that fails validation or has an unknown version reads as the default, and a warning is logged.
+  - `settings:changed` is broadcast to every window after commit.
+  - Phase 01 registers `appearance.theme` (`system|light|dark`, default `system`). Main applies it through `nativeTheme.themeSource`, and the renderer applies it through `data-theme`.
+  - The Phase 01 window is a minimal foundation screen with an Appearance theme control. Phase 02 replaces it with the shell, and the control moves to Settings > Appearance (Phase 08 completes INF-PREF-01).
+- Status: accepted.
+- Evidence: plan section 5.
+
+### D-042 IPC envelope details, Phase 01 channels and the save/lease service contract
+- Decision:
+  - The error envelope gains an optional JSON `details` field. Example: `CONFLICT` carries `{currentRevision, draftId}`.
+  - Phase 01 adds `app:showDataFolder` and `app:quit` to the catalogue. Both are needed by the startup failure screen.
+  - `subscribe` accepts only the event names of phases already implemented. In Phase 01 that is `settings:changed`.
+  - The save and lease services (`NoteWriter`, `LeaseManager`) are implemented and integration-tested in main in Phase 01, with no IPC registration until Phase 03. Their rules:
+    - A lease binds `viewId` to the owning `webContents` id. A call with a matching `viewId` from another `webContents` is rejected with `FORBIDDEN`.
+    - Any save rejected because of a stale revision, a trashed note or a lost lease keeps its content as a `note_drafts` row (`conflict` or `lease_lost`). Only validation and size failures store nothing.
+    - A repeated `requestId` for the same note returns the original acknowledgment without writing again. Each note remembers its last 100 request IDs in memory.
+    - `lease:take` waits up to 3000 ms for the holder to call `lease:release` after its flush. On timeout, or if the holder's `webContents` is destroyed, the lease is revoked.
+  - `note_drafts` gains a nullable `title` column.
+- Status: accepted.
+- Evidence: ARCHITECTURE sections 4 and 6.
+
+### D-043 Package metadata, scripts and network guard
+- Decision:
+  - electron-builder configuration lives in `electron-builder.json`.
+  - Artifact names contain `unsigned`. The deb metadata needs a homepage and a maintainer, and there is no website, so it uses the reserved, non-resolving domain `infinity-notes.invalid`. The user's personal email is never placed in artifacts.
+  - CLIs (electron-builder, electron-vite, playwright) are started by `tools/*.mjs` through `process.execPath` and the CLI file path, never through `npx` and never through a shell. npm 11 parses flags after `npx --no <cmd>` as npm configuration.
+  - Cross-OS packaging is refused with exit code 2 and a message that names the correct host.
+  - Main installs a `webRequest` guard that cancels every `http`, `https`, `ws` and `wss` request (the dev server origin is allowed in development only). Blocked URLs are logged, and the E2E checks that startup makes no requests. `spellcheck` is off for all windows until Phase 03 decides on dictionaries, because Linux dictionary downloads would be network traffic.
+- Status: accepted.
+- Evidence: planner-probes.log, Probes F and O.
+
 ## Risks carried forward
 
 - R-01 better-sqlite3 prebuild in Electron 44: N-API should load unchanged but V8 memory-cage rules may reject external buffers; Phase 01 proves loading (dev and packaged, Windows and WSL); fallback `node:sqlite`; builder must not trigger node-gyp.
@@ -169,7 +253,7 @@ Toolchain floor: Node `>=24.15.0 <25` for development on both hosts (engines fie
 - R-06 Tiptap UniqueID may keep source IDs on paste; policy strips them (Phase 03 test).
 - R-07 FTS5 `categories` tokenizer with Bangla needs fixture verification; fallback trigram.
 - R-08 Windows toast visibility in development needs `app.setAppUserModelId`; packaged NSIS shortcut needed for reliable click activation.
-- R-09 Electron default ozone platform under WSLg must be logged (Wayland versus XWayland); production never forces X11.
+- R-09 Electron default ozone platform under WSLg must be logged (Wayland versus XWayland); production never forces X11. Phase 01 planner observation: Electron 44 picks `x11` (XWayland) under WSLg when `XDG_SESSION_TYPE` is unset; `--ozone-platform=wayland` also works (D-039). The app logs the actual value at startup.
 
 ## Verification log
 

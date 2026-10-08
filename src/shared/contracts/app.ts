@@ -1,0 +1,52 @@
+import { z } from 'zod';
+
+export const StartupErrorCode = z.enum(['MIGRATION_FAILED', 'SCHEMA_TOO_NEW', 'DB_OPEN_FAILED']);
+export type StartupErrorCodeType = z.infer<typeof StartupErrorCode>;
+
+export const StartupState = z.discriminatedUnion('status', [
+  z.strictObject({ status: z.literal('ok') }),
+  z.strictObject({ status: z.literal('error'), code: StartupErrorCode }),
+]);
+export type StartupStateType = z.infer<typeof StartupState>;
+
+export const AppInfo = z.strictObject({
+  name: z.string(),
+  version: z.string(),
+  isPackaged: z.boolean(),
+  unsignedBuild: z.literal(true),
+  platform: z.string(),
+  arch: z.string(),
+  versions: z.strictObject({ electron: z.string(), chrome: z.string(), node: z.string() }),
+  sqlite: z
+    .strictObject({
+      driver: z.string(),
+      version: z.string(),
+      fts5: z.boolean(),
+      json: z.boolean(),
+    })
+    .nullable(),
+  schemaVersion: z.number().int().nullable(),
+  startup: StartupState,
+});
+export type AppInfoType = z.infer<typeof AppInfo>;
+
+export const CapabilityStatus = z.strictObject({
+  status: z.enum(['supported', 'unsupported', 'unknown']),
+  reason: z.string(),
+});
+export type CapabilityStatusType = z.infer<typeof CapabilityStatus>;
+
+export const Capabilities = z.strictObject({
+  platform: z.enum(['win32', 'linux', 'other']),
+  environment: z.enum(['windows', 'wslg', 'linux-desktop', 'unknown']),
+  sessionType: z.enum(['windows', 'wayland', 'x11', 'unknown']),
+  ozonePlatform: z.string().nullable(),
+  windowPositioning: CapabilityStatus,
+  alwaysOnTop: CapabilityStatus,
+  tray: CapabilityStatus,
+  nativeNotifications: CapabilityStatus,
+  notificationActions: CapabilityStatus,
+  launchAtLogin: CapabilityStatus,
+  globalShortcut: CapabilityStatus,
+});
+export type CapabilitiesType = z.infer<typeof Capabilities>;

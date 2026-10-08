@@ -1,0 +1,73 @@
+{
+  "name": "infinity-notes",
+  "productName": "Infinity Notes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline notes, stickies and reminders for Windows and Linux.",
+  "license": "UNLICENSED",
+  "author": {
+    "name": "Infinity Notes",
+    "email": "noreply@infinity-notes.invalid"
+  },
+  "homepage": "https://infinity-notes.invalid/",
+  "main": "out/main/index.js",
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "node tools/run-e2e.mjs",
+    "test:e2e:packaged": "node tools/run-e2e.mjs --packaged",
+    "check": "npm run lint && npm run typecheck && npm run test:unit && npm run test:integration && npm run check:traceability",
+    "check:traceability": "node tools/check-traceability.mjs --repo .",
+    "verify:native": "node tools/verify-native.mjs",
+    "setup:electron": "node node_modules/electron/install.js",
+    "package:current": "node tools/package.mjs current",
+    "package:win": "node tools/package.mjs win",
+    "package:linux": "node tools/package.mjs linux"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "luxon": "3.7.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.0",
+    "@tiptap/core": "3.31.4",
+    "@tiptap/extension-image": "3.31.4",
+    "@tiptap/extension-list": "3.31.4",
+    "@tiptap/extension-unique-id": "3.31.4",
+    "@tiptap/extensions": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/react": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/luxon": "3.7.6",
+    "@types/node": "24.19.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "5.2.0",
+    "chrono-node": "2.10.2",
+    "dompurify": "3.4.16",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "jsdom": "30.1.2",
+    "lucide-react": "1.53.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vite": "7.3.7",
+    "vitest": "5.0.3"
+  }
+}

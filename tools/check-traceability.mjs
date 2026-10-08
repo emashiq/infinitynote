@@ -79,12 +79,14 @@ let backlogText = '';
 if (!exists(backlogPath)) fail('backlog', `missing ${backlogPath}`);
 else backlogText = read(backlogPath);
 const seen = new Set();
+const backlogRows = new Map();
 for (const c of tableRows(backlogText, '<!-- BACKLOG-TABLE-START -->', '<!-- BACKLOG-TABLE-END -->', 'backlog')) {
   if (c.length !== 6) { fail('backlog', `row has ${c.length} cells (expected 6): ${c[0]}`); continue; }
   const [id, req, phase, tests, planned, status] = c;
   if (!ID_RE.test(id)) { fail('backlog', `bad ID ${id}`); continue; }
   if (seen.has(id)) { fail('backlog', `duplicate ID ${id}`); continue; }
   seen.add(id);
+  backlogRows.set(id, { req, phase });
   const p = plan.get(id);
   if (!p) { fail('backlog', `extra ID not in plan: ${id}`); continue; }
   if (!/^0[1-9]$/.test(phase)) fail('backlog', `${id}: phase must be 01-09, got "${phase}"`);
@@ -104,6 +106,26 @@ for (const [k, p] of Object.entries(docPaths)) {
   if (!exists(p)) { fail('files', `missing ${path.relative(repo, p)}`); docText[k] = ''; } else docText[k] = read(p);
 }
 for (const id of plan.keys()) if (!docText.PRODUCT_SPEC.includes(id)) fail('product-spec', `ID not in PRODUCT_SPEC: ${id}`);
+
+// 3b. PRODUCT_SPEC section 4 rows (ID | Requirement | Acceptance criterion | Phase) versus BACKLOG (F-5).
+const norm = (t) => t.replace(/\s+/g, ' ').trim();
+const specRows = new Map();
+for (const l of lines(docText.PRODUCT_SPEC)) {
+  const t = l.trim();
+  if (!t.startsWith('| INF-')) continue;
+  const cells = t.replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+  if (cells.length !== 4) continue;
+  const [id, req, , phase] = cells;
+  if (specRows.has(id)) { fail('product-spec-table', `duplicate ID ${id}`); continue; }
+  specRows.set(id, { req, phase });
+}
+for (const [id, b] of backlogRows) {
+  const s = specRows.get(id);
+  if (!s) { fail('product-spec-phase', `${id} missing`); continue; }
+  if (s.phase !== b.phase) (allowMoves ? warn : fail)('product-spec-phase', `${id} spec ${s.phase} backlog ${b.phase}`);
+  if (norm(s.req) !== norm(b.req)) fail('product-spec-text', id);
+}
+for (const id of specRows.keys()) if (!backlogRows.has(id)) fail('product-spec-phase', `${id} in PRODUCT_SPEC but missing from BACKLOG`);
 
 // 4. TEST_MATRIX areas in BACKLOG cross-reference
 const areas = ['Hierarchy', 'Tabs', 'Editor', 'Persistence', 'Floating stickies', 'References', 'Reminders', 'Scheduler recovery', 'Time zones', 'Parsing', 'Suggestions', 'Widget', 'Portability', 'Packaging', 'Accessibility', 'Native OS matrix'];

@@ -80,6 +80,8 @@ Banners and states:
 - Trash overlay (sticky and tab): "This note is in Trash" with Restore and Close window; editing disabled.
 - Overdue summary banner on startup when overdue occurrences exist: "N reminders are overdue" with an action to open Reminders > Overdue.
 - Migration failure screen: "Database upgrade failed; your data was not changed" with "Show data folder" and "Quit".
+- Newer-schema screen (D-040): "This notebook was created by a newer version of Infinity Notes. Your data was not changed." with "Show data folder" and "Quit".
+- Database open failure screen (D-040): "Infinity Notes could not open its database. Your data was not changed." with "Show data folder" and "Quit".
 - Closed-tab notice: "1 tab was closed because its note is in Trash".
 
 ## 7. Keyboard map

@@ -1,0 +1,45 @@
+{
+  "appId": "com.infinitynotes.desktop",
+  "productName": "Infinity Notes",
+  "copyright": "Infinity Notes local build",
+  "directories": { "output": "release", "buildResources": "resources" },
+  "files": [
+    "out/**",
+    "resources/icon.png",
+    "package.json",
+    "!**/*.map",
+    "!node_modules/better-sqlite3/deps/**",
+    "!node_modules/better-sqlite3/src/**"
+  ],
+  "asarUnpack": ["**/*.node"],
+  "npmRebuild": false,
+  "nodeGypRebuild": false,
+  "buildDependenciesFromSource": false,
+  "publish": null,
+  "win": {
+    "target": [{ "target": "nsis", "arch": ["x64"] }],
+    "icon": "resources/icon.ico",
+    "artifactName": "Infinity-Notes-Setup-${version}-x64-unsigned.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Infinity Notes",
+    "deleteAppDataOnUninstall": false
+  },
+  "linux": {
+    "target": [
+      { "target": "AppImage", "arch": ["x64"] },
+      { "target": "deb", "arch": ["x64"] }
+    ],
+    "executableName": "infinity-notes",
+    "icon": "resources/icon.png",
+    "category": "Office",
+    "synopsis": "Offline notes, stickies and reminders",
+    "maintainer": "Infinity Notes <noreply@infinity-notes.invalid>",
+    "artifactName": "infinity-notes-${version}-${arch}-unsigned.${ext}"
+  }
+}

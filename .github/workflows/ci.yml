@@ -1,0 +1,61 @@
+name: ci
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.15.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run setup:electron
+      # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor; a root-owned SUID chrome-sandbox
+      # keeps the Chromium sandbox enabled. Xvfb provides a virtual display (application logic only).
+      - name: Linux prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      - run: npm run check
+      - run: npm run build
+      - run: npm run verify:native
+      - run: npm run test:e2e
+      - run: npm run package:current
+      - name: Linux packaged sandbox helper
+        if: runner.os == 'Linux'
+        run: |
+          sudo chown root:root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
+      - run: npm run verify:native -- --packaged
+      - run: npm run test:e2e:packaged
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infinity-notes-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+            release/artifacts.json
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+# Limitations: headless CI validates application logic only. Native notifications, tray, compositor
+# window behavior and Windows toast identity need real desktop sessions (Phase 09 NATIVE_OS_MATRIX).
+# Builds are unsigned local builds; nothing is published.
