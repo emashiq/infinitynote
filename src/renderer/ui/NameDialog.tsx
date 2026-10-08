@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from 'react';
-import { validateName } from '../../shared/names';
+import { normalizeName, validateName } from '../../shared/names';
 import { Dialog } from './Dialog';
 
 export function NameDialog({
@@ -23,7 +23,7 @@ export function NameDialog({
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const message = validateName(value.normalize('NFC').trim());
+    const message = validateName(normalizeName(value));
     if (message) {
       setError(message);
       return;

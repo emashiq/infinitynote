@@ -78,4 +78,71 @@ export class NotesRepo {
       )
       .get(id);
   }
+
+  /** What a save needs to know about the stored note. */
+  getSaveState(id: string): SaveStateRow | undefined {
+    return this.db.prepare<[string], SaveStateRow>('SELECT format, revision, deleted_at FROM notes WHERE id = ?').get(id);
+  }
+
+  /** Writes new content (and the title when given) as the next revision. */
+  writeContent(input: WriteContentInput): void {
+    this.db
+      .prepare<[string | null, string | null, string, string | null, number, number, string]>(
+        'UPDATE notes SET content_json = ?, content_text = ?, plain_text = ?, title = COALESCE(?, title), revision = ?, updated_at = ? WHERE id = ?',
+      )
+      .run(
+        input.format === 'rich' ? input.content : null,
+        input.format === 'plain' ? input.content : null,
+        input.plainText,
+        input.title ?? null,
+        input.revision,
+        input.now,
+        input.id,
+      );
+  }
+
+  insertDraft(draft: DraftInput): void {
+    this.db
+      .prepare<[string, string, string, number, string, string | null, string, string, number]>(
+        'INSERT INTO note_drafts(id, note_id, view_id, base_revision, format, title, content, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(draft.id, draft.noteId, draft.viewId, draft.baseRevision, draft.format, draft.title ?? null, draft.content, draft.reason, draft.now);
+  }
+
+  /** 'live' or 'trashed' for each of the ids that still exists. */
+  states(ids: readonly string[]): Map<string, 'live' | 'trashed'> {
+    const rows = this.db
+      .prepare<[string], { id: string; deleted_at: number | null }>('SELECT id, deleted_at FROM notes WHERE id IN (SELECT value FROM json_each(?))')
+      .all(JSON.stringify(ids));
+    return new Map(rows.map((r) => [r.id, r.deleted_at === null ? 'live' : 'trashed']));
+  }
+}
+
+export interface SaveStateRow {
+  format: 'rich' | 'plain';
+  revision: number;
+  deleted_at: number | null;
+}
+
+export interface WriteContentInput {
+  id: string;
+  format: 'rich' | 'plain';
+  /** Serialized content: document JSON for rich notes, the text for plain notes. */
+  content: string;
+  plainText: string;
+  title?: string;
+  revision: number;
+  now: number;
+}
+
+export interface DraftInput {
+  id: string;
+  noteId: string;
+  viewId: string;
+  baseRevision: number;
+  format: 'rich' | 'plain';
+  title?: string;
+  content: string;
+  reason: 'conflict' | 'lease_lost';
+  now: number;
 }

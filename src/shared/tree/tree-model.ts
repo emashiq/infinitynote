@@ -1,4 +1,4 @@
-import type { FolderTargetType, LocationType, NoteColorType, TreeSnapshotType, TrashItemType } from '../contracts/hierarchy';
+import type { LocationType, NoteColorType, TreeSnapshotType, TrashItemType } from '../contracts/hierarchy';
 import { COMMON_LABEL, displayTitle } from '../names';
 
 export type NodeKey = string;
@@ -18,11 +18,11 @@ export interface TreeNode {
   entity?: 'project' | 'folder' | 'note';
   parentKey: NodeKey | null;
   childKeys: NodeKey[];
-  location?: LocationType | FolderTarget;
+  /** Where items created at this node go (Common, project, folder and note nodes). */
+  location?: LocationType;
   targetKey?: NodeKey;
   trash?: TrashItemType;
 }
-type FolderTarget = FolderTargetType;
 
 export interface TreeModel {
   nodes: Map<NodeKey, TreeNode>;
@@ -60,15 +60,14 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
     return node;
   };
 
-  const common = add({ key: 'common', kind: 'common', label: COMMON_LABEL, parentKey: null, location: { projectId: null, folderId: null } });
+  add({ key: 'common', kind: 'common', label: COMMON_LABEL, parentKey: null, location: { projectId: null, folderId: null } });
   const projectsGroup = add({ key: 'projects', kind: 'group', label: 'Projects', parentKey: null });
   const trashGroup = add({ key: 'trash', kind: 'group', label: 'Trash', parentKey: null });
 
-  const sortables = new Map<NodeKey, Sortable[]>();
-  const push = (parent: NodeKey, s: Sortable) => {
-    const l = sortables.get(parent);
+  const push = (lists: Map<NodeKey, Sortable[]>, parent: NodeKey, s: Sortable) => {
+    const l = lists.get(parent);
     if (l) l.push(s);
-    else sortables.set(parent, [s]);
+    else lists.set(parent, [s]);
   };
 
   const projectSort: Sortable[] = [];
@@ -89,7 +88,8 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
 
   const folderKeys = new Set(snapshot.folders.map((f) => `folder:${f.id}`));
   const scopeKey = (projectId: string | null) => (projectId === null ? 'common' : `project:${projectId}`);
-  // folders first, then notes, under each parent
+  // Under each parent: folders first, then notes, each sorted by label.
+  const folderSort = new Map<NodeKey, Sortable[]>();
   for (const f of snapshot.folders) {
     const key = `folder:${f.id}`;
     const parentKey = f.parentId !== null && folderKeys.has(`folder:${f.parentId}`) ? `folder:${f.parentId}` : scopeKey(f.projectId);
@@ -102,7 +102,7 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
       parentKey,
       location: { projectId: f.projectId, folderId: f.id },
     });
-    push(parentKey, { key, label: f.name, createdAt: f.createdAt, id: f.id });
+    push(folderSort, parentKey, { key, label: f.name, createdAt: f.createdAt, id: f.id });
   }
   const noteSort = new Map<NodeKey, Sortable[]>();
   for (const n of snapshot.notes) {
@@ -121,12 +121,9 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
       parentKey,
       location: { projectId: n.projectId, folderId: n.folderId },
     });
-    const l = noteSort.get(parentKey);
-    const s = { key, label, createdAt: n.createdAt, id: n.id };
-    if (l) l.push(s);
-    else noteSort.set(parentKey, [s]);
+    push(noteSort, parentKey, { key, label, createdAt: n.createdAt, id: n.id });
   }
-  for (const [parent, list] of sortables) {
+  for (const [parent, list] of folderSort) {
     const node = nodes.get(parent);
     if (node) node.childKeys = sortKeys(list);
   }
@@ -134,9 +131,6 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
     const node = nodes.get(parent);
     if (node) node.childKeys = [...node.childKeys, ...sortKeys(list)];
   }
-  // project nodes under "projects" were assigned before folders/notes; keep them
-  projectsGroup.childKeys = sortKeys(projectSort);
-
   // trash
   const sortedTrash = [...trashItems].sort((a, b) => b.deletedAt - a.deletedAt || (a.batchId < b.batchId ? -1 : 1));
   for (const t of sortedTrash) {
@@ -185,7 +179,6 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
     roots.push('favorites');
   }
   roots.push('common', 'projects', 'trash');
-  void common;
   return { nodes, roots };
 }
 
@@ -260,7 +253,7 @@ export function locationOfNode(model: TreeModel, key: NodeKey): LocationType | n
   if (!node) return null;
   if (node.kind === 'favorite') return node.targetKey ? locationOfNode(model, node.targetKey) : null;
   if (node.kind === 'common' || node.kind === 'project' || node.kind === 'folder' || node.kind === 'note') {
-    return (node.location as LocationType | undefined) ?? null;
+    return node.location ?? null;
   }
   return null;
 }

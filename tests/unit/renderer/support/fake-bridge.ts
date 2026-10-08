@@ -410,9 +410,10 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
         set = new Set();
         subscribers.set(channel, set);
       }
-      set.add(cb);
+      const listener = cb as (payload: unknown) => void;
+      set.add(listener);
       return () => {
-        set.delete(cb);
+        set.delete(listener);
       };
     },
   };

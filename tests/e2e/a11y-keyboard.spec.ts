@@ -181,8 +181,8 @@ test('tabs keyboard-only', async () => {
     await row.focus();
     await page.keyboard.press('Enter');
   }
-  expect(await tabLabels(page)).toEqual(['Home', 'Key one', 'Key two']);
-  expect(await activeTabLabel(page)).toBe('Key two');
+  await expect.poll(() => tabLabels(page)).toEqual(['Home', 'Key one', 'Key two']);
+  await expect.poll(() => activeTabLabel(page)).toBe('Key two');
   await page.keyboard.press('Control+Shift+Tab');
   await expect.poll(() => activeTabLabel(page)).toBe('Key one');
   await page.keyboard.press('Control+Tab');
@@ -191,7 +191,7 @@ test('tabs keyboard-only', async () => {
   await expect.poll(() => tabLabels(page)).toEqual(['Home', 'Key one']);
   await page.keyboard.press('Control+W');
   await expect.poll(() => tabLabels(page)).toEqual(['Home']);
-  expect(await activeTabLabel(page)).toBe('Home');
+  await expect.poll(() => activeTabLabel(page)).toBe('Home');
 });
 
 test('accessibility structure on every view', async () => {

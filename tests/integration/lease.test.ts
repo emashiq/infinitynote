@@ -5,13 +5,13 @@ import { AppError } from '../../src/main/services/app-error';
 import { LeaseManager, type LeaseHolder } from '../../src/main/services/lease-manager';
 import { NoteWriter } from '../../src/main/services/note-writer';
 import type { NoteLeaseEventType } from '../../src/shared/contracts/notes';
-import { fixedClock, openFresh, seqIds } from './helpers';
+import { fixedClock, openFresh, randomIds } from './helpers';
 
 function mk() {
   const events: NoteLeaseEventType[] = [];
   const releaseRequests: Array<{ holder: LeaseHolder; noteId: string }> = [];
   const leases = new LeaseManager({
-    ids: seqIds(),
+    ids: randomIds(),
     clock: fixedClock(),
     requestRelease: (holder, noteId) => releaseRequests.push({ holder, noteId }),
     emit: (e) => events.push(e),
@@ -124,7 +124,7 @@ describe('lease and save integration', () => {
     vi.useRealTimers();
     const t = await openFresh();
     const clock = fixedClock();
-    const ids = seqIds();
+    const ids = randomIds();
     const leases = new LeaseManager({ ids, clock, requestRelease: () => {}, emit: () => {}, takeTimeoutMs: 5 });
     const writer = new NoteWriter({ db: t.db, leases, clock, ids, emit: () => {} });
     const noteId = randomUUID();

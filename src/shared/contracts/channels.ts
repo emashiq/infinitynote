@@ -52,12 +52,12 @@ import {
 
 const Empty = z.strictObject({});
 
-export interface ChannelSchema {
+interface ChannelSchema {
   request: z.ZodType;
   response: z.ZodType;
 }
 
-export const CHANNEL_SCHEMAS: Record<InvokeChannel, ChannelSchema> = {
+export const CHANNEL_SCHEMAS = {
   'app:getInfo': { request: Empty, response: AppInfo },
   'app:showDataFolder': { request: Empty, response: z.strictObject({ opened: z.literal(true) }) },
   'app:quit': { request: Empty, response: Empty },
@@ -89,9 +89,20 @@ export const CHANNEL_SCHEMAS: Record<InvokeChannel, ChannelSchema> = {
   'note:save': { request: NoteSaveRequest, response: NoteSaveAck },
   'lease:acquire': { request: LeaseAcquireRequest, response: LeaseAcquireResponse },
   'lease:release': { request: LeaseReleaseRequest, response: LeaseReleaseResponse },
-};
+} as const satisfies Record<InvokeChannel, ChannelSchema>;
 
-export const EVENT_SCHEMAS: Record<EventChannel, z.ZodType> = {
+export const EVENT_SCHEMAS = {
   'settings:changed': SettingsChangedEvent,
   'tree:changed': TreeChangedEvent,
-};
+} as const satisfies Record<EventChannel, z.ZodType>;
+
+type ChannelSchemas = typeof CHANNEL_SCHEMAS;
+
+/** What a renderer sends on an invoke channel (before main parses it). */
+export type ChannelInput<C extends InvokeChannel> = z.input<ChannelSchemas[C]['request']>;
+/** The parsed request a main-process handler receives. */
+export type ChannelRequest<C extends InvokeChannel> = z.output<ChannelSchemas[C]['request']>;
+/** The data a handler returns and the renderer receives. */
+export type ChannelResponse<C extends InvokeChannel> = z.output<ChannelSchemas[C]['response']>;
+/** The payload of a main-to-renderer event. */
+export type EventPayload<C extends EventChannel> = z.output<(typeof EVENT_SCHEMAS)[C]>;

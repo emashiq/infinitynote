@@ -12,7 +12,8 @@ Model roles are configured as native project agents in `.claude/agents/` (mirror
 | --- | --- | --- | --- |
 | infinity-planner | claude-opus-5-5 | high | Phase plans (`docs/plans/phase-XX.md`) |
 | infinity-code-low | claude-sonnet-5-5 | low | Phase 02 straightforward shell UI only |
-| infinity-code-medium | claude-sonnet-5-5 | medium | Core logic, tests and all repairs |
+| infinity-code-medium | claude-sonnet-5-5 | medium | Core logic, tests and all repairs (Phases 00–02 only; superseded) |
+| infinity-code-opus | claude-opus-5-5 | high | All implementation, cleanup and repairs from Phase 03 onward |
 | infinity-qa | claude-sonnet-5-5 | medium | Fresh independent review; never edits app source |
 | infinity-acceptor | claude-opus-5-5 | high | Phase acceptance (`docs/progress/phase-XX-acceptance.md`) |
 
@@ -36,6 +37,8 @@ Never promise notifications while fully quit or guaranteed window positioning un
 - **No Python dependency.** Do not install or require Python. The final organizer is the Node port `tools/finalize-docs.mjs` (same behavior as the pack's `finalize_docs.py`): run `node tools/finalize-docs.mjs --repo .`.
 - **Linux validation happens in WSL.** WSL2 Ubuntu 26.04 LTS with WSLg is the Linux build/test/native-validation environment (AppImage/.deb build, install, launch, E2E, windows, notifications). Build from a copy on the WSL ext4 filesystem (e.g. `~/infinity-notes`), never share `node_modules` across OSes. Record the actual compositor (WSLg/Weston) and versions in evidence; do not label WSLg results as GNOME. Cases that only exist on GNOME/X11 desktops are recorded as outside the user-selected validation scope, not as passes.
 - **Commit after each accepted phase.** When the acceptor accepts phase XX and the checkpoint is updated, commit all phase work on the current branch with message `Phase XX: <title>` and the attribution trailer from the session. Never push. Never commit `.infinity-work/`, build output or user data (see .gitignore). The first commit (Phase 00) also includes the bootstrap files (CLAUDE.md, .gitignore, .claude/, tools/, the pack).
+
+- **Opus implementation (2026-10-08).** From Phase 03 onward all application implementation, cleanup and repairs use `infinity-code-opus` (Opus 5.5, high effort) with clean, well-structured code. Sonnet's partial Phase 03 work was discarded (kept as a patch under `.infinity-work/discarded/`) and Phase 03 is rebuilt from the Phase 02 commit. Before Phase 03, an Opus cleanup pass reviews and refactors the accepted Phase 01–02 code, re-running all gates. Planner, QA and acceptor roles are unchanged.
 
 ## Host notes (Windows development machine)
 

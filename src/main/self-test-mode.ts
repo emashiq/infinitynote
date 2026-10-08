@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runSqliteSelfTest } from './db/self-test';
+import { errorMessage } from './services/app-error';
 
 const REPORT_PREFIX = '--self-test-report=';
 
@@ -52,7 +53,7 @@ export function runSelfTestMode(argv: readonly string[]): void {
       fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
       process.stdout.write(`INFINITY_SELF_TEST ${JSON.stringify(report)}\n`);
     } catch (err) {
-      process.stderr.write(`self-test crashed: ${err instanceof Error ? err.message : String(err)}\n`);
+      process.stderr.write(`self-test crashed: ${errorMessage(err)}\n`);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }

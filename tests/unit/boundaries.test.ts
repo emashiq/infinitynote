@@ -46,7 +46,13 @@ describe('import boundaries', () => {
     const preload = fs.readFileSync('src/preload/index.ts', 'utf8');
     expect(preload).not.toMatch(/lease:take|note:revision|note:lease|lease:release-request|note:convertFormat/);
     expect(preload).not.toMatch(/exposeInMainWorld\('(?!infinity')/);
-    const handlers = fs.readdirSync('src/main/ipc/handlers').map((f) => fs.readFileSync(`src/main/ipc/handlers/${f}`, 'utf8')).join('\n');
-    expect(handlers).not.toMatch(/channel: '(lease:take|note:revision|note:lease|lease:release-request|note:convertFormat)'/);
+    const ipcSources = fs
+      .readdirSync('src/main/ipc', { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => fs.readFileSync(`src/main/ipc/${f}`, 'utf8'))
+      .join('\n');
+    // Positive control: the pattern below must be able to see how channels are registered.
+    expect(ipcSources).toContain("router.register('note:save'");
+    expect(ipcSources).not.toMatch(/'(lease:take|note:revision|note:lease|lease:release-request|note:convertFormat)'/);
   });
 });

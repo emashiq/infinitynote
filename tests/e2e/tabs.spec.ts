@@ -23,12 +23,12 @@ test('no duplicate tabs', async () => {
   await expect(tabItem(page, 'Alpha tab note')).toHaveAttribute('aria-selected', 'true');
   await openFromTree(page, a);
   await railGo(page, 'Home');
-  expect(await activeTabLabel(page)).toBe('Home');
+  await expect.poll(() => activeTabLabel(page)).toBe('Home');
   await activate(page.locator('.recent-row', { hasText: 'Alpha tab note' }));
-  expect(await activeTabLabel(page)).toBe('Alpha tab note');
+  await expect.poll(() => activeTabLabel(page)).toBe('Alpha tab note');
   await railGo(page, 'Home');
   await openByPalette(page, 'Alpha tab note');
-  expect(await activeTabLabel(page)).toBe('Alpha tab note');
+  await expect.poll(() => activeTabLabel(page)).toBe('Alpha tab note');
   await railGo(page, 'Home');
   const group = treeByKey(page, 'favorites');
   await group.focus();
@@ -36,9 +36,9 @@ test('no duplicate tabs', async () => {
   const fav = treeByKey(page, `fav:note:${a}`);
   await fav.focus();
   await fav.press('Enter');
-  expect(await activeTabLabel(page)).toBe('Alpha tab note');
+  await expect.poll(() => activeTabLabel(page)).toBe('Alpha tab note');
 
-  expect(await tabLabels(page)).toEqual(['Home', 'Alpha tab note']);
+  await expect.poll(() => tabLabels(page)).toEqual(['Home', 'Alpha tab note']);
   await expect.poll(() => storedSession()?.value.tabs.map((t) => t.id)).toEqual(['home', `note:${a}`]);
 });
 
@@ -50,11 +50,11 @@ test('ctrl+tab', async () => {
   await openFromTree(page, a);
   await openFromTree(page, b);
   await railGo(page, 'Settings');
-  expect(await tabLabels(page)).toEqual(['Home', 'Tab A', 'Tab B', 'Settings']);
+  await expect.poll(() => tabLabels(page)).toEqual(['Home', 'Tab A', 'Tab B', 'Settings']);
 
   // Pointer behavior: clicking a tab activates it.
   await tabItem(page, 'Tab B').click();
-  expect(await activeTabLabel(page)).toBe('Tab B');
+  await expect.poll(() => activeTabLabel(page)).toBe('Tab B');
   const seen: string[] = [];
   for (let i = 0; i < 4; i += 1) {
     await page.keyboard.press('Control+Tab');
@@ -83,13 +83,13 @@ test('keyboard tablist', async () => {
   await active.focus();
   await active.press('ArrowLeft');
   await expect(tabItem(page, 'Home')).toBeFocused();
-  expect(await activeTabLabel(page)).toBe('Key A');
+  await expect.poll(() => activeTabLabel(page)).toBe('Key A');
   await tabItem(page, 'Home').press('ArrowRight');
   await expect(active).toBeFocused();
   await active.press('ArrowRight');
   await expect(tabItem(page, 'Home')).toBeFocused();
   await tabItem(page, 'Home').press('Enter');
-  expect(await activeTabLabel(page)).toBe('Home');
+  await expect.poll(() => activeTabLabel(page)).toBe('Home');
   // Roving tabindex: exactly one tab is in the tab order.
   expect(await strip.getByRole('tab').evaluateAll((els) => els.filter((e) => (e as HTMLElement).tabIndex === 0).length)).toBe(1);
 });
@@ -104,20 +104,20 @@ test('close keeps note', async () => {
   }
   await reloadUi(page);
   for (const id of ids) await openFromTree(page, id);
-  expect(await tabLabels(page)).toEqual(['Home', 'Close A', 'Close B', 'Close C']);
+  await expect.poll(() => tabLabels(page)).toEqual(['Home', 'Close A', 'Close B', 'Close C']);
 
   await activate(tabItem(page, 'Close A'));
   await page.keyboard.press('Control+W');
   await expect(tabItem(page, 'Close A')).toHaveCount(0);
-  expect(await activeTabLabel(page)).toBe('Close B');
+  await expect.poll(() => activeTabLabel(page)).toBe('Close B');
 
   // Pointer behaviors: the close button and a middle click.
   await page.getByRole('button', { name: 'Close Close B' }).click();
   await expect(tabItem(page, 'Close B')).toHaveCount(0);
-  expect(await activeTabLabel(page)).toBe('Close C');
+  await expect.poll(() => activeTabLabel(page)).toBe('Close C');
   await tabItem(page, 'Close C').click({ button: 'middle' });
   await expect(tabItem(page, 'Close C')).toHaveCount(0);
-  expect(await activeTabLabel(page)).toBe('Home');
+  await expect.poll(() => activeTabLabel(page)).toBe('Home');
 
   const rows = h.all<{ id: string; deleted_at: number | null }>('SELECT id, deleted_at FROM notes');
   expect(rows).toHaveLength(3);
@@ -190,8 +190,8 @@ test('restore after relaunch', async () => {
   await expect.poll(() => storedSession()?.value.tabs.length).toBe(5);
 
   const second = await h.restart();
-  expect(await tabLabels(second.page)).toEqual(['Home', 'Rest A', 'Rest B', 'Stickies', 'Rest C']);
-  expect(await activeTabLabel(second.page)).toBe('Rest B');
+  await expect.poll(() => tabLabels(second.page)).toEqual(['Home', 'Rest A', 'Rest B', 'Stickies', 'Rest C']);
+  await expect.poll(() => activeTabLabel(second.page)).toBe('Rest B');
   await expect(second.page.getByLabel('Note text')).toHaveValue('body of B');
   await h.stop();
 
@@ -213,8 +213,8 @@ test('restore after relaunch', async () => {
     db.prepare("UPDATE settings SET value = ? WHERE key = 'session.tabs'").run(JSON.stringify(tampered));
   });
   const third = await h.start();
-  expect(await tabLabels(third.page)).toEqual(['Home', 'Rest A', 'Rest B']);
-  expect(await activeTabLabel(third.page)).toBe('Rest A');
+  await expect.poll(() => tabLabels(third.page)).toEqual(['Home', 'Rest A', 'Rest B']);
+  await expect.poll(() => activeTabLabel(third.page)).toBe('Rest A');
   await expect(toasts(third.page)).toHaveCount(0);
 });
 
@@ -228,7 +228,7 @@ test('trashed note tab closed', async () => {
   await reloadUi(page);
   await openFromTree(page, a);
   await openFromTree(page, b);
-  expect(await activeTabLabel(page)).toBe('Trash B');
+  await expect.poll(() => activeTabLabel(page)).toBe('Trash B');
 
   const row = treeByKey(page, `note:${b}`);
   await row.focus();
@@ -238,7 +238,7 @@ test('trashed note tab closed', async () => {
   await dialog.getByRole('button', { name: 'Move to Trash' }).focus();
   await page.keyboard.press('Enter');
   await expect(tabItem(page, 'Trash B')).toHaveCount(0);
-  expect(await activeTabLabel(page)).toBe('Keep A');
+  await expect.poll(() => activeTabLabel(page)).toBe('Keep A');
   await expect(toasts(page).filter({ hasText: '1 tab was closed because its note is in Trash' })).toBeVisible();
 
   const folderRow = treeByKey(page, `folder:${folder}`);
@@ -253,7 +253,7 @@ test('trashed note tab closed', async () => {
   await page.keyboard.press('Enter');
   await expect(tabs(page)).toHaveCount(2);
   await expect(toasts(page).filter({ hasText: '2 tabs were closed because their notes are in Trash' })).toBeVisible();
-  expect(await tabLabels(page)).toEqual(['Home', 'Keep A']);
+  await expect.poll(() => tabLabels(page)).toEqual(['Home', 'Keep A']);
 });
 
 test('session skips trashed and missing', async () => {
@@ -271,7 +271,7 @@ test('session skips trashed and missing', async () => {
     db.prepare('DELETE FROM notes WHERE id = ?').run(d);
   });
   const second = await h.start();
-  expect(await tabLabels(second.page)).toEqual(['Home', 'Stays E']);
+  await expect.poll(() => tabLabels(second.page)).toEqual(['Home', 'Stays E']);
   await expect(toasts(second.page).filter({ hasText: '2 tabs were closed because their notes are in Trash or no longer exist' })).toBeVisible();
   await expect.poll(() => storedSession()?.value.tabs.map((t) => t.id)).toEqual(['home', `note:${e}`]);
 });
@@ -282,19 +282,19 @@ test('page singletons', async () => {
     await railGo(page, name);
     await railGo(page, name);
   }
-  expect(await tabLabels(page)).toEqual(['Home', 'Stickies', 'Reminders', 'Settings']);
+  await expect.poll(() => tabLabels(page)).toEqual(['Home', 'Stickies', 'Reminders', 'Settings']);
   await railGo(page, 'Home');
   for (const label of ['Open Settings', 'Open Reminders', 'Open Stickies']) {
     await page.keyboard.press('Control+K');
     await page.getByRole('combobox').fill(label);
     await page.keyboard.press('Enter');
   }
-  expect(await tabLabels(page)).toEqual(['Home', 'Stickies', 'Reminders', 'Settings']);
-  expect(await activeTabLabel(page)).toBe('Stickies');
+  await expect.poll(() => tabLabels(page)).toEqual(['Home', 'Stickies', 'Reminders', 'Settings']);
+  await expect.poll(() => activeTabLabel(page)).toBe('Stickies');
   await activate(tabItem(page, 'Settings'));
   await page.keyboard.press('Control+W');
   await expect(tabItem(page, 'Settings')).toHaveCount(0);
   await expect.poll(() => storedSession()?.value.tabs.map((t) => t.id)).toEqual(['home', 'page:stickies', 'page:reminders']);
   const second = await h.restart();
-  expect(await tabLabels(second.page)).toEqual(['Home', 'Stickies', 'Reminders']);
+  await expect.poll(() => tabLabels(second.page)).toEqual(['Home', 'Stickies', 'Reminders']);
 });

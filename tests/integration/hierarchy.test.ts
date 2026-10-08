@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { CHANNEL_SCHEMAS } from '../../src/shared/contracts/channels';
-import { buildPathIndex } from '../../src/shared/tree/paths';
+import { livePathIndex } from '../../src/main/services/dto';
 import { prng, setupServices, thrown } from './hierarchy-helpers';
 
 describe('Common and projects (INF-HIER-01, INF-HIER-02)', () => {
@@ -158,10 +158,7 @@ describe('duplicate names (INF-HIER-06)', () => {
     const b = s.folder(w1.id, null, 'Specs');
     const n1 = s.note(w1.id, a.id, 'Plan');
     const n2 = s.note(w1.id, b.id, 'Plan');
-    const idx = buildPathIndex(
-      s.hierarchy.repo.liveProjects().map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at })),
-      s.hierarchy.repo.liveFolders().map((f) => ({ id: f.id, projectId: f.project_id, parentId: f.parent_id, name: f.name, createdAt: f.created_at })),
-    );
+    const idx = livePathIndex(s.repo);
     expect(idx.get(w1.id)).toEqual(['Work']);
     expect(idx.get(w2.id)).toEqual(['Work (2)']);
     expect(idx.get(a.id)).toEqual(['Work', 'Specs']);

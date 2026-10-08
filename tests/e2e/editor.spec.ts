@@ -62,8 +62,8 @@ test('text area save increments revision and survives relaunch', async () => {
   await expect(text).toBeFocused();
 
   const second = await h.restart();
-  expect(await tabLabels(second.page)).toEqual(['Home', 'Renamed by title field']);
-  expect(await activeTabLabel(second.page)).toBe('Renamed by title field');
+  await expect.poll(() => tabLabels(second.page)).toEqual(['Home', 'Renamed by title field']);
+  await expect.poll(() => activeTabLabel(second.page)).toBe('Renamed by title field');
   await expect(second.page.getByLabel('Note text')).toHaveValue('first line\n\nthird line after an empty line\nপ্রথম লাইন\nmore');
   expect(h.all('SELECT id FROM notes').map((r) => (r as { id: string }).id)).toEqual([id]);
 });

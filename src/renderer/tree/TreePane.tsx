@@ -1,6 +1,6 @@
 import { FolderPlus } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { validateName, validateTitle } from '../../shared/names';
+import { normalizeName, validateName, validateTitle } from '../../shared/names';
 import { flattenVisible, treeKeyAction, type TreeNode } from '../../shared/tree/tree-model';
 import { useServices, useStore } from '../state/use-store';
 import { IconButton } from '../ui/IconButton';
@@ -146,7 +146,7 @@ export function TreePane() {
     const real = state.model.nodes.get(effectiveKey(node)) ?? node;
     const id = real.id;
     if (!id) return null;
-    const next = value.normalize('NFC').trim();
+    const next = normalizeName(value);
     const message = real.kind === 'note' ? validateTitle(next) : validateName(next);
     if (message) return message;
     if (next === initialName(real)) {

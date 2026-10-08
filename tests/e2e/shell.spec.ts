@@ -42,7 +42,7 @@ test('rail navigation', async () => {
   expect(accent).toBe('rgb(106, 90, 224)');
   for (const name of ['Stickies', 'Reminders', 'Settings', 'Home'] as const) {
     await railGo(page, name);
-    expect(await activeTabLabel(page)).toBe(name);
+    await expect.poll(() => activeTabLabel(page)).toBe(name);
     const rail = primaryNav(page).getByRole('button', { name, exact: true });
     await expect(rail).toHaveAttribute('aria-current', 'page');
     expect(await rail.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(accentSoft);
@@ -255,7 +255,7 @@ test('visible focus', async () => {
   const tab = tabs(page).first();
   await tab.focus();
   expect(await tab.evaluate((el) => getComputedStyle(el).outlineOffset)).toBe('-2px');
-  expect(await tabLabels(page)).toEqual(['Home']);
+  await expect.poll(() => tabLabels(page)).toEqual(['Home']);
 });
 
 test('reloading the renderer leaves no extra main-process listeners', async () => {

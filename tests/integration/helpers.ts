@@ -50,7 +50,7 @@ export function fixedClock(start = 1_700_000_000_000): Clock & { advance(ms: num
   };
 }
 
-export function seqIds(): IdGenerator {
+export function randomIds(): IdGenerator {
   return { uuid: () => randomUUID() };
 }
 

@@ -1,4 +1,5 @@
 import type { InfinityBridge } from '../../shared/contracts/bridge';
+import type { ErrorEnvelope, Result } from '../../shared/contracts/envelope';
 import type {
   FolderTargetType,
   ItemKindType,
@@ -151,7 +152,7 @@ export class TreeStore {
   }
 
   // Helpers -----------------------------------------------------------------------
-  private fail(res: { error: { code: string; message: string } }): Outcome<never> {
+  private fail(res: { error: ErrorEnvelope }): Outcome<never> {
     return failOutcome(res.error.code, res.error.message);
   }
 
@@ -228,10 +229,7 @@ export class TreeStore {
   moveDestinations(forKey: NodeKey): MoveDestination[] {
     const { model, snapshot } = this.store.getState();
     const node = model.nodes.get(forKey);
-    const index = buildPathIndex(
-      snapshot.projects.map((p) => ({ id: p.id, name: p.name, createdAt: p.createdAt })),
-      snapshot.folders.map((f) => ({ id: f.id, projectId: f.projectId, parentId: f.parentId, name: f.name, createdAt: f.createdAt })),
-    );
+    const index = buildPathIndex(snapshot.projects, snapshot.folders);
     const folder = node?.kind === 'folder' && node.id ? snapshot.folders.find((f) => f.id === node.id) : undefined;
     const note = node?.kind === 'note' && node.id ? snapshot.notes.find((n) => n.id === node.id) : undefined;
     const isCurrent = (projectId: string | null, folderId: string | null): boolean => {
@@ -268,7 +266,8 @@ export class TreeStore {
   }
 
   // Trash ---------------------------------------------------------------------------
-  private async trash(call: () => Promise<{ ok: true; data: TrashResultType } | { ok: false; error: { code: string; message: string } }>): Promise<Outcome<TrashResultType>> {
+  /** Flushes the open note first so its pending text is saved before the note can leave with the batch. */
+  private async trash(call: () => Promise<Result<TrashResultType>>): Promise<Outcome<TrashResultType>> {
     await this.deps.tabs.flushActive();
     const res = await call();
     if (!res.ok) return this.fail(res);

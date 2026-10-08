@@ -49,7 +49,7 @@ test('actions and titles', async () => {
   const second = await options.nth(1).textContent();
   await page.keyboard.press('Enter');
   await expect(palette).toHaveCount(0);
-  expect(await activeTabLabel(page)).toBe('Plan');
+  await expect.poll(() => activeTabLabel(page)).toBe('Plan');
   await expect(tabs(page)).toHaveCount(2);
   const secondPath = second!.includes('Alpha') ? 'Alpha › Specs' : 'Beta';
   await expect(page.getByRole('main').getByText(secondPath, { exact: true }).first()).toBeVisible();

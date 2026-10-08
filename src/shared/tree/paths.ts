@@ -13,6 +13,9 @@ export interface PathFolder {
   createdAt: number;
 }
 
+/** Project or folder id -> display path segments. */
+export type PathIndex = ReadonlyMap<string, string[]>;
+
 export const MAX_PATH_DEPTH = 64;
 
 type Named = { id: string; name: string; createdAt: number };
@@ -38,7 +41,7 @@ function disambiguate(siblings: Named[]): Map<string, string> {
  * Builds id -> path for every project and folder. A project path is [segment]; a folder path is
  * [project segment or "Common", ...ancestor folder segments, own segment].
  */
-export function buildPathIndex(projects: readonly PathProject[], folders: readonly PathFolder[]): Map<string, string[]> {
+export function buildPathIndex(projects: readonly PathProject[], folders: readonly PathFolder[]): PathIndex {
   const segments = new Map<string, string>();
   for (const [id, seg] of disambiguate([...projects])) segments.set(id, seg);
 
@@ -71,10 +74,7 @@ export function buildPathIndex(projects: readonly PathProject[], folders: readon
 }
 
 /** Path of a note or new-item location: its folder's path, else the scope root. */
-export function pathOf(
-  index: ReadonlyMap<string, string[]>,
-  location: { projectId: string | null; folderId: string | null },
-): string[] {
+export function pathOf(index: PathIndex, location: { projectId: string | null; folderId: string | null }): string[] {
   if (location.folderId !== null) {
     const p = index.get(location.folderId);
     if (p) return p;

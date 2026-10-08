@@ -46,6 +46,8 @@ export async function launchApp(options: { userDataDir: string; extraEnv?: Recor
     executablePath: packaged ? packagedExe : undefined,
     args: [...(packaged ? [] : [repoRoot]), ...splitArgs(process.env.INFINITY_NOTES_E2E_ELECTRON_ARGS), ...(options.extraArgs ?? [])],
     env: appEnv(options.userDataDir, options.extraEnv),
+    // Without this Playwright adds --no-sandbox on Linux, and the suite would test an unsandboxed app.
+    chromiumSandbox: true,
     timeout: 60_000,
   });
   const page = await app.firstWindow();
@@ -78,6 +80,43 @@ export async function waitForExit(proc: ChildProcess, timeoutMs = 10_000): Promi
       resolve(true);
     });
   });
+}
+
+export interface RendererSandbox {
+  /** Whether the OS confirms that the main window's renderer process runs in the Chromium sandbox. */
+  osSandboxed: boolean;
+  /** The raw OS evidence, for failure messages and logs. */
+  evidence: string;
+}
+
+/**
+ * Asks the OS whether the main window's renderer really runs in the Chromium sandbox. webPreferences.sandbox
+ * and the --enable-sandbox renderer switch stay set under --no-sandbox, so neither can tell.
+ * - Linux: --no-sandbox drops the namespace sandbox while seccomp-bpf stays (measured under WSLg), so the
+ *   renderer must have its own user and PID namespaces and a seccomp filter ("Seccomp: 2").
+ * - Windows: Electron's process metrics report whether the renderer process is sandboxed.
+ */
+export async function rendererSandbox(app: ElectronApplication): Promise<RendererSandbox> {
+  const info = await app.evaluate(({ app: electronApp, BrowserWindow }) => {
+    const pid = BrowserWindow.getAllWindows()[0]!.webContents.getOSProcessId();
+    const metric = electronApp.getAppMetrics().find((m) => m.pid === pid);
+    return { pid, sandboxed: metric?.sandboxed ?? null, integrityLevel: metric?.integrityLevel ?? null };
+  });
+  if (process.platform === 'linux') {
+    const mainPid = app.process().pid;
+    const ns = (pid: number | undefined, kind: string) => fs.readlinkSync(`/proc/${pid}/ns/${kind}`);
+    const ownUserNs = ns(info.pid, 'user') !== ns(mainPid, 'user');
+    const ownPidNs = ns(info.pid, 'pid') !== ns(mainPid, 'pid');
+    const seccomp = /^Seccomp:\s*(\d+)/m.exec(fs.readFileSync(`/proc/${info.pid}/status`, 'utf8'))?.[1] ?? 'missing';
+    return {
+      osSandboxed: ownUserNs && ownPidNs && seccomp === '2',
+      evidence: `pid=${info.pid} ownUserNamespace=${ownUserNs} ownPidNamespace=${ownPidNs} Seccomp=${seccomp}`,
+    };
+  }
+  return {
+    osSandboxed: info.sandboxed === true,
+    evidence: `pid=${info.pid} sandboxed=${String(info.sandboxed)} integrity=${String(info.integrityLevel)}`,
+  };
 }
 
 export function dbFileOf(userDataDir: string): string {

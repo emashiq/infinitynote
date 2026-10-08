@@ -31,7 +31,7 @@ export function createCommandRunner(services: Pick<AppServices, 'tree' | 'tabs' 
     const t = tree.store.getState();
     const session = tabs.store.getState().session;
     const activeTab = session.tabs.find((x) => x.id === session.activeTabId) ?? { id: 'home' as const, kind: 'home' as const };
-    const activeNote = activeTab.kind === 'note' ? (t.model.nodes.get(`note:${activeTab.noteId}`)?.location as LocationType | undefined) ?? null : null;
+    const activeNote = activeTab.kind === 'note' ? (t.model.nodes.get(`note:${activeTab.noteId}`)?.location ?? null) : null;
     return resolveNewItemLocation({
       treeHasFocus: t.hasFocus,
       selectedKey: t.selectedKey,

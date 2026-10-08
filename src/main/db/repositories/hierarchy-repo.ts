@@ -1,3 +1,4 @@
+import type { HomeScopeType } from '../../../shared/contracts/home';
 import type { Db } from '../driver';
 
 export const MAX_FOLDER_DEPTH = 32;
@@ -51,6 +52,12 @@ const SUBTREE_CTE = `WITH RECURSIVE sub(id, depth) AS (
   UNION ALL
   SELECT f.id, sub.depth + 1 FROM folders f JOIN sub ON f.parent_id = sub.id WHERE sub.depth < ${CTE_GUARD}
 )`;
+
+function scopeFilter(scope: HomeScopeType): { where: string; args: string[] } {
+  if (scope.kind === 'common') return { where: ' AND project_id IS NULL', args: [] };
+  if (scope.kind === 'project') return { where: ' AND project_id = ?', args: [scope.projectId] };
+  return { where: '', args: [] };
+}
 
 export class HierarchyRepo {
   constructor(private readonly db: Db) {}
@@ -163,7 +170,8 @@ export class HierarchyRepo {
     this.db
       .prepare<[string | null, string | null, number, string]>('UPDATE folders SET parent_id = ?, project_id = ?, updated_at = ? WHERE id = ?')
       .run(parentId, projectId, now, folderId);
-    const ids = JSON.stringify(this.subtreeIds(folderId));
+    const subtree = this.subtreeIds(folderId);
+    const ids = JSON.stringify(subtree);
     this.db
       .prepare<[string | null, string, string]>(
         'UPDATE folders SET project_id = ? WHERE id IN (SELECT value FROM json_each(?)) AND id <> ?',
@@ -172,10 +180,45 @@ export class HierarchyRepo {
     const notes = this.db
       .prepare<[string | null, string]>('UPDATE notes SET project_id = ? WHERE folder_id IN (SELECT value FROM json_each(?))')
       .run(projectId, ids);
-    return { folders: (JSON.parse(ids) as string[]).length, notes: notes.changes };
+    return { folders: subtree.length, notes: notes.changes };
+  }
+
+  // Home ---------------------------------------------------------------------
+  /** Live pinned notes in the scope, most recently pinned first. */
+  pinnedNotes(scope: HomeScopeType, limit: number): NoteMetaRow[] {
+    const { where, args } = scopeFilter(scope);
+    return this.db
+      .prepare<string[], NoteMetaRow>(
+        `SELECT ${NOTE_META_COLS} FROM notes WHERE deleted_at IS NULL AND pinned_at IS NOT NULL${where} ORDER BY pinned_at DESC, id LIMIT ${limit}`,
+      )
+      .all(...args);
+  }
+
+  countPinned(scope: HomeScopeType): number {
+    const { where, args } = scopeFilter(scope);
+    const row = this.db
+      .prepare<string[], { n: number }>(`SELECT count(*) AS n FROM notes WHERE deleted_at IS NULL AND pinned_at IS NOT NULL${where}`)
+      .get(...args);
+    return row?.n ?? 0;
+  }
+
+  /** Live notes in the scope, most recently updated first. */
+  recentNotes(scope: HomeScopeType, limit: number): NoteMetaRow[] {
+    const { where, args } = scopeFilter(scope);
+    return this.db
+      .prepare<string[], NoteMetaRow>(
+        `SELECT ${NOTE_META_COLS} FROM notes WHERE deleted_at IS NULL${where} ORDER BY updated_at DESC, id LIMIT ${limit}`,
+      )
+      .all(...args);
   }
 
   // Invariants (8.1) ---------------------------------------------------------
+  /** Throws when the hierarchy breaks an invariant; called inside write transactions so the change rolls back. */
+  assertInvariants(): void {
+    const violation = this.findInvariantViolation();
+    if (violation) throw new Error(`invariant violated: ${violation}`);
+  }
+
   findInvariantViolation(): string | null {
     const one = (sql: string): string | null => {
       const row = this.db.prepare<[], { id: string }>(`${sql} LIMIT 1`).get();

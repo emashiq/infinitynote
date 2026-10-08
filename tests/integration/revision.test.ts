@@ -5,14 +5,14 @@ import { AppError } from '../../src/main/services/app-error';
 import { LeaseManager } from '../../src/main/services/lease-manager';
 import { NoteWriter } from '../../src/main/services/note-writer';
 import { MAX_CONTENT_BYTES, type NoteRevisionEventType, type NoteSaveRequestType } from '../../src/shared/contracts/notes';
-import { fixedClock, openFresh, seqIds } from './helpers';
+import { fixedClock, openFresh, randomIds } from './helpers';
 
 const WC = 7;
 
 async function setup() {
   const t = await openFresh();
   const clock = fixedClock();
-  const ids = seqIds();
+  const ids = randomIds();
   const revisions: NoteRevisionEventType[] = [];
   const leases = new LeaseManager({ ids, clock, requestRelease: () => {}, emit: () => {} });
   const writer = new NoteWriter({ db: t.db, leases, clock, ids, emit: (e) => revisions.push(e) });

@@ -17,7 +17,7 @@ export function effectiveKey(node: TreeNode): string {
 export async function createNoteAt(services: AppServices, key: string, sticky: boolean): Promise<void> {
   const location = services.tree.locationFor(key);
   if (!location) return;
-  const res = await services.tree.createNote({ projectId: location.projectId, folderId: location.folderId }, { sticky });
+  const res = await services.tree.createNote(location, { sticky });
   if (!report(services, res)) return;
   await services.tabs.openNote(res.data.note.id);
   services.ui.requestFocus({ target: 'noteTitle', noteId: res.data.note.id });

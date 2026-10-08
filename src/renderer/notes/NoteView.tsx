@@ -19,7 +19,8 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
   const title = typed ?? liveTitle;
   const titleRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
-  const savedScroll = (session.tabs.find((t) => t.id === tabId) as { scrollTop?: number } | undefined)?.scrollTop ?? 0;
+  const tab = session.tabs.find((t) => t.id === tabId);
+  const savedScroll = tab?.kind === 'note' ? (tab.scrollTop ?? 0) : 0;
 
   // Follow renames from elsewhere (tree, other windows) unless the field has focus: in-progress typing is never replaced.
   useEffect(() => {

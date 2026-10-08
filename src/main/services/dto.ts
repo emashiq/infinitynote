@@ -1,9 +1,6 @@
 import type { FolderDtoType, NoteColorType, NoteDtoType, NoteSummaryType, ProjectDtoType } from '../../shared/contracts/hierarchy';
-import { pathOf } from '../../shared/tree/paths';
-import type { Db } from '../db/driver';
-import type { FolderRow, NoteMetaRow, ProjectRow } from '../db/repositories/hierarchy-repo';
-import { AppError } from './app-error';
-import type { Logger } from './logger';
+import { buildPathIndex, pathOf, type PathIndex } from '../../shared/tree/paths';
+import type { FolderRow, HierarchyRepo, NoteMetaRow, ProjectRow } from '../db/repositories/hierarchy-repo';
 
 export const toProjectDto = (r: ProjectRow): ProjectDtoType => ({
   id: r.id,
@@ -37,28 +34,20 @@ export const toNoteDto = (r: NoteMetaRow): NoteDtoType => ({
   updatedAt: r.updated_at,
 });
 
-export const toNoteSummary = (r: NoteMetaRow, index: ReadonlyMap<string, string[]>): NoteSummaryType => ({
+export const toNoteSummary = (r: NoteMetaRow, index: PathIndex): NoteSummaryType => ({
   ...toNoteDto(r),
   path: pathOf(index, { projectId: r.project_id, folderId: r.folder_id }),
 });
 
-/** Runs fn in an immediate transaction; non-AppError failures become INTERNAL with nothing changed. */
-export function runTx<T>(db: Db, logger: Logger | undefined, fn: () => T): T {
-  try {
-    return db.transaction(fn, 'immediate');
-  } catch (err) {
-    if (err instanceof AppError) throw err;
-    logger?.error(`hierarchy: transaction failed ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
-    throw new AppError('INTERNAL', 'Something went wrong');
-  }
+/** Display paths for the given project and folder rows. */
+export function pathIndexFromRows(projects: readonly ProjectRow[], folders: readonly FolderRow[]): PathIndex {
+  return buildPathIndex(
+    projects.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at })),
+    folders.map((f) => ({ id: f.id, projectId: f.project_id, parentId: f.parent_id, name: f.name, createdAt: f.created_at })),
+  );
 }
 
-export const MSG = {
-  cycle: 'A folder cannot be moved into itself or one of its subfolders.',
-  depth: 'Folders can be nested at most 32 levels deep.',
-  inTrash: 'That location is in Trash.',
-  missing: 'That item no longer exists.',
-  noteInTrash: 'This note is in Trash',
-  scope: 'That folder belongs to a different scope.',
-  noBatch: 'That item is no longer in Trash.',
-} as const;
+/** Display paths of every live project and folder. */
+export function livePathIndex(repo: HierarchyRepo): PathIndex {
+  return pathIndexFromRows(repo.liveProjects(), repo.liveFolders());
+}

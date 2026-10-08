@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { StartupErrorCodeType } from '../../shared/contracts/app';
-import type { Logger } from '../services/logger';
-import { nullLogger } from '../services/logger';
+import { errorMessage } from '../services/app-error';
+import { nullLogger, type Logger } from '../services/logger';
 import { openBetterSqlite } from './better-sqlite3-driver';
 import type { Db, OpenOptions } from './driver';
 import { MigrationError, migrateDatabase } from './migrate';
@@ -51,10 +51,6 @@ function pruneCopies(dir: string): void {
   for (const old of files.slice(0, Math.max(0, files.length - KEEP_PRE_MIGRATION_COPIES))) {
     fs.rmSync(path.join(dir, old), { force: true });
   }
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 export async function openDatabase(options: OpenDatabaseOptions): Promise<DbOpenResult> {

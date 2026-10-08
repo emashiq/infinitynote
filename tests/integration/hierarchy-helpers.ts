@@ -1,39 +1,31 @@
 import { expect } from 'vitest';
 import type { TreeChangedEventType } from '../../src/shared/contracts/hierarchy';
-import { SettingsRepo } from '../../src/main/db/repositories/settings-repo';
-import { HierarchyService } from '../../src/main/services/hierarchy-service';
-import { HomeService } from '../../src/main/services/home-service';
-import { LeaseManager } from '../../src/main/services/lease-manager';
+import { HierarchyRepo } from '../../src/main/db/repositories/hierarchy-repo';
+import { createMainServices } from '../../src/main/main-services';
 import { memoryLogger } from '../../src/main/services/logger';
-import { NoteReader } from '../../src/main/services/note-reader';
-import { NoteWriter } from '../../src/main/services/note-writer';
-import { PaletteService } from '../../src/main/services/palette-service';
-import { SessionService } from '../../src/main/services/session-service';
-import { SettingsService } from '../../src/main/services/settings-service';
-import { TrashService } from '../../src/main/services/trash-service';
-import { fixedClock, openFresh, seqIds } from './helpers';
+import { fixedClock, openFresh, randomIds } from './helpers';
 
-/** Real services over a fresh temp database with an injectable clock. */
+/** The production service graph (createMainServices) over a fresh temp database with an injectable clock. */
 export async function setupServices() {
   const t = await openFresh();
   const clock = fixedClock(1_800_000_000_000);
-  const ids = seqIds();
+  const ids = randomIds();
   const logger = memoryLogger();
   const events: TreeChangedEventType[] = [];
-  const onChange = (e: TreeChangedEventType) => events.push(e);
-  const hierarchy = new HierarchyService({ db: t.db, clock, ids, logger, onChange });
-  const trash = new TrashService({ db: t.db, clock, ids, logger, onChange });
   const settingsEvents: unknown[] = [];
-  const settings = new SettingsService({ repo: new SettingsRepo(t.db), clock, logger, emit: (p) => settingsEvents.push(p) });
-  const home = new HomeService(t.db);
-  const sessions = new SessionService(t.db, settings, clock);
-  const palette = new PaletteService(t.db);
-  const reader = new NoteReader(t.db);
-  const leases = new LeaseManager({ ids, clock, requestRelease: () => {}, emit: () => {} });
-  const writer = new NoteWriter({ db: t.db, leases, clock, ids, emit: () => {} });
+  const services = createMainServices({
+    db: t.db,
+    clock,
+    ids,
+    logger,
+    onSettingsChanged: (p) => settingsEvents.push(p),
+    onTreeChanged: (e) => events.push(e),
+  });
+  const { hierarchy } = services;
+  const repo = new HierarchyRepo(t.db);
 
   const tick = (ms = 10) => clock.advance(ms);
-  const check = () => expect(hierarchy.repo.findInvariantViolation()).toBeNull();
+  const check = () => expect(repo.findInvariantViolation()).toBeNull();
 
   const project = (name: string) => {
     tick();
@@ -57,21 +49,15 @@ export async function setupServices() {
   const rows = <T>(sql: string, ...args: unknown[]): T[] => t.db.prepare<unknown[], T>(sql).all(...args);
 
   return {
+    ...services,
+    services,
     t,
     clock,
     ids,
     logger,
     events,
-    hierarchy,
-    trash,
-    settings,
     settingsEvents,
-    home,
-    sessions,
-    palette,
-    reader,
-    leases,
-    writer,
+    repo,
     tick,
     check,
     project,

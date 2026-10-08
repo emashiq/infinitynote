@@ -33,11 +33,11 @@ test('one Home tab after relaunch', async () => {
     db.prepare("INSERT INTO settings(key, value, updated_at) VALUES ('session.tabs', ?, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(tampered));
   });
   const second = await h.start();
-  expect(await tabLabels(second.page)).toEqual(['Home', 'Stickies']);
+  await expect.poll(() => tabLabels(second.page)).toEqual(['Home', 'Stickies']);
   await expect(homeTab(second.page)).toHaveCount(1);
-  expect(await activeTabLabel(second.page)).toBe('Home');
+  await expect.poll(() => activeTabLabel(second.page)).toBe('Home');
   await h.restart();
-  expect(await tabLabels(h.page)).toEqual(['Home', 'Stickies']);
+  await expect.poll(() => tabLabels(h.page)).toEqual(['Home', 'Stickies']);
 });
 
 test('Home not closable', async () => {
@@ -53,7 +53,7 @@ test('Home not closable', async () => {
   // Pointer behavior: middle click.
   await home.click({ button: 'middle' });
   await expect(home).toHaveCount(1);
-  expect(await tabLabels(page)).toEqual(['Home']);
+  await expect.poll(() => tabLabels(page)).toEqual(['Home']);
 });
 
 test('pinned and recent reflect data', async () => {

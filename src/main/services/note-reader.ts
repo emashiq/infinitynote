@@ -1,10 +1,10 @@
 import type { NoteOpenResponseType } from '../../shared/contracts/notes';
-import { buildPathIndex } from '../../shared/tree/paths';
 import type { Db } from '../db/driver';
 import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
 import { AppError } from './app-error';
-import { MSG, toNoteSummary } from './dto';
+import { livePathIndex, toNoteSummary } from './dto';
+import { MSG } from './messages';
 
 export class NoteReader {
   private readonly repo: HierarchyRepo;
@@ -22,10 +22,6 @@ export class NoteReader {
     if (meta.deleted_at !== null) {
       throw new AppError('NOT_FOUND', MSG.noteInTrash, { trashed: true, trashBatchId: meta.trash_batch_id });
     }
-    const index = buildPathIndex(
-      this.repo.liveProjects().map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at })),
-      this.repo.liveFolders().map((f) => ({ id: f.id, projectId: f.project_id, parentId: f.parent_id, name: f.name, createdAt: f.created_at })),
-    );
     let content: unknown;
     if (body.format === 'rich') {
       try {
@@ -37,7 +33,7 @@ export class NoteReader {
       content = body.content_text ?? '';
     }
     return {
-      note: toNoteSummary(meta, index),
+      note: toNoteSummary(meta, livePathIndex(this.repo)),
       format: body.format,
       content: content as NoteOpenResponseType['content'],
       revision: body.revision,

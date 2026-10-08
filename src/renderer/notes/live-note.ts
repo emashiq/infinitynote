@@ -18,10 +18,7 @@ export function liveNoteFrom(
 ): LiveNote | null {
   const live = snapshot.notes.find((n) => n.id === noteId);
   if (!live) return opened ? { title: opened.title, path: opened.path, updatedAt: null } : null;
-  const index = buildPathIndex(
-    snapshot.projects.map((p) => ({ id: p.id, name: p.name, createdAt: p.createdAt })),
-    snapshot.folders.map((f) => ({ id: f.id, projectId: f.projectId, parentId: f.parentId, name: f.name, createdAt: f.createdAt })),
-  );
+  const index = buildPathIndex(snapshot.projects, snapshot.folders);
   return { title: live.title, path: pathOf(index, { projectId: live.projectId, folderId: live.folderId }), updatedAt: live.updatedAt };
 }
 

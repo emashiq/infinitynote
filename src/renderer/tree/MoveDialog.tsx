@@ -1,11 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Dialog } from '../ui/Dialog';
 import { useServices } from '../state/use-store';
-import { report } from './actions';
 
 export function MoveDialog({ nodeKey, onClose }: { nodeKey: string; onClose: () => void }) {
-  const services = useServices();
-  const { tree, ui } = services;
+  const { tree, ui } = useServices();
   const node = tree.store.getState().model.nodes.get(nodeKey);
   const destinations = useMemo(() => tree.moveDestinations(nodeKey), [tree, nodeKey]);
   const [filter, setFilter] = useState('');
@@ -23,7 +21,6 @@ export function MoveDialog({ nodeKey, onClose }: { nodeKey: string; onClose: () 
       setError(res.message);
       return;
     }
-    report(services, res);
     onClose();
     tree.reveal(nodeKey);
     ui.requestFocus({ target: 'tree' });

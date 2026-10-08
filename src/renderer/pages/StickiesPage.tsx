@@ -5,10 +5,7 @@ import { useServices, useStore } from '../state/use-store';
 export function StickiesPage() {
   const { tree, tabs, commands } = useServices();
   const { snapshot } = useStore(tree.store);
-  const index = buildPathIndex(
-    snapshot.projects.map((p) => ({ id: p.id, name: p.name, createdAt: p.createdAt })),
-    snapshot.folders.map((f) => ({ id: f.id, projectId: f.projectId, parentId: f.parentId, name: f.name, createdAt: f.createdAt })),
-  );
+  const index = buildPathIndex(snapshot.projects, snapshot.folders);
   const stickies = snapshot.notes.filter((n) => n.sticky).sort((a, b) => b.updatedAt - a.updatedAt);
   return (
     <div className="page">

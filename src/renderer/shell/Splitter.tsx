@@ -9,8 +9,8 @@ export function Splitter() {
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize notes tree"
-      aria-valuemin={220}
-      aria-valuemax={280}
+      aria-valuemin={TREE_MIN}
+      aria-valuemax={TREE_MAX}
       aria-valuenow={treeWidth}
       tabIndex={0}
       className="splitter"

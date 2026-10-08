@@ -1,27 +1,20 @@
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { closeApp, dbFileOf, launchApp, makeUserDataDir, packagedExe, readMainLog, removeDir, type Launched } from './fixtures';
+import { dbFileOf, packagedExe, readMainLog, rendererSandbox } from './fixtures';
+import { useApp } from './harness';
 import { activate, railGo } from './ui';
 
-let userData = '';
-let launched: Launched | null = null;
+const h = useApp();
 
 test.beforeEach(() => {
   test.skip(packagedExe === '', 'INFINITY_NOTES_PACKAGED_EXE is not set (run npm run test:e2e:packaged)');
-  userData = makeUserDataDir();
-});
-
-test.afterEach(async () => {
-  await closeApp(launched?.app);
-  launched = null;
-  if (userData) await removeDir(userData);
 });
 
 test('packaged app starts, reports diagnostics and persists the theme @packaged', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  await expect(launched.page.locator('h1')).toHaveText('Infinity Notes');
-  const info = await launched.page.evaluate(async () => {
+  const { page } = await h.start();
+  await expect(page.locator('h1')).toHaveText('Infinity Notes');
+  const info = await page.evaluate(async () => {
     const r = await window.infinity.app.getInfo();
     return r.ok ? r.data : null;
   });
@@ -30,31 +23,31 @@ test('packaged app starts, reports diagnostics and persists the theme @packaged'
   expect(info?.schemaVersion).toBe(3);
   expect(info?.startup).toEqual({ status: 'ok' });
 
-  await railGo(launched.page, 'Settings');
-  await activate(launched.page.getByRole('radio', { name: 'Dark' }));
-  await expect(launched.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
-  await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await railGo(page, 'Settings');
+  await activate(page.getByRole('radio', { name: 'Dark' }));
+  await expect(page.getByRole('radio', { name: 'Dark' })).toBeChecked();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect
-    .poll(async () => launched!.page.evaluate(async () => {
-      const r = await window.infinity.settings.get({ keys: ['appearance.theme'] });
-      return r.ok ? r.data.values['appearance.theme'] : null;
-    }))
+    .poll(async () =>
+      page.evaluate(async () => {
+        const r = await window.infinity.settings.get({ keys: ['appearance.theme'] });
+        return r.ok ? r.data.values['appearance.theme'] : null;
+      }),
+    )
     .toBe('dark');
-  await closeApp(launched.app);
 
-  launched = await launchApp({ userDataDir: userData });
-  await railGo(launched.page, 'Settings');
-  await expect(launched.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
+  const restarted = await h.restart();
+  await railGo(restarted.page, 'Settings');
+  await expect(restarted.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
 });
 
 test('packaged override honored and test hooks absent @packaged', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  const { app } = launched;
+  const { app, page } = await h.start();
   const reported = await app.evaluate(({ app: a }) => a.getPath('userData'));
-  expect(path.resolve(reported)).toBe(path.resolve(userData));
-  expect(fs.existsSync(dbFileOf(userData))).toBe(true);
-  expect(readMainLog(userData)).toContain('userDataOverride=on');
-  expect(readMainLog(userData)).toContain('packaged=true');
+  expect(path.resolve(reported)).toBe(path.resolve(h.userData));
+  expect(fs.existsSync(dbFileOf(h.userData))).toBe(true);
+  expect(readMainLog(h.userData)).toContain('userDataOverride=on');
+  expect(readMainLog(h.userData)).toContain('packaged=true');
 
   // INFINITY_NOTES_E2E=1 is set by the fixture; hooks must still be absent in a packaged build.
   expect(await app.evaluate(() => typeof globalThis.__infinityTest)).toBe('undefined');
@@ -62,12 +55,15 @@ test('packaged override honored and test hooks absent @packaged', async () => {
   // Nothing named "data" next to the executable.
   expect(fs.existsSync(path.join(path.dirname(packagedExe), 'data'))).toBe(false);
 
-  // Real packaged renderer: served from the asar through the custom scheme.
-  expect(launched.page.url().startsWith('infinity-app://renderer/')).toBe(true);
-  const sandboxed = await app.evaluate(({ BrowserWindow }) => {
+  // Real packaged renderer: served from the asar through the custom scheme, in the OS sandbox.
+  expect(page.url().startsWith('infinity-app://renderer/')).toBe(true);
+  const prefs = await app.evaluate(({ BrowserWindow }) => {
     const wc = BrowserWindow.getAllWindows()[0]!.webContents as unknown as { getLastWebPreferences(): { sandbox: boolean; contextIsolation: boolean } };
     return wc.getLastWebPreferences();
   });
-  expect(sandboxed.sandbox).toBe(true);
-  expect(sandboxed.contextIsolation).toBe(true);
+  expect(prefs.sandbox).toBe(true);
+  expect(prefs.contextIsolation).toBe(true);
+  const sandbox = await rendererSandbox(app);
+  console.log(`renderer sandbox: ${sandbox.evidence}`);
+  expect(sandbox.osSandboxed, sandbox.evidence).toBe(true);
 });

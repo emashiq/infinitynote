@@ -1,3 +1,4 @@
+import { errorMessage } from '../services/app-error';
 import type { Db } from './driver';
 import type { Migration } from './migrations';
 
@@ -33,8 +34,7 @@ export function migrateDatabase(db: Db, migrations: readonly Migration[]): { fro
       }
     }, 'immediate');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new MigrationError(current, message);
+    throw new MigrationError(current, errorMessage(err));
   }
   return { from, to: pending[pending.length - 1]!.version };
 }

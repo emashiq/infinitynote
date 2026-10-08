@@ -1,41 +1,33 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { closeApp, launchApp, makeUserDataDir, removeDir, repoRoot, setContentSize, type Launched } from './fixtures';
+import { repoRoot, setContentSize } from './fixtures';
+import { useApp } from './harness';
 import { createNote, reloadUi, seedNotebook, type Notebook } from './seed';
 import { activate, railGo, tabItem, treeByKey, titleInput } from './ui';
 
 const SHOTS = process.env.INFINITY_SCREENSHOT_DIR ?? path.join(repoRoot, 'test-results', 'screens');
-let userData = '';
-let launched: Launched | null = null;
+const h = useApp();
 
 test.beforeEach(() => {
-  userData = makeUserDataDir();
   fs.mkdirSync(SHOTS, { recursive: true });
 });
 
-test.afterEach(async () => {
-  await closeApp(launched?.app);
-  launched = null;
-  await removeDir(userData);
-});
-
-async function shot(page: import('@playwright/test').Page, name: string): Promise<void> {
+async function shot(page: Page, name: string): Promise<void> {
   const file = path.join(SHOTS, name);
   await page.screenshot({ path: file });
   expect(fs.existsSync(file)).toBe(true);
   expect(fs.statSync(file).size).toBeGreaterThan(10_000);
 }
 
-async function boot(): Promise<{ nb: Notebook; page: import('@playwright/test').Page; app: Launched['app'] }> {
-  launched = await launchApp({ userDataDir: userData });
-  const { app, page } = launched;
+async function boot(): Promise<{ nb: Notebook; page: Page; app: ElectronApplication }> {
+  const { app, page } = await h.start();
   const nb = await seedNotebook(page);
   await reloadUi(page);
   return { nb, page, app };
 }
 
-async function expandAlpha(page: import('@playwright/test').Page, nb: Notebook): Promise<void> {
+async function expandAlpha(page: Page, nb: Notebook): Promise<void> {
   for (const key of [`project:${nb.alpha}`, `folder:${nb.l1}`, `folder:${nb.l2}`]) {
     const row = treeByKey(page, key);
     if ((await row.getAttribute('aria-expanded')) !== 'true') {

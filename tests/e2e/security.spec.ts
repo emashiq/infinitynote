@@ -4,24 +4,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PROD_CSP } from '../../src/shared/csp';
 import { makePng } from '../support/png';
-import { closeApp, dbFileOf, launchApp, makeUserDataDir, openDb, readMainLog, removeDir, type Launched } from './fixtures';
+import { readMainLog, rendererSandbox } from './fixtures';
+import { useApp } from './harness';
 
-let userData = '';
-let launched: Launched | null = null;
-
+const h = useApp();
 test.beforeEach(async () => {
-  userData = makeUserDataDir();
-  launched = await launchApp({ userDataDir: userData });
+  await h.start();
 });
 
-test.afterEach(async () => {
-  await closeApp(launched?.app);
-  launched = null;
-  await removeDir(userData);
-});
-
-const page = () => launched!.page;
-const app = () => launched!.app;
+const page = () => h.page;
+const app = () => h.app;
 
 test('renderer has no node/require', async () => {
   const types = await page().evaluate(() => [typeof require, typeof process, typeof module, typeof Buffer]);
@@ -61,7 +53,7 @@ test('navigation blocked', async () => {
   // The page is still the original renderer document (Playwright's locator waits stall after a cancelled navigation).
   expect(await page().evaluate(() => document.querySelector('h1')?.textContent)).toBe('Infinity Notes');
   expect(await app().evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getURL())).toBe('infinity-app://renderer/index.html#/');
-  expect(readMainLog(userData)).toContain('blocked navigation url=https://example.com');
+  expect(readMainLog(h.userData)).toContain('blocked navigation url=https://example.com');
 });
 
 test('window.open denied', async () => {
@@ -100,6 +92,13 @@ test('web preferences hardened', async () => {
     webviewTag: false,
     allowRunningInsecureContent: false,
   });
+});
+
+test('renderer runs inside the OS sandbox', async () => {
+  // The fixture passes chromiumSandbox: true; the OS must confirm the renderer is sandboxed (fails under --no-sandbox).
+  const sandbox = await rendererSandbox(app());
+  console.log(`renderer sandbox: ${sandbox.evidence}`);
+  expect(sandbox.osSandboxed, sandbox.evidence).toBe(true);
 });
 
 test('bridge surface', async () => {
@@ -181,18 +180,14 @@ test('validation errors', async () => {
     empty: 'VALIDATION_FAILED',
     extra: 'VALIDATION_FAILED',
   });
-  await closeApp(app());
-  const db = openDb(dbFileOf(userData), { readonly: true });
-  const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings'").all() as unknown[]).length;
-  const rows = (db.prepare('SELECT count(*) AS n FROM settings').get() as { n: number }).n;
-  db.close();
-  expect(tables).toBe(1);
-  expect(rows).toBe(0);
+  await h.stop();
+  expect(h.all("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings'")).toHaveLength(1);
+  expect(h.one<{ n: number }>('SELECT count(*) AS n FROM settings')?.n).toBe(0);
 });
 
 test('renderer cannot read files', async () => {
-  const secretTxt = path.join(userData, 'secret.txt');
-  const secretPng = path.join(userData, 'secret.png');
+  const secretTxt = path.join(h.userData, 'secret.txt');
+  const secretPng = path.join(h.userData, 'secret.png');
   fs.writeFileSync(secretTxt, 'top secret');
   fs.writeFileSync(secretPng, makePng(2, 2));
   const toUrl = (p: string) => 'file:///' + p.replace(/\\/g, '/').replace(/^\//, '');
@@ -225,22 +220,22 @@ test('renderer cannot read files', async () => {
 
 test('attachment protocol', async () => {
   // Seed rows and files after the first launch (the database is migrated), then relaunch.
-  await closeApp(app());
+  await h.stop();
   const pngId = randomUUID();
   const pdfId = randomUUID();
-  const dataDir = path.join(userData, 'data');
+  const dataDir = path.join(h.userData, 'data');
   fs.mkdirSync(path.join(dataDir, 'attachments', 'ab'), { recursive: true });
   fs.writeFileSync(path.join(dataDir, 'attachments', 'ab', 'pic.png'), makePng(2, 2));
   fs.writeFileSync(path.join(dataDir, 'attachments', 'ab', 'doc.pdf'), '%PDF-1.4 test');
-  const db = openDb(dbFileOf(userData));
-  const add = db.prepare(
-    "INSERT INTO attachments(id, managed_relative_path, sha256, mime, size_bytes, original_name, kind, created_at) VALUES (?, ?, ?, ?, 1, 'x', ?, 1)",
-  );
-  add.run(pngId, 'attachments/ab/pic.png', 'a'.repeat(64), 'image/png', 'image');
-  add.run(pdfId, 'attachments/ab/doc.pdf', 'b'.repeat(64), 'application/pdf', 'document');
-  db.close();
+  h.writeWhileClosed((db) => {
+    const add = db.prepare(
+      "INSERT INTO attachments(id, managed_relative_path, sha256, mime, size_bytes, original_name, kind, created_at) VALUES (?, ?, ?, ?, 1, 'x', ?, 1)",
+    );
+    add.run(pngId, 'attachments/ab/pic.png', 'a'.repeat(64), 'image/png', 'image');
+    add.run(pdfId, 'attachments/ab/doc.pdf', 'b'.repeat(64), 'application/pdf', 'document');
+  });
 
-  launched = await launchApp({ userDataDir: userData });
+  await h.start();
   const loads = await page().evaluate(
     async ({ pngId: png, pdfId: pdf, unknown }) => {
       const probe = (src: string) =>

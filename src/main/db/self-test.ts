@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { errorMessage } from '../services/app-error';
 import { openBetterSqlite } from './better-sqlite3-driver';
 import type { Db } from './driver';
 import { openDatabase } from './open-database';
@@ -82,7 +83,7 @@ export async function runSqliteSelfTest(tmpDir: string, opts: SelfTestOptions): 
       checks[name] = Boolean(await fn());
     } catch (err) {
       checks[name] = false;
-      errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(`${name}: ${errorMessage(err)}`);
     }
   };
 
@@ -90,7 +91,7 @@ export async function runSqliteSelfTest(tmpDir: string, opts: SelfTestOptions): 
   try {
     if (opts.resolveBinary) report.loadedBinary = opts.resolveBinary();
   } catch (err) {
-    errors.push(`resolveBinary: ${err instanceof Error ? err.message : String(err)}`);
+    errors.push(`resolveBinary: ${errorMessage(err)}`);
   }
 
   let raw: Db | null = null;
@@ -99,7 +100,7 @@ export async function runSqliteSelfTest(tmpDir: string, opts: SelfTestOptions): 
     report.sqliteVersion = raw.sqliteVersion;
     report.driver = raw.driverName;
   } catch (err) {
-    errors.push(`open: ${err instanceof Error ? err.message : String(err)}`);
+    errors.push(`open: ${errorMessage(err)}`);
   }
 
   if (raw) {

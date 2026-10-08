@@ -1,17 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { registerHierarchyHandlers } from '../../src/main/ipc/handlers/hierarchy-handlers';
-import { registerHomeHandlers } from '../../src/main/ipc/handlers/home-handlers';
-import { registerNoteHandlers } from '../../src/main/ipc/handlers/note-handlers';
-import { registerPaletteHandlers } from '../../src/main/ipc/handlers/palette-handlers';
-import { registerSessionHandlers } from '../../src/main/ipc/handlers/session-handlers';
-import { registerSettingsHandlers } from '../../src/main/ipc/handlers/settings-handlers';
-import { registerTrashHandlers } from '../../src/main/ipc/handlers/trash-handlers';
-import { createIpcRouter, type IpcMainLike } from '../../src/main/ipc/router';
-import { createSenderPolicy, type IpcEventLike } from '../../src/main/ipc/sender-policy';
+import type { AppHandlerDeps } from '../../src/main/ipc/handlers/app-handlers';
+import { registerIpcHandlers } from '../../src/main/ipc/register-handlers';
+import { createIpcRouter } from '../../src/main/ipc/router';
+import { createSenderPolicy } from '../../src/main/ipc/sender-policy';
+import type { MainServices } from '../../src/main/main-services';
+import { memoryLogger } from '../../src/main/services/logger';
 import { INVOKE_CHANNELS } from '../../src/shared/contracts/channel-names';
 import { textToDoc } from '../../src/shared/text/textarea-doc';
 import { setupServices } from './hierarchy-helpers';
+import { fakeIpcMain } from './ipc-helpers';
 
 // Loosely typed on purpose: the tests read many differently shaped response bodies.
 interface Loose {
@@ -21,44 +19,43 @@ interface Loose {
   error?: { code: string; message: string; details?: unknown };
 }
 
-type Listener = (event: IpcEventLike, payload: unknown) => unknown;
+const appDeps: AppHandlerDeps = {
+  getInfo: () => {
+    throw new Error('not used');
+  },
+  getCapabilities: () => {
+    throw new Error('not used');
+  },
+  shell: { openPath: async () => '' },
+  dataDir: '/data',
+  quit: () => {},
+};
+
+/** Every catalogue channel registered through registerIpcHandlers, as main does at startup. */
+function routerOver(services: MainServices | null) {
+  const ipc = fakeIpcMain();
+  const router = createIpcRouter({
+    ipcMain: ipc.ipcMain,
+    senderPolicy: createSenderPolicy({ registry: { has: (wcId) => wcId === 1 } }),
+    logger: memoryLogger(),
+    validateResponses: true,
+  });
+  registerIpcHandlers(router, { app: appDeps, services });
+  const call = async (channel: string, payload: unknown): Promise<Loose> => (await ipc.call(channel, payload)) as Loose;
+  return { handlers: ipc.handlers, call, router };
+}
 
 async function setup() {
   const s = await setupServices();
-  const handlers = new Map<string, Listener>();
-  const ipcMain: IpcMainLike = {
-    handle: (ch, fn) => {
-      handlers.set(ch, fn);
-    },
-    removeHandler: (ch) => {
-      handlers.delete(ch);
-    },
-  };
-  const router = createIpcRouter({
-    ipcMain,
-    senderPolicy: createSenderPolicy({ registry: { has: (id) => id === 1 } }),
-    logger: s.logger,
-    validateResponses: true,
-  });
-  registerSettingsHandlers(router, () => s.settings);
-  registerHierarchyHandlers(router, () => s.hierarchy);
-  registerTrashHandlers(router, () => s.trash);
-  registerHomeHandlers(router, () => s.home);
-  registerSessionHandlers(router, () => s.sessions);
-  registerPaletteHandlers(router, () => s.palette);
-  registerNoteHandlers(router, { reader: () => s.reader, writer: () => s.writer, leases: () => s.leases });
-  const event: IpcEventLike = { sender: { id: 1 }, senderFrame: { url: 'infinity-app://renderer/index.html#/', parent: null } };
-  const call = async (channel: string, payload: unknown): Promise<Loose> => (await handlers.get(channel)!(event, payload)) as Loose;
-  return { s, handlers, call, router };
+  return { s, ...routerOver(s.services) };
 }
 
 const id = () => randomUUID();
 
 describe('Phase 02 IPC handlers', () => {
-  it('registers every catalogue channel except the Phase 01 app and capabilities ones', async () => {
+  it('registers every catalogue channel', async () => {
     const { handlers } = await setup();
-    const expected = INVOKE_CHANNELS.filter((c) => !c.startsWith('app:') && c !== 'capabilities:get');
-    expect([...handlers.keys()].sort()).toEqual([...expected].sort());
+    expect([...handlers.keys()].sort()).toEqual([...INVOKE_CHANNELS].sort());
   });
 
   it('every new channel rejects extra keys, non-UUID ids and wrong types without calling the service', async () => {
@@ -205,19 +202,25 @@ describe('Phase 02 IPC handlers', () => {
     expect((await call('session:get', {})).data.session.activeTabId).toBe('page:settings');
   });
 
-  it('every handler reports storage-unavailable when the database failed to open', async () => {
-    const { s } = await setup();
-    const handlers = new Map<string, Listener>();
-    const ipcMain: IpcMainLike = { handle: (ch, fn) => void handlers.set(ch, fn), removeHandler: () => {} };
-    const router = createIpcRouter({ ipcMain, senderPolicy: () => true, logger: s.logger, validateResponses: true });
-    registerHierarchyHandlers(router, () => null);
-    registerTrashHandlers(router, () => null);
-    registerHomeHandlers(router, () => null);
-    registerSessionHandlers(router, () => null);
-    registerPaletteHandlers(router, () => null);
-    registerNoteHandlers(router, { reader: () => null, writer: () => null, leases: () => null });
-    const event: IpcEventLike = { sender: { id: 1 }, senderFrame: { url: 'infinity-app://renderer/index.html#/', parent: null } };
-    expect(await handlers.get('tree:list')!(event, {})).toEqual({ ok: false, error: { code: 'INTERNAL', message: 'Storage is unavailable' } });
-    expect(await handlers.get('note:open')!(event, { noteId: id() })).toEqual({ ok: false, error: { code: 'INTERNAL', message: 'Storage is unavailable' } });
+  it('every storage channel reports storage-unavailable when the database failed to open; app channels still work', async () => {
+    const { call } = routerOver(null);
+    const unavailable = { ok: false, error: { code: 'INTERNAL', message: 'Storage is unavailable' } };
+    const valid: Array<[string, unknown]> = [
+      ['settings:get', { keys: ['appearance.theme'] }],
+      ['settings:set', { key: 'appearance.theme', value: 'dark' }],
+      ['tree:list', {}],
+      ['project:create', { name: 'A' }],
+      ['folder:create', { location: { projectId: null, parentId: null }, name: 'A' }],
+      ['note:create', { location: { projectId: null, folderId: null }, sticky: false }],
+      ['note:trash', { noteId: id() }],
+      ['trash:list', {}],
+      ['home:summary', { scope: { kind: 'all' } }],
+      ['session:get', {}],
+      ['palette:searchTitles', { query: 'a' }],
+      ['note:open', { noteId: id() }],
+      ['lease:acquire', { noteId: id(), viewId: id() }],
+    ];
+    for (const [channel, payload] of valid) expect(await call(channel, payload), channel).toEqual(unavailable);
+    expect(await call('app:quit', {})).toEqual({ ok: true, data: {} });
   });
 });

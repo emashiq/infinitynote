@@ -1,8 +1,6 @@
 import type { AppInfoType } from '../../shared/contracts/app';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
-import type { TreeChangedEventType } from '../../shared/contracts/hierarchy';
-import type { HomeScopeType } from '../../shared/contracts/home';
-import type { PublicSettingKey } from '../../shared/contracts/settings';
+import { PUBLIC_SETTING_KEYS, ThemeSetting } from '../../shared/contracts/settings';
 import { createCommandRunner, type CommandRunner } from './commands';
 import { HomeStore } from './home-store';
 import { LayoutStore } from './layout-store';
@@ -44,15 +42,6 @@ export interface AppServices {
   init(): Promise<void>;
   dispose(): Promise<void>;
 }
-
-const PUBLIC_KEYS: PublicSettingKey[] = [
-  'appearance.theme',
-  'layout.treeOpen',
-  'layout.treeWidth',
-  'layout.panelOpen',
-  'home.scope',
-  'tree.expanded',
-];
 
 function browserViewport(): NonNullable<AppDeps['viewport']> {
   return {
@@ -104,11 +93,11 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
 
   async function init(): Promise<void> {
     const [settings, info] = await Promise.all([
-      bridge.settings.get({ keys: PUBLIC_KEYS }),
+      bridge.settings.get({ keys: PUBLIC_SETTING_KEYS }),
       bridge.app.getInfo(),
       tabs.init(),
       tree.reload(),
-    ]).then((r) => [r[0], r[1]] as const);
+    ]);
     if (info.ok) meta.setState({ info: info.data });
     // Re-sample the viewport: the width read at construction can be a transient narrow value.
     layout.setViewportWidth(viewport.width());
@@ -120,7 +109,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
         panelOpen: v['layout.panelOpen'] ?? true,
         treeWidth: v['layout.treeWidth'] ?? 248,
       });
-      if (v['home.scope']) home.hydrate(v['home.scope'] as HomeScopeType);
+      if (v['home.scope']) home.hydrate(v['home.scope']);
       if (v['tree.expanded']) tree.hydrate(v['tree.expanded']);
     }
     await home.load();
@@ -128,14 +117,13 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
 
   // Event wiring: settings changes from other writers and tree changes from main.
   unsubscribers.push(
-    bridge.subscribe('settings:changed', (payload) => {
-      const p = payload as { key?: string; value?: unknown };
-      if (p.key === 'appearance.theme' && (p.value === 'system' || p.value === 'light' || p.value === 'dark')) {
-        if (theme.store.getState().value !== p.value) theme.hydrate(p.value);
-      }
+    bridge.subscribe('settings:changed', ({ key, value }) => {
+      if (key !== 'appearance.theme') return;
+      const parsed = ThemeSetting.safeParse(value);
+      if (parsed.success && theme.store.getState().value !== parsed.data) theme.hydrate(parsed.data);
     }),
-    bridge.subscribe('tree:changed', (payload) => {
-      void tree.handleChanged(payload as TreeChangedEventType).then(() => home.refresh());
+    bridge.subscribe('tree:changed', (event) => {
+      void tree.handleChanged(event).then(() => home.refresh());
     }),
     viewport.onResize(() => layout.setViewportWidth(viewport.width())),
     // Refresh Home whenever its tab becomes active.

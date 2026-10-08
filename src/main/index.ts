@@ -4,39 +4,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { APP_ID, APP_VERSION, ATTACHMENT_SCHEME, PRODUCT_NAME, RENDERER_SCHEME } from '../shared/app-identity';
 import type { AppInfoType, CapabilitiesType, StartupStateType } from '../shared/contracts/app';
-import type { TreeChangedEventType } from '../shared/contracts/hierarchy';
-import type { SettingsChangedPayload } from '../shared/contracts/settings';
+import { ThemeSetting } from '../shared/contracts/settings';
 import { assertNotInstallDir, ensureDataDirs, resolveDataPaths, resolveUserDataOverride } from './app-paths';
-import type { Db } from './db/driver';
 import { openDatabase } from './db/open-database';
-import { SettingsRepo } from './db/repositories/settings-repo';
 import { createEventBus } from './ipc/event-bus';
-import { registerAppHandlers } from './ipc/handlers/app-handlers';
-import { registerHierarchyHandlers } from './ipc/handlers/hierarchy-handlers';
-import { registerHomeHandlers } from './ipc/handlers/home-handlers';
-import { registerNoteHandlers } from './ipc/handlers/note-handlers';
-import { registerPaletteHandlers } from './ipc/handlers/palette-handlers';
-import { registerSessionHandlers } from './ipc/handlers/session-handlers';
-import { registerTrashHandlers } from './ipc/handlers/trash-handlers';
-import { registerCapabilitiesHandlers } from './ipc/handlers/capabilities-handlers';
-import { registerSettingsHandlers } from './ipc/handlers/settings-handlers';
+import { registerIpcHandlers } from './ipc/register-handlers';
 import { createIpcRouter } from './ipc/router';
 import { createSenderPolicy } from './ipc/sender-policy';
+import { createMainServices, type MainServices } from './main-services';
 import { buildMenu } from './menu';
+import { errorMessage } from './services/app-error';
 import { collectCapabilityInputs, detectCapabilities } from './services/capabilities';
 import { systemClock } from './services/clock';
 import { systemIds } from './services/ids';
-import { HierarchyService } from './services/hierarchy-service';
-import { HomeService } from './services/home-service';
-import { LeaseManager } from './services/lease-manager';
 import { createFileLogger, nullLogger, type Logger } from './services/logger';
 import { installNetworkGuard } from './services/network-guard';
-import { NoteReader } from './services/note-reader';
-import { NoteWriter } from './services/note-writer';
-import { PaletteService } from './services/palette-service';
-import { SessionService } from './services/session-service';
-import { TrashService } from './services/trash-service';
-import { SettingsService } from './services/settings-service';
 import type { ShellAdapter } from './services/shell-adapter';
 import { isSelfTestMode, runSelfTestMode } from './self-test-mode';
 import { acquireSingleInstance, installSecondInstanceHandler } from './single-instance';
@@ -49,30 +31,26 @@ import { WindowRegistry } from './windows/window-registry';
 
 const registry = new WindowRegistry();
 let logger: Logger | null = null;
-let db: Db | null = null;
 
 function bootstrap(): void {
-  // 1-2. Sandbox for every renderer and a stable Windows notification identity.
+  // Sandbox for every renderer and a stable Windows notification identity.
   app.enableSandbox();
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
-  // 3. Test and portable isolation of user data (D-037); honored in packaged builds too.
+  // Test and portable isolation of user data (D-037); honored in packaged builds too.
   const override = resolveUserDataOverride(process.env.INFINITY_NOTES_USER_DATA_DIR);
-  let overrideWarning: string | null = null;
   if (override && 'dir' in override) {
     fs.mkdirSync(override.dir, { recursive: true });
     app.setPath('userData', override.dir);
-  } else if (override) {
-    overrideWarning = `INFINITY_NOTES_USER_DATA_DIR ignored: ${override.ignored}`;
   }
+  const overrideWarning = override && 'ignored' in override ? `INFINITY_NOTES_USER_DATA_DIR ignored: ${override.ignored}` : null;
 
-  // 4. Self-test mode: no lock, no window, no user database.
+  // Self-test mode: no lock, no window, no user database.
   if (isSelfTestMode(process.argv)) {
     runSelfTestMode(process.argv);
     return;
   }
 
-  // 5. Single instance.
   if (!acquireSingleInstance()) {
     app.quit();
     return;
@@ -89,20 +67,20 @@ function bootstrap(): void {
 async function start(overrideOn: boolean, overrideWarning: string | null): Promise<void> {
   const isPackaged = app.isPackaged;
   const paths = resolveDataPaths(app.getPath('userData'));
-  fs.mkdirSync(paths.logsDir, { recursive: true });
   const log = createFileLogger(paths.logsDir, { mirrorToConsole: !isPackaged });
   logger = log;
   if (overrideWarning) log.warn(overrideWarning);
 
+  const ozoneSwitch = app.commandLine.getSwitchValue('ozone-platform');
+  const display = collectCapabilityInputs(ozoneSwitch);
   log.info(
     `startup app=${APP_VERSION} electron=${process.versions.electron} chrome=${process.versions.chrome} node=${process.versions.node} platform=${process.platform} arch=${process.arch} packaged=${isPackaged} userDataOverride=${overrideOn ? 'on' : 'off'}`,
   );
-  const inputs = collectCapabilityInputs(app.commandLine.getSwitchValue('ozone-platform'));
   log.info(
-    `display ozone=${app.commandLine.getSwitchValue('ozone-platform') || 'unset'} hint=${app.commandLine.getSwitchValue('ozone-platform-hint') || 'unset'} XDG_SESSION_TYPE=${inputs.xdgSessionType ?? 'unset'} WAYLAND_DISPLAY=${inputs.waylandDisplay ? 'set' : 'unset'} DISPLAY=${inputs.display ?? 'unset'} wsl=${inputs.wslDistro ?? 'no'} wslg=${inputs.wslgVersion ?? 'no'}`,
+    `display ozone=${ozoneSwitch || 'unset'} hint=${app.commandLine.getSwitchValue('ozone-platform-hint') || 'unset'} XDG_SESSION_TYPE=${display.xdgSessionType ?? 'unset'} WAYLAND_DISPLAY=${display.waylandDisplay ? 'set' : 'unset'} DISPLAY=${display.display ?? 'unset'} wsl=${display.wslDistro ?? 'no'} wslg=${display.wslgVersion ?? 'no'}`,
   );
 
-  // Web security and network guard before any window exists.
+  // Web security and the network guard are installed before any window exists.
   const hooks = testHooksEnabled(isPackaged) ? installTestHooks() : null;
   const devUrl = !isPackaged && process.env.ELECTRON_RENDERER_URL ? process.env.ELECTRON_RENDERER_URL : null;
   const devOrigin = devUrl ? new URL(devUrl).origin : null;
@@ -112,72 +90,40 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     logger: log,
     onBlocked: hooks ? (url) => hooks.blockedRequests.push(url) : undefined,
   });
+  if (!devUrl) protocol.handle(RENDERER_SCHEME, createRendererHandler({ root: path.join(__dirname, '../renderer'), logger: log }));
 
-  // Protocols.
-  const rendererRoot = path.join(__dirname, '../renderer');
-  if (!devUrl) protocol.handle(RENDERER_SCHEME, createRendererHandler({ root: rendererRoot, logger: log }));
-
-  // Data directories and database.
   try {
     if (isPackaged) assertNotInstallDir(paths.dataDir, path.dirname(process.execPath));
     ensureDataDirs(paths);
   } catch (err) {
-    log.error(`data directory setup failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`data directory setup failed: ${errorMessage(err)}`);
     app.exit(1);
     return;
   }
   const opened = await openDatabase({ dbFile: paths.dbFile, preMigrationDir: paths.preMigrationDir, logger: log });
-  const startup: StartupStateType = opened.ok ? { status: 'ok' } : { status: 'error', code: opened.code };
-  db = opened.ok ? opened.db : null;
+  const db = opened.ok ? opened.db : null;
   protocol.handle(ATTACHMENT_SCHEME, createAttachmentHandler({ db, dataDir: paths.dataDir, logger: log }));
 
-  // Services.
   const eventBus = createEventBus(registry);
-  const applyTheme = (value: unknown) => {
-    if (value === 'system' || value === 'light' || value === 'dark') nativeTheme.themeSource = value;
-  };
-  let settings: SettingsService | null = null;
-  let hierarchy: HierarchyService | null = null;
-  let trash: TrashService | null = null;
-  let home: HomeService | null = null;
-  let sessions: SessionService | null = null;
-  let palette: PaletteService | null = null;
-  let reader: NoteReader | null = null;
-  let writer: NoteWriter | null = null;
-  let leaseManager: LeaseManager | null = null;
-  if (opened.ok) {
-    settings = new SettingsService({
-      repo: new SettingsRepo(opened.db),
+  let services: MainServices | null = null;
+  if (db) {
+    services = createMainServices({
+      db,
       clock: systemClock,
+      ids: systemIds,
       logger: log,
-      emit: (payload: SettingsChangedPayload) => {
-        if (payload.key === 'appearance.theme') applyTheme(payload.value);
+      onSettingsChanged: (payload) => {
+        if (payload.key === 'appearance.theme') applyNativeTheme(payload.value);
         eventBus.broadcast('settings:changed', payload);
       },
+      onTreeChanged: (event) => eventBus.broadcast('tree:changed', event),
     });
-    applyTheme(settings.get(['appearance.theme'])['appearance.theme']);
-    const leases = new LeaseManager({
-      ids: systemIds,
-      clock: systemClock,
-      requestRelease: () => {},
-      emit: () => {},
-    });
-    // Single view in Phase 02: note:revision and note:lease events arrive with Phase 03.
-    leaseManager = leases;
-    writer = new NoteWriter({ db: opened.db, leases, clock: systemClock, ids: systemIds, emit: () => {} });
-    const onChange = (event: TreeChangedEventType) => eventBus.broadcast('tree:changed', event);
-    hierarchy = new HierarchyService({ db: opened.db, clock: systemClock, ids: systemIds, logger: log, onChange });
-    trash = new TrashService({ db: opened.db, clock: systemClock, ids: systemIds, logger: log, onChange });
-    home = new HomeService(opened.db);
-    sessions = new SessionService(opened.db, settings, systemClock);
-    palette = new PaletteService(opened.db);
-    reader = new NoteReader(opened.db);
+    applyNativeTheme(services.settings.getInternal('appearance.theme'));
+    const { leases } = services;
     app.on('web-contents-created', (_e, wc) => wc.on('destroyed', () => leases.webContentsDestroyed(wc.id)));
   }
 
-  let capabilities: CapabilitiesType | null = null;
-  const getCapabilities = () => (capabilities ??= detectCapabilities(collectCapabilityInputs(app.commandLine.getSwitchValue('ozone-platform'))));
-
+  const startup: StartupStateType = opened.ok ? { status: 'ok' } : { status: 'error', code: opened.code };
   const getInfo = (): AppInfoType => ({
     name: PRODUCT_NAME,
     version: APP_VERSION,
@@ -192,27 +138,26 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     schemaVersion: opened.ok ? opened.schemaVersion : null,
     startup,
   });
-
-  // IPC.
+  let capabilities: CapabilitiesType | null = null;
   const shellAdapter: ShellAdapter = hooks ? hooks.shell : { openPath: (p) => shell.openPath(p) };
   const router = createIpcRouter({
-    ipcMain: ipcMain as unknown as Parameters<typeof createIpcRouter>[0]['ipcMain'],
+    ipcMain,
     senderPolicy: createSenderPolicy({ registry, devOrigin }),
     logger: log,
     validateResponses: !isPackaged,
   });
-  registerAppHandlers(router, { getInfo, shell: shellAdapter, dataDir: paths.dataDir, quit: () => app.quit() });
-  registerSettingsHandlers(router, () => settings);
-  registerCapabilitiesHandlers(router, getCapabilities);
-  registerHierarchyHandlers(router, () => hierarchy);
-  registerTrashHandlers(router, () => trash);
-  registerHomeHandlers(router, () => home);
-  registerSessionHandlers(router, () => sessions);
-  registerPaletteHandlers(router, () => palette);
-  registerNoteHandlers(router, { reader: () => reader, writer: () => writer, leases: () => leaseManager });
+  registerIpcHandlers(router, {
+    app: {
+      getInfo,
+      getCapabilities: () => (capabilities ??= detectCapabilities(display)),
+      shell: shellAdapter,
+      dataDir: paths.dataDir,
+      quit: () => app.quit(),
+    },
+    services,
+  });
 
   Menu.setApplicationMenu(buildMenu(isPackaged));
-
   createMainWindow({
     preloadPath: path.join(__dirname, '../preload/index.js'),
     iconPath: path.join(app.getAppPath(), 'resources', 'icon.png'),
@@ -225,9 +170,14 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     try {
       db?.close();
     } catch {
-      // ignore
+      // The process is exiting; a failed close changes nothing.
     }
   });
+}
+
+function applyNativeTheme(value: unknown): void {
+  const theme = ThemeSetting.safeParse(value);
+  if (theme.success) nativeTheme.themeSource = theme.data;
 }
 
 bootstrap();

@@ -9,15 +9,17 @@ import type {
   TreeChangedEventType,
   TreeSnapshotType,
 } from '../../shared/contracts/hierarchy';
-import { normalizeName, normalizeTitle, validateName, validateTitle, NAME_MESSAGE, TITLE_MESSAGE } from '../../shared/names';
+import { NAME_MESSAGE, TITLE_MESSAGE, normalizeName, normalizeTitle, validateName, validateTitle } from '../../shared/names';
 import type { Db } from '../db/driver';
-import { HierarchyRepo, MAX_FOLDER_DEPTH } from '../db/repositories/hierarchy-repo';
+import { HierarchyRepo, MAX_FOLDER_DEPTH, type NoteMetaRow } from '../db/repositories/hierarchy-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
 import { AppError } from './app-error';
 import type { Clock } from './clock';
-import { MSG, runTx, toFolderDto, toNoteDto, toProjectDto } from './dto';
+import { toFolderDto, toNoteDto, toProjectDto } from './dto';
 import type { IdGenerator } from './ids';
 import type { Logger } from './logger';
+import { MSG } from './messages';
+import { runTx } from './transaction';
 
 export interface HierarchyServiceDeps {
   db: Db;
@@ -30,8 +32,15 @@ export interface HierarchyServiceDeps {
 
 export const EMPTY_DOC_JSON = '{"type":"doc","content":[{"type":"paragraph"}]}';
 
+/** Throws NOT_FOUND unless the row exists and is live. */
+function requireLive<T extends { deleted_at: number | null }>(row: T | undefined): T {
+  if (!row || row.deleted_at !== null) throw new AppError('NOT_FOUND', row ? MSG.inTrash : MSG.missing);
+  return row;
+}
+
+/** Projects, folders and note metadata: create, rename, move, pin and favorite (trash lives in TrashService). */
 export class HierarchyService {
-  readonly repo: HierarchyRepo;
+  private readonly repo: HierarchyRepo;
   private readonly notes: NotesRepo;
 
   constructor(private readonly deps: HierarchyServiceDeps) {
@@ -47,14 +56,6 @@ export class HierarchyService {
     this.deps.onChange({ reason, trashedNoteIds: [] });
   }
 
-  private checkInvariants(): void {
-    const violation = this.repo.findInvariantViolation();
-    if (violation) {
-      this.deps.logger?.error(`hierarchy: invariant violated ${violation}`);
-      throw new Error(`invariant: ${violation}`);
-    }
-  }
-
   private cleanName(raw: string): string {
     const name = normalizeName(raw);
     if (validateName(name) !== null) throw new AppError('VALIDATION_FAILED', NAME_MESSAGE);
@@ -67,19 +68,21 @@ export class HierarchyService {
     return title;
   }
 
-  /** Validates that (projectId, parentFolderId) is a live scope location; returns the parent depth (0 at the root). */
+  /** Validates that (projectId, folderId) is a live location in one scope; returns the folder depth (0 at the scope root). */
   private assertLocation(projectId: string | null, folderId: string | null): number {
-    if (projectId !== null) {
-      const p = this.repo.getProject(projectId);
-      if (!p) throw new AppError('NOT_FOUND', MSG.missing);
-      if (p.deleted_at !== null) throw new AppError('NOT_FOUND', MSG.inTrash);
-    }
+    if (projectId !== null) requireLive(this.repo.getProject(projectId));
     if (folderId === null) return 0;
-    const f = this.repo.getFolder(folderId);
-    if (!f) throw new AppError('NOT_FOUND', MSG.missing);
-    if (f.deleted_at !== null) throw new AppError('NOT_FOUND', MSG.inTrash);
-    if (f.project_id !== projectId) throw new AppError('VALIDATION_FAILED', MSG.scope);
+    const folder = requireLive(this.repo.getFolder(folderId));
+    if (folder.project_id !== projectId) throw new AppError('VALIDATION_FAILED', MSG.scope);
     return this.repo.folderDepth(folderId);
+  }
+
+  private liveNote(noteId: string): NoteMetaRow {
+    return requireLive(this.repo.getNoteMeta(noteId));
+  }
+
+  private noteDto(noteId: string): NoteDtoType {
+    return toNoteDto(this.repo.getNoteMeta(noteId)!);
   }
 
   // Reads --------------------------------------------------------------------
@@ -106,8 +109,7 @@ export class HierarchyService {
   renameProject(projectId: string, rawName: string): { project: ProjectDtoType } {
     const name = this.cleanName(rawName);
     const project = this.tx(() => {
-      const p = this.repo.getProject(projectId);
-      if (!p || p.deleted_at !== null) throw new AppError('NOT_FOUND', p ? MSG.inTrash : MSG.missing);
+      requireLive(this.repo.getProject(projectId));
       this.repo.renameProject(projectId, name, this.deps.clock.now());
       return toProjectDto(this.repo.getProject(projectId)!);
     });
@@ -132,8 +134,7 @@ export class HierarchyService {
   renameFolder(folderId: string, rawName: string): { folder: FolderDtoType } {
     const name = this.cleanName(rawName);
     const folder = this.tx(() => {
-      const f = this.repo.getFolder(folderId);
-      if (!f || f.deleted_at !== null) throw new AppError('NOT_FOUND', f ? MSG.inTrash : MSG.missing);
+      requireLive(this.repo.getFolder(folderId));
       this.repo.renameFolder(folderId, name, this.deps.clock.now());
       return toFolderDto(this.repo.getFolder(folderId)!);
     });
@@ -142,39 +143,23 @@ export class HierarchyService {
   }
 
   moveFolder(folderId: string, target: FolderTargetType): FolderMoveResponseType {
-    const result = this.tx(() => {
-      const f = this.repo.getFolder(folderId);
-      if (!f || f.deleted_at !== null) throw new AppError('NOT_FOUND', f ? MSG.inTrash : MSG.missing);
-      if (target.projectId !== null) {
-        const p = this.repo.getProject(target.projectId);
-        if (!p) throw new AppError('NOT_FOUND', MSG.missing);
-        if (p.deleted_at !== null) throw new AppError('NOT_FOUND', MSG.inTrash);
+    const { response, moved } = this.tx(() => {
+      const folder = requireLive(this.repo.getFolder(folderId));
+      const parentDepth = this.assertLocation(target.projectId, target.parentId);
+      if (target.parentId !== null && (target.parentId === folderId || this.repo.subtreeIds(folderId).includes(target.parentId))) {
+        throw new AppError('CYCLE', MSG.cycle);
       }
-      if (target.parentId !== null) {
-        const parent = this.repo.getFolder(target.parentId);
-        if (!parent) throw new AppError('NOT_FOUND', MSG.missing);
-        if (parent.deleted_at !== null) throw new AppError('NOT_FOUND', MSG.inTrash);
-        if (parent.project_id !== target.projectId) throw new AppError('VALIDATION_FAILED', MSG.scope);
-        if (target.parentId === folderId || this.repo.subtreeIds(folderId).includes(target.parentId)) {
-          throw new AppError('CYCLE', MSG.cycle);
-        }
-      }
-      const parentDepth = target.parentId === null ? 0 : this.repo.folderDepth(target.parentId);
       if (parentDepth + 1 + this.repo.subtreeHeight(folderId) > MAX_FOLDER_DEPTH) throw new AppError('LIMIT_EXCEEDED', MSG.depth);
-      if (f.parent_id === target.parentId && f.project_id === target.projectId) {
-        return { folder: toFolderDto(f), movedFolders: 0, movedNotes: 0, noop: true };
+      if (folder.parent_id === target.parentId && folder.project_id === target.projectId) {
+        return { response: { folder: toFolderDto(folder), movedFolders: 0, movedNotes: 0 }, moved: false };
       }
       const counts = this.repo.reparentFolder(folderId, target.projectId, target.parentId, this.deps.clock.now());
-      this.checkInvariants();
-      return {
-        folder: toFolderDto(this.repo.getFolder(folderId)!),
-        movedFolders: counts.folders,
-        movedNotes: counts.notes,
-        noop: false,
-      };
+      this.repo.assertInvariants();
+      const updated = toFolderDto(this.repo.getFolder(folderId)!);
+      return { response: { folder: updated, movedFolders: counts.folders, movedNotes: counts.notes }, moved: true };
     });
-    if (!result.noop) this.changed('move');
-    return { folder: result.folder, movedFolders: result.movedFolders, movedNotes: result.movedNotes };
+    if (moved) this.changed('move');
+    return response;
   }
 
   // Notes --------------------------------------------------------------------
@@ -195,16 +180,10 @@ export class HierarchyService {
         sticky,
         color: sticky ? 'yellow' : null,
       });
-      return toNoteDto(this.repo.getNoteMeta(id)!);
+      return this.noteDto(id);
     });
     this.changed('create');
     return { note };
-  }
-
-  private liveNote(noteId: string) {
-    const n = this.repo.getNoteMeta(noteId);
-    if (!n || n.deleted_at !== null) throw new AppError('NOT_FOUND', n ? MSG.inTrash : MSG.missing);
-    return n;
   }
 
   renameNote(noteId: string, rawTitle: string): { note: NoteDtoType } {
@@ -212,7 +191,7 @@ export class HierarchyService {
     const note = this.tx(() => {
       this.liveNote(noteId);
       this.repo.renameNote(noteId, title, this.deps.clock.now());
-      return toNoteDto(this.repo.getNoteMeta(noteId)!);
+      return this.noteDto(noteId);
     });
     this.changed('rename');
     return { note };
@@ -223,8 +202,8 @@ export class HierarchyService {
       this.liveNote(noteId);
       this.assertLocation(target.projectId, target.folderId);
       this.repo.moveNote(noteId, target.projectId, target.folderId);
-      this.checkInvariants();
-      return toNoteDto(this.repo.getNoteMeta(noteId)!);
+      this.repo.assertInvariants();
+      return this.noteDto(noteId);
     });
     this.changed('move');
     return { note };
@@ -234,7 +213,7 @@ export class HierarchyService {
     const note = this.tx(() => {
       this.liveNote(noteId);
       this.repo.setPinned(noteId, pinned, this.deps.clock.now());
-      return toNoteDto(this.repo.getNoteMeta(noteId)!);
+      return this.noteDto(noteId);
     });
     this.changed('pin');
     return { note };
@@ -242,8 +221,7 @@ export class HierarchyService {
 
   setFavorite(kind: ItemKindType, id: string, favorite: boolean): { kind: ItemKindType; id: string; favorite: boolean } {
     this.tx(() => {
-      const row = kind === 'project' ? this.repo.getProject(id) : kind === 'folder' ? this.repo.getFolder(id) : this.repo.getNoteMeta(id);
-      if (!row || row.deleted_at !== null) throw new AppError('NOT_FOUND', row ? MSG.inTrash : MSG.missing);
+      requireLive(kind === 'project' ? this.repo.getProject(id) : kind === 'folder' ? this.repo.getFolder(id) : this.repo.getNoteMeta(id));
       this.repo.setFavorite(kind, id, favorite);
     });
     this.changed('favorite');

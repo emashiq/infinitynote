@@ -170,7 +170,7 @@ export class NoteController {
               baseRevision: this.store.getState().revision,
               requestId,
               format: this.format,
-              content: content as never,
+              content,
             });
             if (res.ok) {
               this.failure = null;

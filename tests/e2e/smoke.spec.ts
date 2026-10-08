@@ -1,39 +1,14 @@
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import {
-  appArgs,
-  appEnv,
-  appExecutable,
-  closeApp,
-  dbFileOf,
-  launchApp,
-  makeUserDataDir,
-  openDb,
-  readMainLog,
-  removeDir,
-  spawnAndWait,
-  waitForExit,
-  type Launched,
-} from './fixtures';
+import { appArgs, appEnv, appExecutable, closeApp, dbFileOf, readMainLog, spawnAndWait, waitForExit } from './fixtures';
+import { useApp } from './harness';
 import { activate, railGo } from './ui';
 
-let userData = '';
-let launched: Launched | null = null;
-
-test.beforeEach(() => {
-  userData = makeUserDataDir();
-});
-
-test.afterEach(async () => {
-  await closeApp(launched?.app);
-  launched = null;
-  await removeDir(userData);
-});
+const h = useApp();
 
 test('starts a real window with temp userData', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  const { app, page } = launched;
+  const { app, page } = await h.start();
   expect(await page.title()).toBe('Infinity Notes');
   await expect(page.locator('h1')).toHaveText('Infinity Notes');
   await railGo(page, 'Settings');
@@ -45,11 +20,11 @@ test('starts a real window with temp userData', async () => {
 });
 
 test('closeApp leaves no live Electron process (teardown race regression)', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  const proc = launched.app.process();
+  const { app } = await h.start();
+  const proc = app.process();
   const pid = proc.pid!;
   expect(pid).toBeGreaterThan(0);
-  await closeApp(launched.app);
+  await closeApp(app);
   expect(proc.exitCode !== null || proc.signalCode !== null).toBe(true);
   expect(await waitForExit(proc, 1000)).toBe(true);
   let alive = true;
@@ -59,21 +34,20 @@ test('closeApp leaves no live Electron process (teardown race regression)', asyn
     alive = false;
   }
   expect(alive).toBe(false);
-  launched = null;
 });
 
 test('temp userData used', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  const reported = await launched.app.evaluate(({ app }) => app.getPath('userData'));
-  expect(path.resolve(reported)).toBe(path.resolve(userData));
-  expect(fs.existsSync(dbFileOf(userData))).toBe(true);
-  expect(fs.existsSync(path.join(userData, 'logs', 'main.log'))).toBe(true);
-  expect(readMainLog(userData)).toContain('userDataOverride=on');
+  await h.start();
+  const reported = await h.app.evaluate(({ app }) => app.getPath('userData'));
+  expect(path.resolve(reported)).toBe(path.resolve(h.userData));
+  expect(fs.existsSync(dbFileOf(h.userData))).toBe(true);
+  expect(fs.existsSync(path.join(h.userData, 'logs', 'main.log'))).toBe(true);
+  expect(readMainLog(h.userData)).toContain('userDataOverride=on');
 });
 
 test('db diagnostics', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  const info = await launched.page.evaluate(async () => {
+  await h.start();
+  const info = await h.page.evaluate(async () => {
     const r = await window.infinity.app.getInfo();
     return r.ok ? r.data : null;
   });
@@ -84,62 +58,59 @@ test('db diagnostics', async () => {
   expect(info!.startup).toEqual({ status: 'ok' });
   expect(info!.isPackaged).toBe(false);
   expect(info!.versions.electron).toBe('44.7.0');
-  expect(JSON.stringify(info)).not.toContain(userData.replace(/\\/g, '\\\\'));
-  await railGo(launched.page, 'Settings');
-  await expect(launched.page.getByText(/Storage ready \(SQLite 3\./)).toBeVisible();
+  expect(JSON.stringify(info)).not.toContain(h.userData.replace(/\\/g, '\\\\'));
+  await railGo(h.page, 'Settings');
+  await expect(h.page.getByText(/Storage ready \(SQLite 3\./)).toBeVisible();
 });
 
 test('setting survives relaunch', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  await railGo(launched.page, 'Settings');
-  await activate(launched.page.getByRole('radio', { name: 'Dark' }));
-  await expect(launched.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
-  await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect.poll(async () => launched!.page.evaluate(async () => {
+  await h.start();
+  await railGo(h.page, 'Settings');
+  await activate(h.page.getByRole('radio', { name: 'Dark' }));
+  await expect(h.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
+  await expect(h.page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect.poll(async () => h.page.evaluate(async () => {
     const r = await window.infinity.settings.get({ keys: ['appearance.theme'] });
     return r.ok ? r.data.values['appearance.theme'] : null;
   })).toBe('dark');
-  await closeApp(launched.app);
+  await h.stop();
 
-  const db = openDb(dbFileOf(userData), { readonly: true });
-  const row = db.prepare("SELECT value, updated_at FROM settings WHERE key = 'appearance.theme'").get() as { value: string; updated_at: number };
-  db.close();
+  const row = h.one<{ value: string; updated_at: number }>("SELECT value, updated_at FROM settings WHERE key = 'appearance.theme'")!;
   expect(row.value).toBe('{"v":1,"value":"dark"}');
   expect(row.updated_at).toBeGreaterThan(0);
 
-  launched = await launchApp({ userDataDir: userData });
-  await railGo(launched.page, 'Settings');
-  await expect(launched.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
-  await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await h.start();
+  await railGo(h.page, 'Settings');
+  await expect(h.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
+  await expect(h.page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
 test('invalid stored setting falls back', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  await railGo(launched.page, 'Settings');
-  await activate(launched.page.getByRole('radio', { name: 'Dark' }));
-  await expect.poll(async () => launched!.page.evaluate(async () => {
+  await h.start();
+  await railGo(h.page, 'Settings');
+  await activate(h.page.getByRole('radio', { name: 'Dark' }));
+  await expect.poll(async () => h.page.evaluate(async () => {
     const r = await window.infinity.settings.get({ keys: ['appearance.theme'] });
     return r.ok ? r.data.values['appearance.theme'] : null;
   })).toBe('dark');
-  await closeApp(launched.app);
+  await h.stop();
 
-  const db = openDb(dbFileOf(userData));
-  db.prepare("UPDATE settings SET value = '{\"v\":1,\"value\":\"neon\"}' WHERE key = 'appearance.theme'").run();
-  db.close();
+  h.writeWhileClosed((db) => {
+    db.prepare("UPDATE settings SET value = '{\"v\":1,\"value\":\"neon\"}' WHERE key = 'appearance.theme'").run();
+  });
 
-  launched = await launchApp({ userDataDir: userData });
-  await railGo(launched.page, 'Settings');
-  await expect(launched.page.getByRole('radio', { name: 'System' })).toBeChecked();
-  expect(readMainLog(userData)).toContain('settings: invalid stored value key=appearance.theme');
+  await h.start();
+  await railGo(h.page, 'Settings');
+  await expect(h.page.getByRole('radio', { name: 'System' })).toBeChecked();
+  expect(readMainLog(h.userData)).toContain('settings: invalid stored value key=appearance.theme');
 });
 
 test('second instance focuses first', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  const { app } = launched;
+  const { app } = await h.start();
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.hide());
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible())).toBe(false);
 
-  const second = await spawnAndWait(appExecutable(), appArgs(), appEnv(userData), 15_000);
+  const second = await spawnAndWait(appExecutable(), appArgs(), appEnv(h.userData), 15_000);
   expect(second.timedOut).toBe(false);
   expect(second.code).toBe(0);
 
@@ -151,12 +122,11 @@ test('second instance focuses first', async () => {
     return { count: wins.length, minimized: wins[0]!.isMinimized() };
   });
   expect(state).toEqual({ count: 1, minimized: false });
-  await expect.poll(() => readMainLog(userData)).toContain('second-instance received');
+  await expect.poll(() => readMainLog(h.userData)).toContain('second-instance received');
 });
 
 test('no network requests', async () => {
-  launched = await launchApp({ userDataDir: userData });
-  const { app, page } = launched;
+  const { app, page } = await h.start();
   const blocked = () => app.evaluate(() => globalThis.__infinityTest?.blockedRequests ?? ['hooks missing']);
   expect(await blocked()).toEqual([]);
 
@@ -181,15 +151,14 @@ test('no network requests', async () => {
   expect(mainFetch).toBe('rejected');
   expect(await blocked()).toContain('https://example.com/');
 
-  await closeApp(app);
-  launched = await launchApp({ userDataDir: userData });
-  expect(await launched.app.evaluate(() => globalThis.__infinityTest?.blockedRequests ?? ['hooks missing'])).toEqual([]);
+  const restarted = await h.restart();
+  expect(await restarted.app.evaluate(() => globalThis.__infinityTest?.blockedRequests ?? ['hooks missing'])).toEqual([]);
 });
 
 test('Linux: main.log records the display and ozone line', async () => {
   test.skip(process.platform !== 'linux', 'Linux only');
-  launched = await launchApp({ userDataDir: userData });
-  const line = readMainLog(userData)
+  await h.start();
+  const line = readMainLog(h.userData)
     .split('\n')
     .find((l) => l.includes(' display ozone='));
   expect(line).toBeTruthy();
