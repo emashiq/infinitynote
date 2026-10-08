@@ -82,13 +82,15 @@ Banners and states:
 - Migration failure screen: "Database upgrade failed; your data was not changed" with "Show data folder" and "Quit".
 - Newer-schema screen (D-040): "This notebook was created by a newer version of Infinity Notes. Your data was not changed." with "Show data folder" and "Quit".
 - Database open failure screen (D-040): "Infinity Notes could not open its database. Your data was not changed." with "Show data folder" and "Quit".
-- Closed-tab notice: "1 tab was closed because its note is in Trash".
+- Closed-tab notice: "1 tab was closed because its note is in Trash"; plural "N tabs were closed because their notes are in Trash"; when a restored session also skipped missing notes, "N tabs were closed because their notes are in Trash or no longer exist" (D-047).
+- Restore notice: "Restored to <path>" or, when the original location is gone, "Restored to <path> because its original location is in Trash or no longer exists".
+- Common protection: "Common cannot be renamed" and "Common cannot be moved to Trash" (status messages for F2 and Delete on Common).
 
 ## 7. Keyboard map
 
 | Keys | Action |
 | --- | --- |
-| Ctrl+N | New note in the current scope |
+| Ctrl+N | New note in the current location (D-047: tree selection when the tree has focus, else the active note's folder, else the Home filter, else Common) |
 | Ctrl+Shift+N | New sticky in the current scope |
 | Ctrl+W | Close tab (no effect on Home) |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab in strip order |

@@ -112,23 +112,41 @@ test('bridge surface', async () => {
     } catch (e) {
       subscribeError = (e as Error).message;
     }
+    const namespaces = Object.fromEntries(
+      Object.entries(b)
+        .filter(([, v]) => typeof v === 'object' && v !== null)
+        .map(([k, v]) => [k, keys(v)]),
+    );
+    const allFrozen = Object.values(b).every((v) => typeof v !== 'object' || v === null || Object.isFrozen(v));
     return {
       top: keys(b),
-      app: keys(b.app),
-      settings: keys(b.settings),
-      capabilities: keys(b.capabilities),
+      namespaces,
       frozen: Object.isFrozen(b),
+      allFrozen,
       subscribeType: typeof b.subscribe,
       subscribeError,
       noGeneric: ['invoke', 'send', 'on', 'ipcRenderer'].filter((k) => k in b),
     };
   });
   expect(surface).toEqual({
-    top: ['app', 'capabilities', 'settings', 'subscribe'],
-    app: ['getInfo', 'quit', 'showDataFolder'],
-    settings: ['get', 'set'],
-    capabilities: ['get'],
+    top: ['app', 'capabilities', 'folder', 'home', 'item', 'lease', 'note', 'palette', 'project', 'session', 'settings', 'subscribe', 'trash', 'tree'],
+    namespaces: {
+      app: ['getInfo', 'quit', 'showDataFolder'],
+      capabilities: ['get'],
+      folder: ['create', 'move', 'rename', 'trash'],
+      home: ['summary'],
+      item: ['setFavorite'],
+      lease: ['acquire', 'release'],
+      note: ['create', 'move', 'open', 'rename', 'save', 'setPinned', 'trash'],
+      palette: ['searchTitles'],
+      project: ['create', 'rename', 'trash'],
+      session: ['get', 'set'],
+      settings: ['get', 'set'],
+      trash: ['list', 'purge', 'restore'],
+      tree: ['list'],
+    },
     frozen: true,
+    allFrozen: true,
     subscribeType: 'function',
     subscribeError: 'Unknown event channel',
     noGeneric: [],

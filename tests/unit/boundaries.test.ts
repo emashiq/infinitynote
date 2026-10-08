@@ -41,12 +41,12 @@ describe('import boundaries', () => {
     expect(await restricted('src/main/db/better-sqlite3-driver.ts', "import Database from 'better-sqlite3';\nexport default Database;\n")).toEqual([]);
   });
 
-  it('the preload surface and router expose no Phase 03 channels', async () => {
+  it('the preload surface and router expose no Phase 03-only channels', async () => {
     const fs = await import('node:fs');
     const preload = fs.readFileSync('src/preload/index.ts', 'utf8');
-    expect(preload).not.toMatch(/note:|lease:/);
+    expect(preload).not.toMatch(/lease:take|note:revision|note:lease|lease:release-request|note:convertFormat/);
     expect(preload).not.toMatch(/exposeInMainWorld\('(?!infinity')/);
     const handlers = fs.readdirSync('src/main/ipc/handlers').map((f) => fs.readFileSync(`src/main/ipc/handlers/${f}`, 'utf8')).join('\n');
-    expect(handlers).not.toMatch(/channel: '(note|lease):/);
+    expect(handlers).not.toMatch(/channel: '(lease:take|note:revision|note:lease|lease:release-request|note:convertFormat)'/);
   });
 });

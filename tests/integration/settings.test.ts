@@ -61,6 +61,31 @@ describe('settings (INF-FND-06)', () => {
     expect(t.db.prepare<[], { value: string }>("SELECT value FROM settings WHERE key = 'appearance.theme'").get()?.value).toBe('null');
   });
 
+  it('Phase 02 keys: defaults, validation, public-only get/set, and internal access without events', async () => {
+    const { t, service, events } = await setup();
+    expect(service.get(['layout.treeOpen', 'layout.treeWidth', 'layout.panelOpen', 'home.scope', 'tree.expanded'])).toEqual({
+      'layout.treeOpen': true,
+      'layout.treeWidth': 248,
+      'layout.panelOpen': true,
+      'home.scope': { kind: 'all' },
+      'tree.expanded': ['common', 'projects'],
+    });
+    expect(() => service.set('layout.treeWidth', 219)).toThrow(AppError);
+    expect(() => service.set('layout.treeWidth', 281)).toThrow(AppError);
+    expect(() => service.set('tree.expanded', ['note:x'])).toThrow(AppError);
+    expect(service.set('layout.treeWidth', 240).value).toBe(240);
+    expect(events).toHaveLength(1);
+    // the internal session key is main-only
+    expect(() => service.get(['session.tabs'])).toThrow(AppError);
+    expect(() => service.set('session.tabs', { version: 1, tabs: [{ id: 'home', kind: 'home' }], activeTabId: 'home' })).toThrow(AppError);
+    expect(service.getInternal('session.tabs').activeTabId).toBe('home');
+    service.setInternal('session.tabs', { version: 1, tabs: [{ id: 'home', kind: 'home' }, { id: 'page:settings', kind: 'settings' }], activeTabId: 'page:settings' });
+    expect(events).toHaveLength(1);
+    expect(service.getInternal('session.tabs').activeTabId).toBe('page:settings');
+    expect(() => service.setInternal('session.tabs', { version: 2 })).toThrow(AppError);
+    expect(t.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM settings').get()?.n).toBe(2);
+  });
+
   it('persists across close and reopen', async () => {
     const { t, service } = await setup();
     service.set('appearance.theme', 'dark');

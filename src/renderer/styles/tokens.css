@@ -39,3 +39,33 @@
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', Ubuntu, Cantarell, 'Noto Sans', 'Noto Sans Bengali', system-ui, sans-serif;
   --font-code: 'Cascadia Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', monospace;
 }
+
+:root,
+:root[data-theme='light'] {
+  --scrim: rgba(17, 18, 23, 0.32);
+  --shadow-popover: 0 8px 24px rgba(16, 18, 32, 0.12);
+  --note-yellow: #e8b931;
+  --note-green: #4caf7d;
+  --note-blue: #4a90e2;
+  --note-pink: #e26aa0;
+  --note-violet: #8e6be2;
+  --note-gray: #8a8fa0;
+}
+
+:root[data-theme='dark'] {
+  --scrim: rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --note-yellow: #f0c94e;
+  --note-green: #6bcb8f;
+  --note-blue: #6aa8f0;
+  --note-pink: #f08ab8;
+  --note-violet: #a58cf0;
+  --note-gray: #9a9fb0;
+}
+
+:root {
+  --rail-w: 52px;
+  --header-h: 44px;
+  --tabstrip-h: 36px;
+  --panel-w: 300px;
+}

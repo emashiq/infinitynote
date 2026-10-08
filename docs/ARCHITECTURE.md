@@ -31,7 +31,7 @@ Tables and essential columns (camelCase in TypeScript, snake_case in SQL):
 
 Conventions: timestamps are INTEGER epoch milliseconds UTC; booleans are INTEGER 0/1; foreign keys ON; WAL; `synchronous=FULL`; read queries exclude `deleted_at IS NOT NULL` by default.
 
-Migrations: one forward-only SQL file per number, applied in a transaction together with `user_version`. Before applying, a pre-migration copy is made with the backup API into `data/pre-migration/` (last 3 kept). A failed migration rolls back and the app shows "Database upgrade failed; your data was not changed" with Show data folder and Quit. A database newer than the app is refused without modification. Accepted migrations are never edited. Allocation: 001 Phase 01 (settings, projects, folders, notes, notes_fts, note_versions, note_drafts, attachments, note_attachments); 002 Phase 04 (window_state); 003 Phase 05 (reminders, occurrences, alert_deliveries); 004 Phase 06 (reminder_sources, suggestion_dismissals); 005 Phase 07 (note_references, tags, note_tags); 006 Phase 08 only if needed.
+Migrations: one forward-only SQL file per number, applied in a transaction together with `user_version`. Before applying, a pre-migration copy is made with the backup API into `data/pre-migration/` (last 3 kept). A failed migration rolls back and the app shows "Database upgrade failed; your data was not changed" with Show data folder and Quit. A database newer than the app is refused without modification. Accepted migrations are never edited. Allocation (D-044): 001 Phase 01 (settings, projects, folders, notes, notes_fts, note_versions, note_drafts, attachments, note_attachments); 002 Phase 02 (hierarchy indexes only); 003 Phase 04 (window_state); 004 Phase 05 (reminders, occurrences, alert_deliveries); 005 Phase 06 (reminder_sources, suggestion_dismissals); 006 Phase 07 (note_references, tags, note_tags); 007 Phase 08 only if needed.
 
 ### Hierarchy rules
 
@@ -47,7 +47,7 @@ Migrations: one forward-only SQL file per number, applied in a transaction toget
 
 ### Tab session model
 
-Tab kinds: `home` (singleton, index 0), `note` (one per noteId), singleton pages `stickies`, `reminders`, `settings`. Only the active note tab mounts a `NoteEditor`; inactive tabs keep `{noteId, title, scrollTop}` in memory only, and switching away flushes the pending save. The setting `session.tabs` = `{version:1, tabs:[{id, kind, noteId?, scrollTop?}], activeTabId}` is written on every change (debounced 500 ms) and on quit; on startup tabs for missing or trashed notes are dropped with one notice and duplicates collapse.
+Tab kinds: `home` (singleton, index 0), `note` (one per noteId), singleton pages `stickies`, `reminders`, `settings`. Only the active note tab mounts a `NoteEditor`; inactive tabs keep `{noteId, title, scrollTop}` in memory only, and switching away flushes the pending save. The internal setting `session.tabs` = `{version:1, tabs:[{id, kind, noteId?, scrollTop?}], activeTabId}` (tab IDs `home`, `note:<uuid>`, `page:<kind>`; D-045) is written through `session:set` immediately on every structural change, with scroll positions debounced 500 ms (D-047); `session:get` drops tabs for missing or trashed notes (one notice) and collapses duplicates.
 
 ## 4. IPC conventions and catalogue
 
@@ -58,8 +58,8 @@ Catalogue (later phase plans may add channels but must update this list):
 | Phase | Channels | Events |
 | --- | --- | --- |
 | 01 | `app:getInfo`, `app:showDataFolder`, `app:quit`, `settings:get`, `settings:set`, `capabilities:get` | `settings:changed` |
-| 02 | `tree:list`, `project:create\|rename\|trash`, `folder:create\|rename\|move\|trash`, `note:create\|rename\|move\|trash`, `trash:list\|restore\|purge`, `note:setPinned`, `item:setFavorite`, `home:summary`, `session:get\|set`, `palette:searchTitles` | `tree:changed` |
-| 03 | `note:open`, `note:save`, `lease:acquire\|release\|take`, `note:convertFormat`, `versions:list\|restore`, `drafts:list\|resolve`, `attachment:importImageBytes`, `attachment:importFromDialog` | `note:revision`, `note:lease`, `note:trashed`, `lease:release-request` |
+| 02 | `tree:list`, `project:create\|rename\|trash`, `folder:create\|rename\|move\|trash`, `note:create\|rename\|move\|trash`, `trash:list\|restore\|purge`, `note:setPinned`, `item:setFavorite`, `home:summary`, `session:get\|set`, `palette:searchTitles`; moved from 03 by D-045: `note:open`, `note:save`, `lease:acquire\|release` | `tree:changed` |
+| 03 | `lease:take`, `note:convertFormat`, `versions:list\|restore`, `drafts:list\|resolve`, `attachment:importImageBytes`, `attachment:importFromDialog` | `note:revision`, `note:lease`, `note:trashed`, `lease:release-request` |
 | 04 | `sticky:float\|dock\|hide\|setColor\|setPinned\|setCollapsed\|removeSticky`, `window:getState` | `sticky:state` |
 | 05 | `reminder:create\|update\|delete\|undoDelete\|listForNote\|listView`, `occurrence:complete\|snooze`, `reminders:summary`, `widget:show\|hide\|setPinned\|setCollapsed`, `zones:list` | `reminder:changed`, `app:openNote` |
 | 06 | `reminder:createFromSuggestion`, `suggestion:dismiss\|listDismissed`, `reminder:updateFromSource` | |

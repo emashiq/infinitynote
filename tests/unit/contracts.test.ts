@@ -85,14 +85,18 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
     }
   });
 
-  it('event channels are exactly settings:changed', () => {
-    expect([...EVENT_CHANNELS]).toEqual(['settings:changed']);
-    expect(Object.keys(EVENT_SCHEMAS)).toEqual(['settings:changed']);
+  it('event channels are settings:changed and tree:changed', () => {
+    expect([...EVENT_CHANNELS]).toEqual(['settings:changed', 'tree:changed']);
+    expect(Object.keys(EVENT_SCHEMAS)).toEqual(['settings:changed', 'tree:changed']);
   });
 
-  it('no Phase 03 channel is registered in Phase 01', () => {
-    const all = [...INVOKE_CHANNELS, ...EVENT_CHANNELS].join(' ');
-    expect(all).not.toMatch(/note:|lease:/);
+  it('no Phase 03-only channel is registered in Phase 02', () => {
+    const all: string[] = [...INVOKE_CHANNELS, ...EVENT_CHANNELS];
+    for (const name of ['lease:take', 'note:revision', 'note:lease', 'lease:release-request', 'note:convertFormat']) {
+      expect(all, name).not.toContain(name);
+    }
+    expect(all).toContain('note:save');
+    expect(all).toContain('lease:acquire');
   });
 
   it('empty-request channels are strict objects', () => {

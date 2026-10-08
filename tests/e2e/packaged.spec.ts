@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { closeApp, dbFileOf, launchApp, makeUserDataDir, packagedExe, readMainLog, removeDir, type Launched } from './fixtures';
+import { activate, railGo } from './ui';
 
 let userData = '';
 let launched: Launched | null = null;
@@ -26,10 +27,12 @@ test('packaged app starts, reports diagnostics and persists the theme @packaged'
   });
   expect(info?.isPackaged).toBe(true);
   expect(info?.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
-  expect(info?.schemaVersion).toBe(1);
+  expect(info?.schemaVersion).toBe(3);
   expect(info?.startup).toEqual({ status: 'ok' });
 
-  await launched.page.getByLabel('Dark').check();
+  await railGo(launched.page, 'Settings');
+  await activate(launched.page.getByRole('radio', { name: 'Dark' }));
+  await expect(launched.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
   await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect
     .poll(async () => launched!.page.evaluate(async () => {
@@ -40,7 +43,8 @@ test('packaged app starts, reports diagnostics and persists the theme @packaged'
   await closeApp(launched.app);
 
   launched = await launchApp({ userDataDir: userData });
-  await expect(launched.page.getByLabel('Dark')).toBeChecked();
+  await railGo(launched.page, 'Settings');
+  await expect(launched.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
 });
 
 test('packaged override honored and test hooks absent @packaged', async () => {

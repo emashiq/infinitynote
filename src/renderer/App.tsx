@@ -2,10 +2,33 @@ import { useEffect, useState } from 'react';
 import type { AppInfoType } from '../shared/contracts/app';
 import type { InfinityBridge } from '../shared/contracts/bridge';
 import { getBridge } from './bridge';
-import { FoundationScreen } from './shell/FoundationScreen';
+import { Shell } from './shell/Shell';
+import { createAppServices, type AppServices } from './state/app-services';
+import { AppServicesContext } from './state/use-store';
 import { StartupErrorScreen } from './startup/StartupErrorScreen';
 
 type Load = { state: 'pending' } | { state: 'ready'; info: AppInfoType } | { state: 'failed'; message: string };
+
+// One AppServices per bridge: the cache survives StrictMode's double render, and the window lifecycle
+// hooks inside the services flush the active note when the page hides.
+const servicesByBridge = new WeakMap<InfinityBridge, AppServices>();
+function servicesFor(bridge: InfinityBridge): AppServices {
+  let services = servicesByBridge.get(bridge);
+  if (!services) {
+    services = createAppServices(bridge);
+    servicesByBridge.set(bridge, services);
+  }
+  return services;
+}
+
+function ShellRoot({ bridge }: { bridge: InfinityBridge }) {
+  const [services] = useState(() => servicesFor(bridge));
+  return (
+    <AppServicesContext.Provider value={services}>
+      <Shell />
+    </AppServicesContext.Provider>
+  );
+}
 
 export function App({ bridge }: { bridge?: InfinityBridge }) {
   const api = bridge ?? getBridge();
@@ -33,5 +56,5 @@ export function App({ bridge }: { bridge?: InfinityBridge }) {
   if (load.info.startup.status === 'error') {
     return <StartupErrorScreen bridge={api} code={load.info.startup.code} />;
   }
-  return <FoundationScreen bridge={api} info={load.info} />;
+  return <ShellRoot bridge={api} />;
 }

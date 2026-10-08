@@ -44,6 +44,7 @@ describe('CI definition (INF-FND-10)', () => {
   });
 
   it('uses the pinned Node version', () => {
-    expect(yml).toContain("node-version: '24.15.0'");
+    expect(yml).toContain("node-version: '24.21.0'");
+    expect(yml).not.toContain('24.15.0');
   });
 });

@@ -49,7 +49,7 @@ export async function launchApp(options: { userDataDir: string; extraEnv?: Recor
     timeout: 60_000,
   });
   const page = await app.firstWindow();
-  await page.waitForSelector('h1, [role="alert"]', { timeout: 30_000 });
+  await page.waitForSelector('#app-shell[data-ready="true"], [role="alert"]', { timeout: 30_000 });
   return { app, page };
 }
 
@@ -120,3 +120,21 @@ export function spawnAndWait(
 
 export const appArgs = (): string[] => (packagedExe !== '' ? [] : [repoRoot]);
 export const appExecutable = (): string => (packagedExe !== '' ? packagedExe : electronBinary());
+
+/** Sets the window's content size and waits until the renderer sees the new inner size. */
+export async function setContentSize(app: ElectronApplication, page: Page, width: number, height: number): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, [w, h]) => {
+    const win = BrowserWindow.getAllWindows()[0]!;
+    win.setContentSize(w!, h!);
+  }, [width, height]);
+  await page.waitForFunction(([w, h]) => window.innerWidth === w && window.innerHeight === h, [width, height], { timeout: 10_000 });
+}
+
+/** Sets the whole window size (frame included) for the visual specs. */
+export async function setWindowSize(app: ElectronApplication, page: Page, width: number, height: number): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, [w, h]) => {
+    const win = BrowserWindow.getAllWindows()[0]!;
+    win.setSize(w!, h!);
+  }, [width, height]);
+  await page.waitForFunction(() => window.innerWidth > 0);
+}

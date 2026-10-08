@@ -1,0 +1,259 @@
+/* Layout: header, rail, tree pane, splitter, document column, details panel. */
+.app-shell {
+  display: grid;
+  grid-template-rows: var(--header-h) minmax(0, 1fr);
+  height: 100vh;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.app-shell > .app-header {
+  grid-column: 1 / -1;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--header-h);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.brand-icon {
+  color: var(--accent);
+}
+
+.app-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(480px, 40vw);
+  height: 30px;
+  margin: 0 auto;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.search-box:hover {
+  border-color: var(--accent-border);
+}
+
+.search-text {
+  flex: 1;
+  text-align: left;
+}
+
+.kbds {
+  display: inline-flex;
+  gap: 4px;
+}
+
+kbd {
+  font: inherit;
+  font-size: 11px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+
+.header-actions {
+  display: flex;
+  gap: 4px;
+  min-width: 140px;
+  justify-content: flex-end;
+}
+
+/* Rail */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  background: var(--bg-rail);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+
+.rail-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.rail-btn:hover {
+  background: var(--bg-subtle);
+}
+
+.rail-btn.is-on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rail-bottom {
+  margin-top: auto;
+}
+
+/* Tree pane and splitter */
+.tree-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-rail);
+}
+
+.pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 8px 0 12px;
+  flex: none;
+}
+
+.pane-title {
+  margin: 0;
+}
+
+.splitter {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  border-right: 1px solid var(--border);
+  margin-left: -1px;
+}
+
+.splitter:hover {
+  background: var(--accent-soft);
+}
+
+/* Document column */
+.doc-column {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.tab-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.context-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* Drawers */
+.drawer {
+  position: fixed;
+  top: var(--header-h);
+  bottom: 0;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--bg-rail);
+  color: var(--text);
+  box-shadow: var(--shadow-popover);
+}
+
+.drawer::backdrop {
+  background: var(--scrim);
+}
+
+.drawer-left {
+  left: var(--rail-w);
+  right: auto;
+  width: 280px;
+}
+
+.drawer-right {
+  right: 0;
+  left: auto;
+  width: 320px;
+}
+
+.drawer[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer > .tree-pane,
+.drawer > .context-panel {
+  flex: 1;
+  border: 0;
+}
+
+/* Notices */
+.toasts {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+  margin: 0;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg);
+  box-shadow: var(--shadow-popover);
+}
+
+.toast-error {
+  border-color: var(--danger);
+}
+
+.toast > span {
+  flex: 1;
+}

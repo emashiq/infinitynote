@@ -243,6 +243,65 @@ Recorded by the Phase 01 planner on 2026-10-08. Probe output is in `.infinity-wo
 - Status: accepted.
 - Evidence: planner-probes.log, Probes F and O.
 
+## Phase 02 decisions
+
+Recorded by the Phase 02 planner on 2026-10-08. The implementation plan is `docs/plans/phase-02.md`; section numbers below refer to it.
+
+### D-044 Migration 002 (hierarchy indexes) and renumbered migration allocation
+- Context: migration 001 already holds every Phase 02 column. Purging trash deletes parent rows guarded by `ON DELETE RESTRICT`, and SQLite scans the child table for each deleted parent unless the child column has a full index. `notes_scope` is partial (live rows only) and cannot serve that check or subtree queries that must include trashed rows.
+- Decision: Phase 02 adds `002_hierarchy_indexes.sql` with indexes only: `notes(folder_id)`, `notes(project_id)`, partial `folders(trash_batch_id)` and `projects(trash_batch_id)` where not null, and partial `notes(deleted_at)`, `folders(deleted_at)` where not null. No table or trigger changes. Migration numbers are assigned in phase order: 002 Phase 02, 003 Phase 04 (window_state), 004 Phase 05 (reminders), 005 Phase 06 (reminder sources), 006 Phase 07 (references, tags), 007 Phase 08 only if needed.
+- Consequences: `LATEST` becomes 2; tests that hard-coded schema version 1 change to 2; the Phase 01 failure-injection tests inject version 3. A populated v1 database upgrades with a pre-migration copy (integration test).
+- Status: accepted.
+- Evidence: plan section 5.
+
+### D-045 Phase 02 IPC catalogue and settings keys
+- Context: INF-TABS-03 (Phase 02) requires flushing a pending save before a tab closes, and the phase allows a temporary text area whose saves must already use stable IDs and revisions.
+- Decision:
+  - `note:open`, `note:save`, `lease:acquire` and `lease:release` move from Phase 03 to Phase 02 and use the existing `NoteWriter` and `LeaseManager`. `lease:take` and the events `note:revision`, `note:lease`, `lease:release-request` stay in Phase 03.
+  - New Phase 02 channels: `tree:list`, `project:create|rename|trash`, `folder:create|rename|move|trash`, `note:create|rename|move|trash|setPinned`, `item:setFavorite`, `trash:list|restore|purge`, `home:summary`, `session:get|set`, `palette:searchTitles`. New event: `tree:changed {reason, trashedNoteIds}`.
+  - The settings registry gains a `public` flag. Public keys (settable through `settings:set`): `appearance.theme`, `layout.treeOpen`, `layout.treeWidth` (220-280, default 248), `layout.panelOpen`, `home.scope`, `tree.expanded`. Internal key `session.tabs` is read and written only through `session:get|set`; `settings:get|set` reject it with `VALIDATION_FAILED`.
+  - Tab IDs are deterministic: `home`, `note:<uuid>`, `page:stickies`, `page:reminders`, `page:settings`.
+- Consequences: ARCHITECTURE section 4 updated. A fresh launch without user interaction still writes no settings row.
+- Status: accepted.
+- Evidence: plan sections 6 and 7.
+
+### D-046 Hierarchy, trash and restore semantics
+- Decision:
+  - Scope consistency holds for every row, live or trashed: a folder's `project_id` equals its parent's; a note's equals its folder's. A live folder or note never sits under a trashed folder or project. Every move, restore and purge transaction ends with an invariant query and rolls back on violation.
+  - A trash batch has exactly one root (the item the user trashed). Restore works per batch. The root returns to its original parent if live; otherwise to the nearest live ancestor folder; otherwise to its scope root; if its project is trashed or gone, to the Common root. Relocation updates `project_id` across the whole subtree (all rows). The response says whether it relocated.
+  - Purge (Delete forever, Empty trash) requires `confirmed: true`. Rows of other batches that reference a purged folder are re-anchored to the nearest surviving ancestor (Common when the project is purged). Folders are deleted deepest first because `ON DELETE RESTRICT` is checked per row.
+  - Renaming, moving, pinning and favoriting a note never change `notes.revision`; only content saves do. `note:save` without a title keeps the stored title.
+  - Duplicate sibling names are stored as given. Pickers, palette results and Home show the path; identical sibling labels get an ordinal suffix " (2)", " (3)" by creation time (display only).
+- Status: accepted.
+- Evidence: plan section 8.
+
+### D-047 Shell behavior for Phase 02
+- Decision:
+  - The header shows the product name as the page `h1` ("Infinity Notes"); view headings are `h2`.
+  - New-item location for Ctrl+N, Ctrl+Shift+N and the palette: (1) focus inside the tree with a selected item uses that item's location; (2) else an active note tab uses that note's folder; (3) else the Home tab uses the Home filter (Project means its root, Common or All means the Common root); (4) else the Common root.
+  - Note and page tabs are appended at the end of the strip; closing the active tab activates its right neighbor, else its left neighbor. At most 200 tabs. The session is written immediately on every structural change (open, close, activate) and scroll positions are debounced 500 ms.
+  - Phase 02 pages: Stickies lists sticky notes with Open and New sticky (Float arrives in Phase 04); Reminders states that reminders are not available in this build yet; Settings has Appearance (theme) and About (version and storage).
+  - Drag and drop in the tree is not part of Phase 02; the keyboard-accessible Move to dialog is the required path.
+- Status: accepted.
+- Evidence: plan sections 9-11.
+
+### D-048 Temporary text area until Phase 03
+- Decision: notes are created as `format 'rich'` with `{"type":"doc","content":[{"type":"paragraph"}]}`. The Phase 02 text area maps one line to one paragraph (`textToDoc`, `docToText` in `src/shared/text/textarea-doc.ts`); a document with other node types opens read-only. Saves go through `note:save` with a lease held by one `viewId` per window. Flush happens on tab switch, tab close, blur and page hide. Flushing on window close and quit is Phase 03 (INF-SAVE-01); until then text typed within the 400 ms debounce before the window closes may be lost, and the progress report states this.
+- Status: accepted.
+- Evidence: plan section 12.
+
+### D-049 Toolchain Node for CI and the E2E runner (follow-up F-01-1)
+- Context: Node 24.15 on Windows intermittently kills the Playwright worker (0xC0000409); Node 24.21 showed 0 crashes in 50 runs (Phase 01 Repair 2).
+- Decision: `.github/workflows/ci.yml` uses Node `24.21.0`. Local Windows E2E gates run Playwright under Node 24.21 via `INFINITY_E2E_NODE` (`.infinity-work/node-portable/node-v24.21.0-win-x64/node.exe`). The `engines` floor stays `>=24.15.0 <25` because the host's installed Node is 24.15 and `engine-strict=true`; raise it only if the user upgrades the host Node.
+- Status: accepted.
+- Evidence: `docs/progress/phase-01-acceptance.md` decision 1.
+
+### D-050 Keyboard activation in E2E steps (follow-up F-01-4)
+- Context: under WSLg with forced `--ozone-platform=wayland` the Electron window is not visible at start (`isVisible()` false) and `requestAnimationFrame` fires 0 times per second, so Playwright's stability wait ("waiting for element to be visible, enabled and stable") never completes for `check()` and `click()`. `click({force:true})`, focus plus Space and `dispatchEvent('click')` work, and `win.focus(); win.show()` restores 60 rAF per second. Default ozone (x11 under WSLg) and Xvfb are unaffected (probe logs `f014-probe-*.log`).
+- Decision: E2E steps whose subject is not pointer behavior use keyboard activation through `tests/e2e/ui.ts` `activate`. Pointer-specific cases (middle click, splitter drag, row click, scroll buttons) stay pointer and are expected informational failures under forced Wayland. Product code never calls `win.focus()` or `show()` as a workaround and never forces an ozone platform. The forced-Wayland run is informational, never a gate.
+- Status: accepted.
+- Evidence: `docs/progress/phase-02.md` section F-01-4.
+
 ## Risks carried forward
 
 - R-01 better-sqlite3 prebuild in Electron 44: N-API should load unchanged but V8 memory-cage rules may reject external buffers; Phase 01 proves loading (dev and packaged, Windows and WSL); fallback `node:sqlite`; builder must not trigger node-gyp.

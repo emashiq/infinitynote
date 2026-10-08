@@ -26,39 +26,39 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-FND-11 | Stable app identity (appId, productName, AppUserModelID, icon placeholder) | 01 | R,N | review builder config; native toast identity check; unit/app-identity.test | in_progress |
 | INF-FND-12 | Native SQLite loads in Electron main with FTS5, BLOB and backup API on Windows and WSL Ubuntu | 01 | I,E,N | integration/sqlite-capabilities.test; e2e/smoke.spec › db diagnostics; e2e/native.spec › self-test passes in Electron main; tools/verify-native.mjs logs | done |
 | INF-FND-13 | Save-revision and writer-lease contracts defined in shared contracts before UI | 01 | U,I | unit/contracts.test › note:save schema; integration/revision.test | done |
-| INF-SHELL-01 | Compact reference-inspired shell: rail (Home, Notes, Stickies, Reminders, Settings), header with search/command box, tab strip, document area, violet accent, no capture-specific labels | 02 | V,E | e2e/shell.spec › rail navigation; screenshot 1100x720 | planned |
-| INF-SHELL-02 | Collapsible, resizable tree pane 220-280 px, width persisted | 02 | E,V | e2e/shell.spec › tree toggle and width persists | planned |
-| INF-SHELL-03 | Collapsible right context panel 280-340 px with Info section; later Reminders and References sections | 02 | E,V | e2e/shell.spec › panel toggle | planned |
-| INF-SHELL-04 | Narrow windows turn tree (<960 px) and panel (<1180 px) into drawers | 02 | E,V | e2e/shell.spec › narrow 760x560 drawers; screenshot | planned |
-| INF-SHELL-05 | Compact dark theme tokens following OS theme | 02 | V | screenshot light/dark | planned |
-| INF-SHELL-06 | Native window frame and controls; visible keyboard focus | 02 | V,N | screenshot focus ring; native window check | planned |
-| INF-HOME-01 | Single reusable Home tab, always first, not closable or duplicable | 02 | E | e2e/home.spec › one Home tab after relaunch | planned |
-| INF-HOME-02 | Home shows quick actions (New note, New sticky, New project), Pinned and Recent | 02 | E | e2e/home.spec › pinned and recent reflect data | planned |
-| INF-HOME-03 | Home scope filter All/Common/Project on one dashboard, persisted; new items inherit filter scope | 02 | I,E | e2e/home.spec › filter; integration/home-summary.test | planned |
+| INF-SHELL-01 | Compact reference-inspired shell: rail (Home, Notes, Stickies, Reminders, Settings), header with search/command box, tab strip, document area, violet accent, no capture-specific labels | 02 | V,E | e2e/shell.spec › rail navigation; › no capture-specific labels; e2e/visual.spec › 1100x720 light | done |
+| INF-SHELL-02 | Collapsible, resizable tree pane 220-280 px, width persisted | 02 | E,V | e2e/shell.spec › tree toggle and width persists; unit/renderer/state/layout-store.test; unit/renderer/tree-pane.test › splitter | done |
+| INF-SHELL-03 | Collapsible right context panel 280-340 px with Info section; later Reminders and References sections | 02 | E,V | e2e/shell.spec › panel toggle; e2e/visual.spec › 1280x800 light: details panel | done |
+| INF-SHELL-04 | Narrow windows turn tree (<960 px) and panel (<1180 px) into drawers | 02 | E,V | e2e/shell.spec › narrow 760x560 drawers; › breakpoints; e2e/visual.spec › 760x560 light | done |
+| INF-SHELL-05 | Compact dark theme tokens following OS theme | 02 | V | e2e/shell.spec › theme follows OS; unit/tokens.test; e2e/visual.spec › 1100x720 dark | done |
+| INF-SHELL-06 | Native window frame and controls; visible keyboard focus | 02 | V,N | e2e/shell.spec › visible focus; unit/main-window-options.test; e2e/visual.spec › focus ring; native frame check pending (Phase 09 matrix) | in_progress |
+| INF-HOME-01 | Single reusable Home tab, always first, not closable or duplicable | 02 | E | e2e/home.spec › one Home tab after relaunch; › Home not closable; unit/tab-session.test; unit/renderer/tab-strip.test | done |
+| INF-HOME-02 | Home shows quick actions (New note, New sticky, New project), Pinned and Recent | 02 | E | e2e/home.spec › pinned and recent reflect data; › pin; integration/home-summary.test | done |
+| INF-HOME-03 | Home scope filter All/Common/Project on one dashboard, persisted; new items inherit filter scope | 02 | I,E | e2e/home.spec › filter; integration/home-summary.test; unit/renderer/state/home-store.test | done |
 | INF-HOME-04 | Home shows overdue and due-today reminders with link to Reminders page | 05 | E | e2e/reminders.spec › Home reminder section | planned |
-| INF-HIER-01 | Common is a permanent scope for notes, stickies and folders; cannot be renamed or deleted | 02 | I,E | integration/hierarchy.test › Common immutable | planned |
-| INF-HIER-02 | Create, rename and trash projects | 02 | I,E | integration/hierarchy.test › project CRUD; e2e/tree.spec | planned |
-| INF-HIER-03 | Nested folders up to depth 32 in projects and Common; create, rename, trash | 02 | I,E | integration/hierarchy.test › deep folders, depth limit | planned |
-| INF-HIER-04 | Notes created at scope root or inside any folder | 02 | I,E | e2e/tree.spec › create note in folder | planned |
-| INF-HIER-05 | Stickies can belong to Common or any project/folder before floating exists | 02 | I,E | integration/hierarchy.test › sticky in folder | planned |
-| INF-HIER-06 | Duplicate sibling names allowed and disambiguated by path | 02 | I | integration/hierarchy.test › duplicate names | planned |
-| INF-HIER-07 | Move notes/folders across folders, projects and Common; subtree scope updated transactionally | 02 | I,E | integration/hierarchy.test › subtree move atomic | planned |
-| INF-HIER-08 | Folder cycles rejected with clear message | 02 | I,E | integration/hierarchy.test › cycle rejected; e2e/tree.spec | planned |
-| INF-HIER-09 | Trash with batch soft delete, restore to original or nearest valid location, permanent delete with confirmation | 02 | I,E | integration/trash.test; e2e/tree.spec › trash and restore | planned |
-| INF-HIER-10 | Pin notes to Home; favorite notes, folders and projects | 02 | I,E | e2e/home.spec › pin; e2e/tree.spec › favorites | planned |
+| INF-HIER-01 | Common is a permanent scope for notes, stickies and folders; cannot be renamed or deleted | 02 | I,E | integration/hierarchy.test › Common immutable; e2e/tree.spec › Common protected; unit/renderer/tree-pane.test | done |
+| INF-HIER-02 | Create, rename and trash projects | 02 | I,E | integration/hierarchy.test › project CRUD; e2e/tree.spec › project CRUD | done |
+| INF-HIER-03 | Nested folders up to depth 32 in projects and Common; create, rename, trash | 02 | I,E | integration/hierarchy.test › deep folders, depth limit; e2e/tree.spec › nested folders | done |
+| INF-HIER-04 | Notes created at scope root or inside any folder | 02 | I,E | e2e/tree.spec › create note in folder; integration/hierarchy.test › notes at root and folder | done |
+| INF-HIER-05 | Stickies can belong to Common or any project/folder before floating exists | 02 | I,E | integration/hierarchy.test › sticky in folder; e2e/tree.spec › sticky in folder | done |
+| INF-HIER-06 | Duplicate sibling names allowed and disambiguated by path | 02 | I | integration/hierarchy.test › duplicate names; unit/tree-paths.test | done |
+| INF-HIER-07 | Move notes/folders across folders, projects and Common; subtree scope updated transactionally | 02 | I,E | integration/hierarchy.test › subtree move atomic; e2e/tree.spec › move persists after restart | done |
+| INF-HIER-08 | Folder cycles rejected with clear message | 02 | I,E | integration/hierarchy.test › cycle rejected; e2e/tree.spec › cycle rejected | done |
+| INF-HIER-09 | Trash with batch soft delete, restore to original or nearest valid location, permanent delete with confirmation | 02 | I,E | integration/trash.test; e2e/tree.spec › trash and restore | done |
+| INF-HIER-10 | Pin notes to Home; favorite notes, folders and projects | 02 | I,E | e2e/home.spec › pin; e2e/tree.spec › favorites; integration/hierarchy.test | done |
 | INF-HIER-11 | Optional small tags (<=20 per note) usable as search filter | 07 | I,E | integration/tags.test; e2e/search.spec › tag filter | planned |
-| INF-HIER-12 | Keyboard navigation of the tree (ARIA tree, F2, Delete, Enter, arrows) | 02 | E,V | e2e/a11y-keyboard.spec › tree | planned |
-| INF-TABS-01 | Multiple note tabs; one tab per note, reopening focuses it | 02 | E | e2e/tabs.spec › no duplicate tabs | planned |
-| INF-TABS-02 | Switch tabs by click and Ctrl+Tab/Ctrl+Shift+Tab | 02 | E | e2e/tabs.spec › ctrl+tab | planned |
-| INF-TABS-03 | Close via Ctrl+W, button or middle-click; never deletes the note; pending save flushed first | 02 | E | e2e/tabs.spec › close keeps note; e2e/editor.spec › flush on close | planned |
-| INF-TABS-04 | Tab overflow scrolls and offers an All tabs list | 02 | E,V | e2e/tabs.spec › overflow list | planned |
-| INF-TABS-05 | Tabs, order and active tab restored after relaunch without duplicates | 02 | I,E | e2e/tabs.spec › restore after relaunch | planned |
-| INF-TABS-06 | Trashing a note closes its tabs; restored session skips trashed/missing notes with notice | 02 | E | e2e/tabs.spec › trashed note tab closed | planned |
+| INF-HIER-12 | Keyboard navigation of the tree (ARIA tree, F2, Delete, Enter, arrows) | 02 | E,V | e2e/a11y-keyboard.spec › tree; › dialogs return focus; › accessibility structure on every view; unit/tree-model.test; unit/renderer/tree-pane.test | done |
+| INF-TABS-01 | Multiple note tabs; one tab per note, reopening focuses it | 02 | E | e2e/tabs.spec › no duplicate tabs; unit/tab-session.test | done |
+| INF-TABS-02 | Switch tabs by click and Ctrl+Tab/Ctrl+Shift+Tab | 02 | E | e2e/tabs.spec › ctrl+tab; › keyboard tablist; unit/renderer/tab-strip.test | done |
+| INF-TABS-03 | Close via Ctrl+W, button or middle-click; never deletes the note; pending save flushed first | 02 | E | e2e/tabs.spec › close keeps note; e2e/editor.spec › flush on close; unit/renderer/state/note-controller.test | done |
+| INF-TABS-04 | Tab overflow scrolls and offers an All tabs list | 02 | E,V | e2e/tabs.spec › overflow list; e2e/visual.spec › tab overflow | done |
+| INF-TABS-05 | Tabs, order and active tab restored after relaunch without duplicates | 02 | I,E | e2e/tabs.spec › restore after relaunch; integration/session.test; e2e/editor.spec › text area save increments revision and survives relaunch | done |
+| INF-TABS-06 | Trashing a note closes its tabs; restored session skips trashed/missing notes with notice | 02 | E | e2e/tabs.spec › trashed note tab closed; › session skips trashed and missing | done |
 | INF-TABS-07 | Only the active tab mounts an editor; inactive tabs keep lightweight state; editors disposed; image cache bounded | 03 | E,P | e2e/editor.spec › single editor instance; perf/editors | planned |
-| INF-TABS-08 | Singleton page tabs for Stickies, Reminders and Settings | 02 | E | e2e/tabs.spec › page singletons | planned |
-| INF-KEY-01 | Ctrl+N creates a note in the current scope | 02 | E | e2e/keyboard.spec › ctrl+n | planned |
-| INF-KEY-02 | Ctrl+Shift+N creates a sticky in the current scope | 02 | E | e2e/keyboard.spec › ctrl+shift+n | planned |
-| INF-KEY-03 | Ctrl+K command palette with common actions and title search | 02 | E | e2e/palette.spec › actions and titles | planned |
+| INF-TABS-08 | Singleton page tabs for Stickies, Reminders and Settings | 02 | E | e2e/tabs.spec › page singletons | done |
+| INF-KEY-01 | Ctrl+N creates a note in the current scope | 02 | E | e2e/keyboard.spec › ctrl+n; unit/renderer/state/current-location.test | done |
+| INF-KEY-02 | Ctrl+Shift+N creates a sticky in the current scope | 02 | E | e2e/keyboard.spec › ctrl+shift+n; unit/shortcuts.test | done |
+| INF-KEY-03 | Ctrl+K command palette with common actions and title search | 02 | E | e2e/palette.spec › actions and titles; integration/palette.test; unit/palette-actions.test | done |
 | INF-KEY-04 | Ctrl+F find in the current note | 03 | E | e2e/editor.spec › find in note | planned |
 | INF-KEY-05 | Optional global quick-sticky shortcut, off by default, capability checked, failure reported | 08 | I,N | integration/shortcuts.test; native check | planned |
 | INF-KEY-06 | Keyboard help listing shortcuts | 08 | E | e2e/settings.spec › keyboard help | planned |
@@ -249,7 +249,7 @@ Work items are ordered; each lists the requirement IDs it satisfies. Phase 01 is
 ### Phase 02
 
 - W02-01 App shell: rail, header, tab strip, resizable tree, context panel, drawers, tokens and themes. IDs: INF-SHELL-01, INF-SHELL-02, INF-SHELL-03, INF-SHELL-04, INF-SHELL-05, INF-SHELL-06
-- W02-02 Hierarchy services in main: projects, folders, notes, stickies, move, cycle check, trash, pin, favorite (migration data already in 001). IDs: INF-HIER-01, INF-HIER-02, INF-HIER-03, INF-HIER-04, INF-HIER-05, INF-HIER-06, INF-HIER-07, INF-HIER-08, INF-HIER-09, INF-HIER-10, INF-HIER-12
+- W02-02 Hierarchy services in main: projects, folders, notes, stickies, move, cycle check, trash, pin, favorite (columns already in 001; migration 002 adds indexes, D-044). IDs: INF-HIER-01, INF-HIER-02, INF-HIER-03, INF-HIER-04, INF-HIER-05, INF-HIER-06, INF-HIER-07, INF-HIER-08, INF-HIER-09, INF-HIER-10, INF-HIER-12
 - W02-03 Tree UI with ARIA tree keyboard model and Move to dialog. IDs: INF-HIER-07, INF-HIER-12
 - W02-04 Tab strip, singleton pages, session persistence and restore. IDs: INF-TABS-01, INF-TABS-02, INF-TABS-03, INF-TABS-04, INF-TABS-05, INF-TABS-06, INF-TABS-08
 - W02-05 Home dashboard and scope filter. IDs: INF-HOME-01, INF-HOME-02, INF-HOME-03
@@ -264,23 +264,23 @@ Work items are ordered; each lists the requirement IDs it satisfies. Phase 01 is
 
 ### Phase 04
 
-- W04-01 Sticky windows keyed by note ID, header, dock, colors, window_state (migration 002). IDs: INF-STKY-01, INF-STKY-02, INF-STKY-03, INF-STKY-04, INF-STKY-05, INF-STKY-06, INF-STKY-07, INF-STKY-08, INF-STKY-09, INF-STKY-10, INF-STKY-11, INF-STKY-12, INF-STKY-13
+- W04-01 Sticky windows keyed by note ID, header, dock, colors, window_state (migration 003). IDs: INF-STKY-01, INF-STKY-02, INF-STKY-03, INF-STKY-04, INF-STKY-05, INF-STKY-06, INF-STKY-07, INF-STKY-08, INF-STKY-09, INF-STKY-10, INF-STKY-11, INF-STKY-12, INF-STKY-13
 - W04-02 Close/tray/quit lifecycle and tray-less fallback. IDs: INF-DESK-01, INF-DESK-02
 
 ### Phase 05
 
-- W05-01 Reminder data and services (migration 003), time resolver, recurrence. IDs: INF-REM-01, INF-REM-02, INF-REM-03, INF-REM-04, INF-REM-05, INF-REM-06, INF-REM-07, INF-REM-08, INF-REM-09, INF-REM-10, INF-REM-11, INF-REM-12, INF-REM-13, INF-REM-14, INF-REM-15, INF-REM-16, INF-REM-17, INF-REM-18
+- W05-01 Reminder data and services (migration 004), time resolver, recurrence. IDs: INF-REM-01, INF-REM-02, INF-REM-03, INF-REM-04, INF-REM-05, INF-REM-06, INF-REM-07, INF-REM-08, INF-REM-09, INF-REM-10, INF-REM-11, INF-REM-12, INF-REM-13, INF-REM-14, INF-REM-15, INF-REM-16, INF-REM-17, INF-REM-18
 - W05-02 ReminderService scheduler, delivery claims, recovery, quiet hours. IDs: INF-SCHED-01, INF-SCHED-02, INF-SCHED-03, INF-SCHED-04, INF-SCHED-05, INF-SCHED-06, INF-SCHED-07, INF-SCHED-08, INF-SCHED-09
 - W05-03 Reminder widget and Home reminder section. IDs: INF-HOME-04, INF-WIDG-01, INF-WIDG-02, INF-WIDG-03
 
 ### Phase 06
 
 - W06-01 NLP parser pipeline with frozen-clock tables. IDs: INF-NLP-01, INF-NLP-02, INF-NLP-03, INF-NLP-04, INF-NLP-05, INF-NLP-06, INF-NLP-07, INF-NLP-08, INF-NLP-09, INF-NLP-10, INF-NLP-11, INF-NLP-12, INF-NLP-13, INF-NLP-14
-- W06-02 Suggestions, confirmation card, sources and dismissals (migration 004). IDs: INF-SUG-01, INF-SUG-02, INF-SUG-03, INF-SUG-04, INF-SUG-05, INF-SUG-06, INF-SUG-07, INF-SUG-08, INF-SUG-09, INF-SUG-10
+- W06-02 Suggestions, confirmation card, sources and dismissals (migration 005). IDs: INF-SUG-01, INF-SUG-02, INF-SUG-03, INF-SUG-04, INF-SUG-05, INF-SUG-06, INF-SUG-07, INF-SUG-08, INF-SUG-09, INF-SUG-10
 
 ### Phase 07
 
-- W07-01 References and backlinks (migration 005). IDs: INF-REF-01, INF-REF-02, INF-REF-03, INF-REF-04, INF-REF-05, INF-REF-06, INF-REF-07, INF-REF-08, INF-REF-09
+- W07-01 References and backlinks (migration 006). IDs: INF-REF-01, INF-REF-02, INF-REF-03, INF-REF-04, INF-REF-05, INF-REF-06, INF-REF-07, INF-REF-08, INF-REF-09
 - W07-02 Search (FTS5, palette results, filters), tags. IDs: INF-HIER-11, INF-SRCH-01, INF-SRCH-02, INF-SRCH-03, INF-SRCH-04, INF-SRCH-05, INF-SRCH-06
 
 ### Phase 08

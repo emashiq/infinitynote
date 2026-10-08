@@ -144,7 +144,7 @@ describe('IPC router (INF-FND-04)', () => {
   it('refuses channels outside the catalogue and duplicates; dispose removes handlers', () => {
     const r = makeRouter();
     expect(() =>
-      r.router.register({ channel: 'note:save' as never, ...CHANNEL_SCHEMAS['app:quit'], handler: () => ({}) }),
+      r.router.register({ channel: 'lease:take' as never, ...CHANNEL_SCHEMAS['app:quit'], handler: () => ({}) }),
     ).toThrow(/catalogue/);
     r.router.register({ channel: 'app:quit', ...CHANNEL_SCHEMAS['app:quit'], handler: () => ({}) });
     expect(() => r.router.register({ channel: 'app:quit', ...CHANNEL_SCHEMAS['app:quit'], handler: () => ({}) })).toThrow(/already/);

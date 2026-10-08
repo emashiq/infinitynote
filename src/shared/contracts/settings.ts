@@ -1,10 +1,22 @@
 import { z } from 'zod';
+import { HomeScope } from './home';
+import { DEFAULT_SESSION, TabSession } from './session';
 
 export const ThemeSetting = z.enum(['system', 'light', 'dark']);
 
-/** Settings registry (D-041). Add new keys here; stored as {"v":<version>,"value":<value>}. */
+const EXPANDED_KEY_RE =
+  /^(common|projects|favorites|trash|(project|folder):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+export const TreeExpandedSetting = z.array(z.string().regex(EXPANDED_KEY_RE)).max(5000);
+
+/** Settings registry (D-041, D-045). Stored as {"v":<version>,"value":<value>}. `public: false` keys are main-only. */
 export const SETTINGS = {
-  'appearance.theme': { version: 1, schema: ThemeSetting, default: 'system' },
+  'appearance.theme': { version: 1, schema: ThemeSetting, default: 'system', public: true },
+  'layout.treeOpen': { version: 1, schema: z.boolean(), default: true, public: true },
+  'layout.treeWidth': { version: 1, schema: z.number().int().min(220).max(280), default: 248, public: true },
+  'layout.panelOpen': { version: 1, schema: z.boolean(), default: true, public: true },
+  'home.scope': { version: 1, schema: HomeScope, default: { kind: 'all' }, public: true },
+  'tree.expanded': { version: 1, schema: TreeExpandedSetting, default: ['common', 'projects'], public: true },
+  'session.tabs': { version: 1, schema: TabSession, default: DEFAULT_SESSION, public: false },
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;
@@ -12,7 +24,12 @@ export type SettingValue<K extends SettingKey> = z.infer<(typeof SETTINGS)[K]['s
 
 export const SETTING_KEYS = Object.keys(SETTINGS) as SettingKey[];
 
-export const SettingKeySchema = z.enum(SETTING_KEYS as [SettingKey, ...SettingKey[]]);
+export type PublicSettingKey = {
+  [K in SettingKey]: (typeof SETTINGS)[K]['public'] extends true ? K : never;
+}[SettingKey];
+export const PUBLIC_SETTING_KEYS = SETTING_KEYS.filter((k) => SETTINGS[k].public) as PublicSettingKey[];
+
+export const SettingKeySchema = z.enum(PUBLIC_SETTING_KEYS as [PublicSettingKey, ...PublicSettingKey[]]);
 
 export const SettingsGetRequest = z.strictObject({
   keys: z
@@ -23,12 +40,12 @@ export const SettingsGetRequest = z.strictObject({
 });
 export const SettingsGetResponse = z.strictObject({ values: z.record(z.string(), z.unknown()) });
 
-function variant<K extends SettingKey>(key: K) {
+function variant<K extends PublicSettingKey>(key: K) {
   return z.strictObject({ key: z.literal(key), value: SETTINGS[key].schema });
 }
-type ThemeVariant = ReturnType<typeof variant<'appearance.theme'>>;
-const variants = SETTING_KEYS.map((k) => variant(k));
-export const SettingsSetRequest = z.discriminatedUnion('key', variants as unknown as [ThemeVariant]);
+type Variant = ReturnType<typeof variant<PublicSettingKey>>;
+const variants = PUBLIC_SETTING_KEYS.map((k) => variant(k));
+export const SettingsSetRequest = z.discriminatedUnion('key', variants as unknown as [Variant, ...Variant[]]);
 
 export const SettingsSetResponse = z.strictObject({
   key: SettingKeySchema,

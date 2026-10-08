@@ -16,6 +16,7 @@ import {
   waitForExit,
   type Launched,
 } from './fixtures';
+import { activate, railGo } from './ui';
 
 let userData = '';
 let launched: Launched | null = null;
@@ -35,6 +36,7 @@ test('starts a real window with temp userData', async () => {
   const { app, page } = launched;
   expect(await page.title()).toBe('Infinity Notes');
   await expect(page.locator('h1')).toHaveText('Infinity Notes');
+  await railGo(page, 'Settings');
   await expect(page.getByText('Version 0.1.0')).toBeVisible();
   const windows = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
   expect(windows).toBe(1);
@@ -78,17 +80,20 @@ test('db diagnostics', async () => {
   expect(info).not.toBeNull();
   expect(info!.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
   expect(info!.sqlite!.version).toMatch(/^3\.\d+\.\d+$/);
-  expect(info!.schemaVersion).toBe(1);
+  expect(info!.schemaVersion).toBe(3);
   expect(info!.startup).toEqual({ status: 'ok' });
   expect(info!.isPackaged).toBe(false);
   expect(info!.versions.electron).toBe('44.7.0');
   expect(JSON.stringify(info)).not.toContain(userData.replace(/\\/g, '\\\\'));
+  await railGo(launched.page, 'Settings');
   await expect(launched.page.getByText(/Storage ready \(SQLite 3\./)).toBeVisible();
 });
 
 test('setting survives relaunch', async () => {
   launched = await launchApp({ userDataDir: userData });
-  await launched.page.getByLabel('Dark').check();
+  await railGo(launched.page, 'Settings');
+  await activate(launched.page.getByRole('radio', { name: 'Dark' }));
+  await expect(launched.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
   await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect.poll(async () => launched!.page.evaluate(async () => {
     const r = await window.infinity.settings.get({ keys: ['appearance.theme'] });
@@ -103,13 +108,15 @@ test('setting survives relaunch', async () => {
   expect(row.updated_at).toBeGreaterThan(0);
 
   launched = await launchApp({ userDataDir: userData });
-  await expect(launched.page.getByLabel('Dark')).toBeChecked();
+  await railGo(launched.page, 'Settings');
+  await expect(launched.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
   await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
 test('invalid stored setting falls back', async () => {
   launched = await launchApp({ userDataDir: userData });
-  await launched.page.getByLabel('Dark').check();
+  await railGo(launched.page, 'Settings');
+  await activate(launched.page.getByRole('radio', { name: 'Dark' }));
   await expect.poll(async () => launched!.page.evaluate(async () => {
     const r = await window.infinity.settings.get({ keys: ['appearance.theme'] });
     return r.ok ? r.data.values['appearance.theme'] : null;
@@ -121,7 +128,8 @@ test('invalid stored setting falls back', async () => {
   db.close();
 
   launched = await launchApp({ userDataDir: userData });
-  await expect(launched.page.getByLabel('System')).toBeChecked();
+  await railGo(launched.page, 'Settings');
+  await expect(launched.page.getByRole('radio', { name: 'System' })).toBeChecked();
   expect(readMainLog(userData)).toContain('settings: invalid stored value key=appearance.theme');
 });
 

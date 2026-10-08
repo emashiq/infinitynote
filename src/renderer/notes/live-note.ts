@@ -1,0 +1,33 @@
+import { useMemo } from 'react';
+import type { TreeSnapshotType } from '../../shared/contracts/hierarchy';
+import { buildPathIndex, pathOf } from '../../shared/tree/paths';
+import type { NoteController } from './note-controller';
+import { useServices, useStore } from '../state/use-store';
+
+export interface LiveNote {
+  title: string;
+  path: string[];
+  updatedAt: number | null;
+}
+
+/** Title and location of a note taken from the tree snapshot when it lists the note, else from the opened copy. */
+export function liveNoteFrom(
+  snapshot: TreeSnapshotType,
+  noteId: string,
+  opened: { title: string; path: string[] } | null,
+): LiveNote | null {
+  const live = snapshot.notes.find((n) => n.id === noteId);
+  if (!live) return opened ? { title: opened.title, path: opened.path, updatedAt: null } : null;
+  const index = buildPathIndex(
+    snapshot.projects.map((p) => ({ id: p.id, name: p.name, createdAt: p.createdAt })),
+    snapshot.folders.map((f) => ({ id: f.id, projectId: f.projectId, parentId: f.parentId, name: f.name, createdAt: f.createdAt })),
+  );
+  return { title: live.title, path: pathOf(index, { projectId: live.projectId, folderId: live.folderId }), updatedAt: live.updatedAt };
+}
+
+export function useLiveNote(controller: NoteController): LiveNote | null {
+  const { tree } = useServices();
+  const { snapshot } = useStore(tree.store);
+  const { note } = useStore(controller.store);
+  return useMemo(() => liveNoteFrom(snapshot, controller.noteId, note), [snapshot, controller.noteId, note]);
+}

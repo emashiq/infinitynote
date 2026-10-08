@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, type BrowserWindowConstructorOptions } from 'electron';
 import { PRODUCT_NAME, RENDERER_HOST, RENDERER_SCHEME } from '../../shared/app-identity';
 import type { Logger } from '../services/logger';
 import type { WindowRegistry } from './window-registry';
@@ -12,8 +12,13 @@ export interface MainWindowOptions {
   devUrl: string | null;
 }
 
-export function createMainWindow(options: MainWindowOptions): BrowserWindow {
-  const win = new BrowserWindow({
+/** Pure description of the main window; unit tested (INF-SHELL-06: native frame, no custom title bar). */
+export function mainWindowOptions(opts: {
+  preloadPath: string;
+  iconPath: string;
+  platform?: NodeJS.Platform;
+}): BrowserWindowConstructorOptions {
+  return {
     width: 1100,
     height: 720,
     minWidth: 720,
@@ -21,9 +26,9 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
     title: PRODUCT_NAME,
     show: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon: options.iconPath } : {}),
+    ...((opts.platform ?? process.platform) === 'linux' ? { icon: opts.iconPath } : {}),
     webPreferences: {
-      preload: options.preloadPath,
+      preload: opts.preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -35,7 +40,11 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
       spellcheck: false,
       safeDialogs: true,
     },
-  });
+  };
+}
+
+export function createMainWindow(options: MainWindowOptions): BrowserWindow {
+  const win = new BrowserWindow(mainWindowOptions({ preloadPath: options.preloadPath, iconPath: options.iconPath }));
 
   const wc = win.webContents;
   const id = wc.id;

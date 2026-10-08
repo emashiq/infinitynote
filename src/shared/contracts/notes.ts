@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NoteSummary } from './hierarchy';
 import { Uuid } from './ids';
 
 export const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
@@ -65,3 +66,15 @@ export type NoteLeaseEventType = z.infer<typeof NoteLeaseEvent>;
 
 export const LeaseReleaseRequestEvent = z.strictObject({ noteId: Uuid });
 export type LeaseReleaseRequestEventType = z.infer<typeof LeaseReleaseRequestEvent>;
+
+// Phase 02: opening a note ----------------------------------------------------
+export const NoteOpenRequest = z.strictObject({ noteId: Uuid });
+export const NoteOpenResponse = z.strictObject({
+  note: NoteSummary,
+  format: z.enum(['rich', 'plain']),
+  content: z.union([RichDoc, z.string()]),
+  revision: z.number().int().min(0),
+});
+export type NoteOpenResponseType = z.infer<typeof NoteOpenResponse>;
+export const NoteNotFoundDetails = z.strictObject({ trashed: z.literal(true), trashBatchId: Uuid.nullable() });
+export type NoteNotFoundDetailsType = z.infer<typeof NoteNotFoundDetails>;
