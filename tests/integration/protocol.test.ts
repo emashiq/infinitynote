@@ -94,6 +94,44 @@ describe('attachment protocol (INF-FND-08)', () => {
     expect(s.logger.lines.some((l) => l.includes(`attachment: containment violation id=${evil}`))).toBe(true);
   });
 
+  it('junction or symlink escape refused (F-01-2)', async () => {
+    const s = await setupAttachments();
+    const outside = path.join(s.t.dir, 'outside');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'leak.png'), PNG);
+    // A directory junction (Windows, no admin needed) or a directory symlink (Linux) under attachments/ pointing outside.
+    fs.symlinkSync(outside, path.join(s.dataDir, 'attachments', 'cd'), process.platform === 'win32' ? 'junction' : 'dir');
+    const viaLink = randomUUID();
+    s.t.db
+      .prepare<[string]>(
+        "INSERT INTO attachments(id, managed_relative_path, sha256, mime, size_bytes, kind, created_at) VALUES (?, 'attachments/cd/leak.png', '" + 'f'.repeat(64) + "', 'image/png', 1, 'image', 1)",
+      )
+      .run(viaLink);
+    expect(fs.readFileSync(path.join(s.dataDir, 'attachments', 'cd', 'leak.png')).equals(PNG)).toBe(true);
+    const res = await s.get(`infinity-attachment://${viaLink}`);
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe('');
+    expect(s.logger.lines.some((l) => l.includes(`attachment: containment violation id=${viaLink}`))).toBe(true);
+    // The regular image next to it is still served.
+    expect((await s.get(`infinity-attachment://${s.pngId}`)).status).toBe(200);
+  });
+
+  // Platform condition: creating a file symlink on Windows needs administrator rights or Developer Mode; the
+  // junction case above covers Windows.
+  it.skipIf(process.platform === 'win32')('a file symlink inside attachments is refused', async () => {
+    const s = await setupAttachments();
+    const target = path.join(s.dataDir, 'attachments', 'ab', 'pic.png');
+    const link = path.join(s.dataDir, 'attachments', 'ab', 'link.png');
+    fs.symlinkSync(target, link, 'file');
+    const id = randomUUID();
+    s.t.db
+      .prepare<[string]>(
+        "INSERT INTO attachments(id, managed_relative_path, sha256, mime, size_bytes, kind, created_at) VALUES (?, 'attachments/ab/link.png', '" + '9'.repeat(64) + "', 'image/png', 1, 'image', 1)",
+      )
+      .run(id);
+    expect((await s.get(`infinity-attachment://${id}`)).status).toBe(404);
+  });
+
   it('non-GET gives 405 and a closed database gives 404', async () => {
     const s = await setupAttachments();
     expect((await s.get(`infinity-attachment://${s.pngId}`, 'POST')).status).toBe(405);

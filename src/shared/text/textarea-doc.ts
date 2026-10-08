@@ -1,22 +1,23 @@
-/** Temporary plain-text editor mapping (D-048): one paragraph per line. */
-export interface RichDocLike {
-  type: 'doc';
-  content?: unknown[];
-  [key: string]: unknown;
-}
+import type { RichDocLike } from '../editor/doc-schema';
 
-export function textToDoc(text: string): RichDocLike {
+/**
+ * Plain-text mapping between a string and a document of paragraphs, one paragraph per line. Used by the
+ * plain-text editor and by plain-to-rich conversion. `id` gives each paragraph a block ID.
+ */
+export function textToDoc(text: string, opts: { id?: () => string } = {}): RichDocLike {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   return {
     type: 'doc',
-    content: lines.map((line) => (line === '' ? { type: 'paragraph' } : { type: 'paragraph', content: [{ type: 'text', text: line }] })),
+    content: lines.map((line) => {
+      const attrs = opts.id ? { attrs: { id: opts.id() } } : {};
+      return line === '' ? { type: 'paragraph', ...attrs } : { type: 'paragraph', ...attrs, content: [{ type: 'text', text: line }] };
+    }),
   };
 }
 
 interface NodeLike {
   type?: unknown;
   text?: unknown;
-  marks?: unknown;
   content?: unknown;
 }
 
@@ -33,21 +34,4 @@ export function docToText(doc: unknown): string {
         .join(''),
     )
     .join('\n');
-}
-
-export function isTextareaCompatible(doc: unknown): boolean {
-  if (doc === null || typeof doc !== 'object' || (doc as NodeLike).type !== 'doc') return false;
-  const content = (doc as NodeLike).content;
-  if (content !== undefined && !Array.isArray(content)) return false;
-  return asNodes(content).every((p) => {
-    if (p === null || typeof p !== 'object' || p.type !== 'paragraph') return false;
-    if (p.marks !== undefined) return false;
-    if (p.content !== undefined && !Array.isArray(p.content)) return false;
-    return asNodes(p.content).every((c) => {
-      if (c === null || typeof c !== 'object') return false;
-      if (c.type === 'hardBreak') return true;
-      if (c.type !== 'text' || typeof c.text !== 'string') return false;
-      return c.marks === undefined || (Array.isArray(c.marks) && c.marks.length === 0);
-    });
-  });
 }

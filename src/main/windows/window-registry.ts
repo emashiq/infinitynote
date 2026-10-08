@@ -25,6 +25,10 @@ export class WindowRegistry {
     return this.windows.has(webContentsId);
   }
 
+  get(webContentsId: number): RegisteredWindow | undefined {
+    return this.windows.get(webContentsId);
+  }
+
   all(): RegisteredWindow[] {
     return [...this.windows.values()];
   }

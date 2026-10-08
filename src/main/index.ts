@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { APP_ID, APP_VERSION, ATTACHMENT_SCHEME, PRODUCT_NAME, RENDERER_SCHEME } from '../shared/app-identity';
 import type { AppInfoType, CapabilitiesType, StartupStateType } from '../shared/contracts/app';
+import type { NoteRevisionEventType } from '../shared/contracts/notes';
 import { ThemeSetting } from '../shared/contracts/settings';
 import { assertNotInstallDir, ensureDataDirs, resolveDataPaths, resolveUserDataOverride } from './app-paths';
 import { openDatabase } from './db/open-database';
@@ -16,6 +17,8 @@ import { buildMenu } from './menu';
 import { errorMessage } from './services/app-error';
 import { collectCapabilityInputs, detectCapabilities } from './services/capabilities';
 import { systemClock } from './services/clock';
+import { createElectronDialogAdapter } from './services/dialog-adapter';
+import { FlushCoordinator } from './services/flush-coordinator';
 import { systemIds } from './services/ids';
 import { createFileLogger, nullLogger, type Logger } from './services/logger';
 import { installNetworkGuard } from './services/network-guard';
@@ -23,6 +26,7 @@ import type { ShellAdapter } from './services/shell-adapter';
 import { isSelfTestMode, runSelfTestMode } from './self-test-mode';
 import { acquireSingleInstance, installSecondInstanceHandler } from './single-instance';
 import { installTestHooks, testHooksEnabled } from './test-hooks';
+import { createWindowLifecycle } from './window-lifecycle';
 import { createAttachmentHandler } from './windows/attachment-protocol';
 import { createMainWindow } from './windows/main-window';
 import { createRendererHandler } from './windows/renderer-protocol';
@@ -88,7 +92,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   installNetworkGuard(session.defaultSession, {
     devOrigin,
     logger: log,
-    onBlocked: hooks ? (url) => hooks.blockedRequests.push(url) : undefined,
+    onBlocked: hooks ? (url) => hooks.state.blockedRequests.push(url) : undefined,
   });
   if (!devUrl) protocol.handle(RENDERER_SCHEME, createRendererHandler({ root: path.join(__dirname, '../renderer'), logger: log }));
 
@@ -105,22 +109,43 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   protocol.handle(ATTACHMENT_SCHEME, createAttachmentHandler({ db, dataDir: paths.dataDir, logger: log }));
 
   const eventBus = createEventBus(registry);
+  const coordinator = new FlushCoordinator({
+    sendTo: (webContentsId, flushId) => {
+      if (!eventBus.sendTo(webContentsId, 'app:flush-request', { flushId })) throw new Error('the window is gone');
+    },
+    ids: systemIds,
+    logger: log,
+  });
   let services: MainServices | null = null;
   if (db) {
+    const emitRevision = (event: NoteRevisionEventType) => eventBus.broadcast('note:revision', event);
     services = createMainServices({
       db,
       clock: systemClock,
       ids: systemIds,
       logger: log,
+      dataDir: paths.dataDir,
+      dialog: hooks ? hooks.dialog : createElectronDialogAdapter(),
       onSettingsChanged: (payload) => {
         if (payload.key === 'appearance.theme') applyNativeTheme(payload.value);
         eventBus.broadcast('settings:changed', payload);
       },
       onTreeChanged: (event) => eventBus.broadcast('tree:changed', event),
+      onNoteRevision: emitRevision,
+      onLeaseChanged: (event) => eventBus.broadcast('note:lease', event),
+      requestLeaseRelease: (holder, noteId) => {
+        if (hooks?.ownsWebContents(holder.webContentsId)) hooks.onReleaseRequest(noteId);
+        else eventBus.sendTo(holder.webContentsId, 'lease:release-request', { noteId });
+      },
+      testFaults: hooks?.faults,
     });
+    hooks?.attachServices({ services, db, clock: systemClock, emitRevision });
     applyNativeTheme(services.settings.getInternal('appearance.theme'));
     const { leases } = services;
-    app.on('web-contents-created', (_e, wc) => wc.on('destroyed', () => leases.webContentsDestroyed(wc.id)));
+    app.on('web-contents-created', (_e, wc) => wc.on('destroyed', () => leases.webContentsReset(wc.id)));
+    void services.attachments.sweepTmp(systemClock.now()).then((removed) => {
+      if (removed > 0) log.info(`attachments: removed ${removed} stale temporary file(s)`);
+    });
   }
 
   const startup: StartupStateType = opened.ok ? { status: 'ok' } : { status: 'error', code: opened.code };
@@ -139,7 +164,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     startup,
   });
   let capabilities: CapabilitiesType | null = null;
-  const shellAdapter: ShellAdapter = hooks ? hooks.shell : { openPath: (p) => shell.openPath(p) };
+  const shellAdapter: ShellAdapter = hooks ? hooks.shell : { openPath: (p) => shell.openPath(p), openExternal: (url) => shell.openExternal(url) };
   const router = createIpcRouter({
     ipcMain,
     senderPolicy: createSenderPolicy({ registry, devOrigin }),
@@ -153,8 +178,21 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       shell: shellAdapter,
       dataDir: paths.dataDir,
       quit: () => app.quit(),
+      flushed: (webContentsId, flushId) => coordinator.ack(webContentsId, flushId),
     },
     services,
+  });
+
+  const leases = services?.leases ?? null;
+  const lifecycle = createWindowLifecycle({
+    app,
+    registry,
+    logger: log,
+    flush: async (webContentsIds) => {
+      const outcome = await coordinator.flush(webContentsIds);
+      hooks?.state.flushLog.push(outcome);
+    },
+    resetLeases: (webContentsId) => leases?.webContentsReset(webContentsId),
   });
 
   Menu.setApplicationMenu(buildMenu(isPackaged));
@@ -164,6 +202,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     registry,
     logger: log,
     devUrl: devUrl ? `${devUrl}${devUrl.endsWith('/') ? '' : '/'}` : null,
+    ...lifecycle.windowHooks(),
   });
 
   app.on('will-quit', () => {

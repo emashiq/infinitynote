@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NotesRepo } from '../../src/main/db/repositories/notes-repo';
 import { AppError } from '../../src/main/services/app-error';
 import { LeaseManager, type LeaseHolder } from '../../src/main/services/lease-manager';
-import { NoteWriter } from '../../src/main/services/note-writer';
 import type { NoteLeaseEventType } from '../../src/shared/contracts/notes';
-import { fixedClock, openFresh, randomIds } from './helpers';
+import { textToDoc } from '../../src/shared/text/textarea-doc';
+import { setupServices } from './hierarchy-helpers';
+import { fixedClock, randomIds } from './helpers';
 
 function mk() {
   const events: NoteLeaseEventType[] = [];
@@ -97,16 +98,69 @@ describe('writer lease (INF-FND-13)', () => {
     expect((await m.leases.take(m.note, m.a, 1)).leaseToken).toBe(free.leaseToken);
   });
 
-  it('webContentsDestroyed frees the lease and resolves a pending take', async () => {
+  it('webContentsReset frees the lease and resolves a pending take', async () => {
     const m = mk();
     const t1 = granted(m.leases.acquire(m.note, m.a, 1));
     const pending = m.leases.take(m.note, m.b, 2);
-    m.leases.webContentsDestroyed(1);
+    m.leases.webContentsReset(1);
     const { leaseToken } = await pending;
     expect(m.leases.verify(m.note, m.b, leaseToken, 2)).toBe('ok');
     expect(m.leases.verify(m.note, m.a, t1, 1)).toBe('lost');
     // the destroyed view binding is gone, so the id can be reused by another webContents
     expect(m.leases.acquire(randomUUID(), m.a, 9).granted).toBe(true);
+  });
+
+  it('release-request goes only to the holder', async () => {
+    const m = mk();
+    granted(m.leases.acquire(m.note, m.a, 1));
+    const pending = m.leases.take(m.note, m.b, 2);
+    expect(m.releaseRequests).toEqual([{ holder: { viewId: m.a, webContentsId: 1 }, noteId: m.note }]);
+    await vi.advanceTimersByTimeAsync(3001);
+    await pending;
+    // A take on a free note, or by the holder itself, asks nobody.
+    await m.leases.take(randomUUID(), m.a, 1);
+    expect(m.releaseRequests).toHaveLength(1);
+  });
+
+  it('holder flush lands before the grant', async () => {
+    const t = await setupServices();
+    const noteId = t.note(null, null, 'Shared').id;
+    const [holder, requester] = [randomUUID(), randomUUID()];
+    const token = granted(t.leases.acquire(noteId, holder, 1));
+    const taking = t.leases.take(noteId, requester, 2);
+    // The holder answers the release request: it saves its pending text first, then releases.
+    expect(t.releaseRequests).toEqual([{ holder: { viewId: holder, webContentsId: 1 }, noteId }]);
+    const ack = t.writer.save(
+      { noteId, viewId: holder, leaseToken: token, baseRevision: 0, requestId: randomUUID(), format: 'rich', content: textToDoc('holder text') },
+      { webContentsId: 1 },
+    );
+    t.leases.release(noteId, holder, token, 1);
+    const { leaseToken } = await taking;
+    expect(ack.revision).toBe(1);
+    expect(t.row<{ plain_text: string }>('SELECT plain_text FROM notes WHERE id = ?', noteId)?.plain_text).toBe('holder text');
+    expect(t.leases.verify(noteId, requester, leaseToken, 2)).toBe('ok');
+    expect(t.leaseEvents.map((e) => e.holderViewId)).toEqual([holder, null, requester]);
+  });
+
+  it('webContentsReset revokes and allows a new acquire', () => {
+    const m = mk();
+    const t1 = granted(m.leases.acquire(m.note, m.a, 1));
+    m.leases.webContentsReset(1);
+    expect(m.leases.isRevoked(t1)).toBe(true);
+    expect(m.leases.holderOf(m.note)).toBeNull();
+    expect(m.events.at(-1)).toEqual({ noteId: m.note, holderViewId: null });
+    // After a reload the renderer has a new document with a new viewId on the same webContents.
+    const fresh = randomUUID();
+    const t2 = granted(m.leases.acquire(m.note, fresh, 1));
+    expect(m.leases.verify(m.note, fresh, t2, 1)).toBe('ok');
+    expect(m.leases.verify(m.note, m.a, t1, 1)).toBe('lost');
+  });
+
+  it('a second viewId in the same document is refused', () => {
+    const m = mk();
+    granted(m.leases.acquire(m.note, m.a, 1));
+    expect(m.leases.acquire(m.note, m.b, 1)).toEqual({ granted: false, holderViewId: m.a });
+    expect(m.leases.holderOf(m.note)).toBe(m.a);
   });
 
   it('a viewId reused from another webContents is FORBIDDEN', () => {
@@ -121,18 +175,18 @@ describe('writer lease (INF-FND-13)', () => {
 
 describe('lease and save integration', () => {
   it('a save with a revoked token gives LEASE_REQUIRED plus a lease_lost draft', async () => {
-    vi.useRealTimers();
-    const t = await openFresh();
-    const clock = fixedClock();
-    const ids = randomIds();
-    const leases = new LeaseManager({ ids, clock, requestRelease: () => {}, emit: () => {}, takeTimeoutMs: 5 });
-    const writer = new NoteWriter({ db: t.db, leases, clock, ids, emit: () => {} });
+    const { t, leases, writer } = await setupServices();
     const noteId = randomUUID();
     new NotesRepo(t.db).createNote({ id: noteId, format: 'plain', contentText: '', now: 1 });
     const a = randomUUID();
     const b = randomUUID();
     const token = granted(leases.acquire(noteId, a, 1));
-    await leases.take(noteId, b, 2);
+    // The holder never answers the release request, so the take revokes its token after the timeout.
+    vi.useFakeTimers();
+    const taking = leases.take(noteId, b, 2);
+    await vi.advanceTimersByTimeAsync(3001);
+    await taking;
+    vi.useRealTimers();
     let caught: AppError | null = null;
     try {
       writer.save(

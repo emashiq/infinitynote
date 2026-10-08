@@ -1,0 +1,82 @@
+import { Editor, type Content } from '@tiptap/core';
+import { afterEach } from 'vitest';
+import { plainExtensions, richExtensions } from '../../../../src/renderer/editor/extensions';
+import { createPasteProps } from '../../../../src/renderer/editor/paste';
+import { AttachmentUploader, type UploaderDeps } from '../../../../src/renderer/editor/uploader';
+import { ok } from '../../../../src/shared/contracts/envelope';
+
+const editors: Editor[] = [];
+
+afterEach(() => {
+  for (const e of editors.splice(0)) e.destroy();
+  document.body.innerHTML = '';
+});
+
+export const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+export interface TestEditor {
+  editor: Editor;
+  uploader: AttachmentUploader;
+  notices: string[];
+  /** Every onUpdate transaction, for the "is this a user edit" checks. */
+  updates: import('@tiptap/pm/state').Transaction[];
+}
+
+/** A real Tiptap editor in jsdom with the production extensions and paste handling. */
+export function makeEditor(opts: { format?: 'rich' | 'plain'; content?: Content; uploader?: Partial<UploaderDeps>; flushPending?: () => Promise<unknown> } = {}): TestEditor {
+  const format = opts.format ?? 'rich';
+  const notices: string[] = [];
+  const updates: TestEditor['updates'] = [];
+  const uploader = new AttachmentUploader({
+    importBytes: async (req) =>
+      ok({ attachment: { id: crypto.randomUUID(), kind: req.kind, mime: 'image/png', sizeBytes: req.bytes.byteLength, originalName: req.originalName ?? null, width: 4, height: 3 } }),
+    limits: () => ({ imageMaxMb: 20, documentMaxMb: 50 }),
+    notify: (m) => notices.push(m),
+    ...opts.uploader,
+  });
+  const element = document.createElement('div');
+  document.body.appendChild(element);
+  const editor = new Editor({
+    element,
+    extensions: format === 'rich' ? richExtensions({ uploader, notify: (m) => notices.push(m) }) : plainExtensions(),
+    content: opts.content ?? null,
+    enableContentCheck: true,
+    editorProps: createPasteProps({ format, uploader, notify: (m) => notices.push(m), flushPending: opts.flushPending ?? (async () => {}) }),
+    onUpdate: ({ transaction }) => updates.push(transaction),
+  });
+  uploader.bind(editor);
+  editors.push(editor);
+  return { editor, uploader, notices, updates };
+}
+
+/** Block IDs in document order with the node type. */
+export function blockIds(editor: Editor): Array<{ type: string; id: string | null; text: string }> {
+  const out: Array<{ type: string; id: string | null; text: string }> = [];
+  editor.state.doc.descendants((node) => {
+    if ('id' in node.attrs) out.push({ type: node.type.name, id: node.attrs.id as string | null, text: node.textContent });
+  });
+  return out;
+}
+
+/** Pastes HTML through ProseMirror's real clipboard parser (jsdom has no ClipboardEvent). */
+export function pasteHtml(editor: Editor, html: string): void {
+  editor.view.pasteHTML(html, new window.Event('paste') as ClipboardEvent);
+}
+
+/**
+ * Dispatches a paste event on the editor DOM, so ProseMirror runs its real paste path (handlePaste, then
+ * transformPastedHTML and the schema parser). jsdom has no ClipboardEvent, so clipboardData is attached.
+ */
+export function pasteEvent(editor: Editor, data: { text?: string; html?: string; files?: File[] }): Event {
+  const event = new window.Event('paste', { bubbles: true, cancelable: true });
+  const clipboardData = {
+    files: data.files ?? [],
+    types: [...(data.text !== undefined ? ['text/plain'] : []), ...(data.html !== undefined ? ['text/html'] : [])],
+    getData: (type: string) => (type === 'text/plain' ? (data.text ?? '') : type === 'text/html' ? (data.html ?? '') : ''),
+  };
+  Object.defineProperty(event, 'clipboardData', { value: clipboardData });
+  editor.view.dom.dispatchEvent(event);
+  return event;
+}
+
+export const tick = () => new Promise((r) => setTimeout(r, 0));

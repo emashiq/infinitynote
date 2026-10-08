@@ -8,6 +8,7 @@ export interface PaletteAction {
 
 export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: 'note.new', label: 'New note', shortcut: 'Ctrl+N' },
+  { id: 'note.newPlain', label: 'New plain-text note' },
   { id: 'sticky.new', label: 'New sticky', shortcut: 'Ctrl+Shift+N' },
   { id: 'project.new', label: 'New project' },
   { id: 'folder.new', label: 'New folder' },
@@ -20,6 +21,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: 'tab.close', label: 'Close tab', shortcut: 'Ctrl+W' },
   { id: 'tab.next', label: 'Next tab', shortcut: 'Ctrl+Tab' },
   { id: 'tab.prev', label: 'Previous tab', shortcut: 'Ctrl+Shift+Tab' },
+  { id: 'note.find', label: 'Find in note', shortcut: 'Ctrl+F' },
 ];
 
 /** Case-insensitive substring or word-prefix match; keeps list order. An empty query returns everything. */

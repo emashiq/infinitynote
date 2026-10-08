@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_DOCUMENT_MAX_MB, DEFAULT_IMAGE_MAX_MB, DOCUMENT_MAX_MB_RANGE, IMAGE_MAX_MB_RANGE } from '../attachments/limits';
 import { HomeScope } from './home';
 import { DEFAULT_SESSION, TabSession } from './session';
 
@@ -17,6 +18,19 @@ export const SETTINGS = {
   'home.scope': { version: 1, schema: HomeScope, default: { kind: 'all' }, public: true },
   'tree.expanded': { version: 1, schema: TreeExpandedSetting, default: ['common', 'projects'], public: true },
   'session.tabs': { version: 1, schema: TabSession, default: DEFAULT_SESSION, public: false },
+  // Public so Phase 08 adds only the Settings control (INF-PREF-05).
+  'attachments.imageMaxMb': {
+    version: 1,
+    schema: z.number().int().min(IMAGE_MAX_MB_RANGE.min).max(IMAGE_MAX_MB_RANGE.max),
+    default: DEFAULT_IMAGE_MAX_MB,
+    public: true,
+  },
+  'attachments.documentMaxMb': {
+    version: 1,
+    schema: z.number().int().min(DOCUMENT_MAX_MB_RANGE.min).max(DOCUMENT_MAX_MB_RANGE.max),
+    default: DEFAULT_DOCUMENT_MAX_MB,
+    public: true,
+  },
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;

@@ -1,6 +1,8 @@
 import type { MainServices } from '../main-services';
 import { AppError } from '../services/app-error';
 import { registerAppHandlers, type AppHandlerDeps } from './handlers/app-handlers';
+import { registerAttachmentHandlers } from './handlers/attachment-handlers';
+import { registerContentHandlers } from './handlers/content-handlers';
 import { registerHierarchyHandlers } from './handlers/hierarchy-handlers';
 import { registerHomeHandlers } from './handlers/home-handlers';
 import { registerNoteHandlers } from './handlers/note-handlers';
@@ -29,5 +31,7 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
   registerHomeHandlers(router, use('home'));
   registerSessionHandlers(router, use('sessions'));
   registerPaletteHandlers(router, use('palette'));
-  registerNoteHandlers(router, { reader: use('reader'), writer: use('writer'), leases: use('leases') });
+  registerNoteHandlers(router, { reader: use('reader'), writer: use('writer'), leases: use('leases'), formats: use('formats') });
+  registerContentHandlers(router, { versions: use('versions'), drafts: use('drafts') });
+  registerAttachmentHandlers(router, use('attachments'));
 }

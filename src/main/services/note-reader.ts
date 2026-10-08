@@ -1,7 +1,7 @@
 import type { NoteOpenResponseType } from '../../shared/contracts/notes';
 import type { Db } from '../db/driver';
 import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
-import { NotesRepo } from '../db/repositories/notes-repo';
+import { NotesRepo, storedContent } from '../db/repositories/notes-repo';
 import { AppError } from './app-error';
 import { livePathIndex, toNoteSummary } from './dto';
 import { MSG } from './messages';
@@ -17,20 +17,16 @@ export class NoteReader {
 
   open(noteId: string): NoteOpenResponseType {
     const meta = this.repo.getNoteMeta(noteId);
-    const body = this.notes.getOpenRow(noteId);
+    const body = this.notes.getContentRow(noteId);
     if (!meta || !body) throw new AppError('NOT_FOUND', MSG.missing);
     if (meta.deleted_at !== null) {
       throw new AppError('NOT_FOUND', MSG.noteInTrash, { trashed: true, trashBatchId: meta.trash_batch_id });
     }
     let content: unknown;
-    if (body.format === 'rich') {
-      try {
-        content = JSON.parse(body.content_json ?? '{"type":"doc"}');
-      } catch {
-        throw new AppError('INTERNAL', 'Something went wrong');
-      }
-    } else {
-      content = body.content_text ?? '';
+    try {
+      content = storedContent(body);
+    } catch {
+      throw new AppError('INTERNAL', 'Something went wrong');
     }
     return {
       note: toNoteSummary(meta, livePathIndex(this.repo)),

@@ -107,7 +107,7 @@ test('bridge surface', async () => {
     const keys = (o: unknown) => Object.keys(o as object).sort();
     let subscribeError = '';
     try {
-      window.infinity.subscribe('note:revision' as never, () => {});
+      window.infinity.subscribe('sticky:state' as never, () => {});
     } catch (e) {
       subscribeError = (e as Error).message;
     }
@@ -128,21 +128,44 @@ test('bridge surface', async () => {
     };
   });
   expect(surface).toEqual({
-    top: ['app', 'capabilities', 'folder', 'home', 'item', 'lease', 'note', 'palette', 'project', 'session', 'settings', 'subscribe', 'trash', 'tree'],
+    top: [
+      'app',
+      'attachment',
+      'capabilities',
+      'drafts',
+      'folder',
+      'home',
+      'item',
+      'lease',
+      'note',
+      'palette',
+      'project',
+      'session',
+      'settings',
+      'shell',
+      'subscribe',
+      'trash',
+      'tree',
+      'versions',
+    ],
     namespaces: {
-      app: ['getInfo', 'quit', 'showDataFolder'],
+      app: ['flushed', 'getInfo', 'quit', 'showDataFolder'],
+      attachment: ['importBytes', 'importFromDialog'],
       capabilities: ['get'],
+      drafts: ['list', 'resolve'],
       folder: ['create', 'move', 'rename', 'trash'],
       home: ['summary'],
       item: ['setFavorite'],
-      lease: ['acquire', 'release'],
-      note: ['create', 'move', 'open', 'rename', 'save', 'setPinned', 'trash'],
+      lease: ['acquire', 'release', 'take'],
+      note: ['convertFormat', 'create', 'move', 'open', 'rename', 'save', 'setPinned', 'trash'],
       palette: ['searchTitles'],
       project: ['create', 'rename', 'trash'],
       session: ['get', 'set'],
       settings: ['get', 'set'],
+      shell: ['openExternal'],
       trash: ['list', 'purge', 'restore'],
       tree: ['list'],
+      versions: ['list', 'restore'],
     },
     frozen: true,
     allFrozen: true,

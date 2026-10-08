@@ -114,7 +114,7 @@ describe('IPC router (INF-FND-04)', () => {
 
   it('refuses channels outside the catalogue and duplicates; dispose removes handlers', () => {
     const r = makeRouter();
-    expect(() => r.router.register('lease:take' as never, () => ({}) as never)).toThrow(/catalogue/);
+    expect(() => r.router.register('sticky:float' as never, () => ({}) as never)).toThrow(/catalogue/);
     r.router.register('app:quit', () => ({}));
     expect(() => r.router.register('app:quit', () => ({}))).toThrow(/already/);
     expect(r.handlers.size).toBe(1);
@@ -155,9 +155,11 @@ describe('handlers over the router', () => {
           calls.push(p);
           return shellError;
         },
+        openExternal: async () => {},
       },
       dataDir: '/data/dir',
       quit,
+      flushed: () => false,
     });
     expect(await r.call('app:showDataFolder', {})).toEqual({ ok: true, data: { opened: true } });
     expect(calls).toEqual(['/data/dir']);

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { MAX_URL_LENGTH } from '../url-policy';
+import { Uuid } from './ids';
 
 export const StartupErrorCode = z.enum(['MIGRATION_FAILED', 'SCHEMA_TOO_NEW', 'DB_OPEN_FAILED']);
 export type StartupErrorCodeType = z.infer<typeof StartupErrorCode>;
@@ -50,3 +52,11 @@ export const Capabilities = z.strictObject({
   globalShortcut: CapabilityStatus,
 });
 export type CapabilitiesType = z.infer<typeof Capabilities>;
+
+/** Acknowledged flush before a window closes or the app quits (INF-SAVE-01): main asks, the renderer answers. */
+export const AppFlushRequestEvent = z.strictObject({ flushId: Uuid });
+export type AppFlushRequestEventType = z.infer<typeof AppFlushRequestEvent>;
+export const AppFlushedRequest = z.strictObject({ flushId: Uuid });
+
+export const ShellOpenExternalRequest = z.strictObject({ url: z.string().min(1).max(MAX_URL_LENGTH) });
+export const ShellOpenExternalResponse = z.strictObject({ opened: z.literal(true) });

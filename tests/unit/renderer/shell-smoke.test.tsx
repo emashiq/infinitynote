@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { App } from '../../../src/renderer/App';
+import { liveEditor } from '../../../src/renderer/editor/editor-registry';
 import { createFakeBridge, type FakeBridge } from './support/fake-bridge';
 
 beforeAll(() => {
@@ -95,24 +96,34 @@ describe('Phase 02 shell (smoke)', () => {
     expect(title).not.toBeNull();
     expect(document.activeElement).toBe(title);
     expect(fake.calls.some((c) => c.channel === 'note:create')).toBe(true);
-    expect(byLabel(el, 'Note text')?.tagName).toBe('TEXTAREA');
+    const editor = byLabel(el, 'Note text');
+    expect(editor?.getAttribute('role')).toBe('textbox');
+    expect(editor?.getAttribute('contenteditable')).toBe('true');
+    expect(editor?.classList.contains('ProseMirror')).toBe(true);
+    expect(document.documentElement.dataset.liveEditors).toBe('1');
     expect(el.querySelector('[role="status"].save-status')?.textContent).toBe('Saved');
     expect(el.querySelector('.tree [role="treeitem"][aria-level="2"]')?.textContent).toContain('Untitled');
     expect(byLabel(el, 'Close Untitled')).not.toBeNull();
   });
 
-  it('typing in the note view saves through the controller', async () => {
+  it('an edit in the live editor saves the document JSON through the controller', async () => {
     const { el, fake } = await mount();
     await click([...el.querySelectorAll('button.tile')].find((b) => b.textContent === 'New note') ?? null);
-    const area = byLabel(el, 'Note text') as HTMLTextAreaElement;
-    await typeInto(area, 'hello world');
-    expect(area.value).toBe('hello world');
+    const editor = liveEditor();
+    expect(editor).not.toBeNull();
     await act(async () => {
-      area.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-      area.blur();
+      editor!.commands.insertContentAt(1, 'hello world');
+    });
+    expect(el.querySelector('[role="status"].save-status')?.textContent).toBe('Editing…');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 450));
     });
     await settle(8);
-    expect(fake.calls.some((c) => c.channel === 'note:save')).toBe(true);
+    const save = fake.callsTo('note:save').at(-1)?.req as { format: string; content: { type: string; content: unknown[] } } | undefined;
+    expect(save?.format).toBe('rich');
+    expect(save?.content.type).toBe('doc');
+    expect(JSON.stringify(save?.content)).toContain('hello world');
+    expect(el.querySelector('[role="status"].save-status')?.textContent).toBe('Saved');
   });
 
   it('creates a project through the New project dialog and validates names', async () => {

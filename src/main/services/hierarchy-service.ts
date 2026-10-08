@@ -163,7 +163,8 @@ export class HierarchyService {
   }
 
   // Notes --------------------------------------------------------------------
-  createNote(location: LocationType, sticky: boolean, rawTitle?: string): { note: NoteDtoType } {
+  /** Creates an empty note: a rich document with one paragraph, or an empty plain-text note. */
+  createNote(location: LocationType, sticky: boolean, rawTitle?: string, format: 'rich' | 'plain' = 'rich'): { note: NoteDtoType } {
     const title = rawTitle === undefined ? '' : this.cleanTitle(rawTitle);
     const note = this.tx(() => {
       this.assertLocation(location.projectId, location.folderId);
@@ -171,8 +172,9 @@ export class HierarchyService {
       this.notes.createNote({
         id,
         title,
-        format: 'rich',
-        contentJson: EMPTY_DOC_JSON,
+        format,
+        contentJson: format === 'rich' ? EMPTY_DOC_JSON : null,
+        contentText: format === 'plain' ? '' : null,
         plainText: '',
         now: this.deps.clock.now(),
         projectId: location.projectId,

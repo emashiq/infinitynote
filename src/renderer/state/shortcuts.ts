@@ -19,5 +19,6 @@ export function matchShortcut(e: KeyLike): CommandId | null {
   if (e.shiftKey) return null;
   if (key === 'w') return 'tab.close';
   if (key === 'k') return 'palette.open';
+  if (key === 'f') return 'note.find';
   return null;
 }

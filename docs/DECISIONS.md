@@ -251,7 +251,7 @@ Recorded by the Phase 02 planner on 2026-10-08. The implementation plan is `docs
 - Context: migration 001 already holds every Phase 02 column. Purging trash deletes parent rows guarded by `ON DELETE RESTRICT`, and SQLite scans the child table for each deleted parent unless the child column has a full index. `notes_scope` is partial (live rows only) and cannot serve that check or subtree queries that must include trashed rows.
 - Decision: Phase 02 adds `002_hierarchy_indexes.sql` with indexes only: `notes(folder_id)`, `notes(project_id)`, partial `folders(trash_batch_id)` and `projects(trash_batch_id)` where not null, and partial `notes(deleted_at)`, `folders(deleted_at)` where not null. No table or trigger changes. Migration numbers are assigned in phase order: 002 Phase 02, 003 Phase 04 (window_state), 004 Phase 05 (reminders), 005 Phase 06 (reminder sources), 006 Phase 07 (references, tags), 007 Phase 08 only if needed.
 - Consequences: `LATEST` becomes 2; tests that hard-coded schema version 1 change to 2; the Phase 01 failure-injection tests inject version 3. A populated v1 database upgrades with a pre-migration copy (integration test).
-- Status: accepted.
+- Status: accepted; the allocation of numbers 003 and later is superseded by D-051 (Phase 03).
 - Evidence: plan section 5.
 
 ### D-045 Phase 02 IPC catalogue and settings keys
@@ -302,6 +302,99 @@ Recorded by the Phase 02 planner on 2026-10-08. The implementation plan is `docs
 - Status: accepted.
 - Evidence: `docs/progress/phase-02.md` section F-01-4.
 
+## Phase 03 decisions
+
+Recorded by the Phase 03 planner on 2026-10-08. The implementation plan is `docs/plans/phase-03.md`; section numbers below refer to it. Probe output is in `.infinity-work/logs/phase-03/planner-probe-*.log`.
+
+### D-051 Migration 003 recorded; allocation renumbered (follow-up F-02-2)
+- Context: Phase 02 Repair 1 (QA-P02-4) added `003_trash_reanchored.sql` (table `trash_reanchored`), while D-044, ARCHITECTURE section 3 and BACKLOG W04-01 still gave 003 to `window_state`. The application is consistent (`LATEST = 3`, checksum key 3).
+- Decision: 003 is Phase 02 `trash_reanchored`. Phase 03 adds no migration: every table it needs (`note_versions`, `note_drafts`, `attachments`, `note_attachments`) is in 001, draft dedupe (F-01-3) is in memory like the acknowledgment cache, and retention settings are constants until Phase 08. Later numbers shift by one: 004 Phase 04 `window_state`, 005 Phase 05 reminders, 006 Phase 06 reminder sources, 007 Phase 07 references and tags, 008 Phase 08 only if needed. If a later phase needs no migration, the next phase takes the next free number and records it.
+- Consequences: `schemaVersion` stays 3 through Phase 03; ARCHITECTURE section 3 and BACKLOG W02-02, W04-01, W05-01, W06-02, W07-01 updated.
+- Status: accepted.
+- Evidence: `src/main/db/migrations/index.ts`, `checksums.json`; `docs/progress/phase-02-acceptance.md` F-02-2.
+
+### D-052 Phase 03 IPC catalogue changes
+- Decision:
+  - `attachment:importImageBytes` becomes `attachment:importBytes {kind:'image'|'document', originalName?, bytes: Uint8Array}`, because dropped and pasted documents use the same path as images. The router measures this channel as `bytes.byteLength` plus the JSON of the other fields; its ceiling is the largest configurable limit (200 MB) plus 64 KiB, and the service enforces the configured limit.
+  - `shell:openExternal {url}` moves from Phase 07 to Phase 03 because INF-SEC-01 (Phase 03) needs it.
+  - `note:trashed` moves from Phase 03 to Phase 04: `tree:changed` already carries `trashedNoteIds` for the single main window, and only sticky windows need a dedicated event.
+  - New: invoke `app:flushed {flushId}` and event `app:flush-request {flushId}` for acknowledged flush on window close and quit (INF-SAVE-01).
+  - `note:create` accepts an optional `format` (`rich` default, or `plain`) for "New plain-text note".
+  - `lease:release-request` and `app:flush-request` are sent to one `webContents` only; `note:revision` and `note:lease` are broadcast.
+- Consequences: ARCHITECTURE section 4 rows 03, 04 and 07 updated; boundary tests now guard Phase 04 names instead.
+- Status: accepted.
+- Evidence: plan section 6.
+
+### D-053 Editor schema, block IDs and the end of the temporary editor
+- Context: the planner probe (`planner-probe-tiptap.log`) showed that Tiptap 3.31.4 UniqueID (a) assigns missing IDs in a create-time transaction with `addToHistory:false`, (b) gives a split paragraph a new ID, but (c) keeps a duplicated ID when a copy of an existing block is inserted (`insertContentAt`), and (d) strips pasted IDs only when a DOM `paste` event set its flag. The stock Image extension parsed `<img src="http://...">` into a node (R-06 confirmed).
+- Decision:
+  - One `NoteEditor` (Tiptap) for rich and plain notes, used by tabs now and stickies in Phase 04. D-048's text area is removed.
+  - Rich schema: StarterKit (paragraph, heading levels 1-3, bold, italic, strike, underline, inline code, code block, blockquote, horizontal rule, hard break, bullet and ordered lists, link, undo and redo), TaskList and TaskItem (nested), an app `image` node (attributes `attachmentId`, `alt`, `size` small|medium|full, `width`, `height`) parsed only from `img[data-attachment-id]`, and an app `fileAttachment` atom (`attachmentId`, `name`, `sizeBytes`, `mime`). Links allow only `http:` and `https:`. Plain schema: document, paragraph, text; content stored as a string, one paragraph per line.
+  - Block IDs: UniqueID with types paragraph, heading, codeBlock, blockquote, listItem, taskItem, image, fileAttachment. An app `BlockIdGuard` plugin (a) strips IDs from every pasted or dropped slice except an internal move, and (b) after any transaction whose steps insert nodes carrying IDs, regenerates every ID that now occurs twice, keeping the occurrence that existed before the transaction. IDs assigned at load are not a user edit: they are persisted with the next real edit, so opening a note never bumps its revision or `updated_at`.
+  - Main validates and normalizes every rich document on save with the shared `normalizeRichDoc` (whitelisted node and mark types, known attributes only, UUID `id` and `attachmentId`, depth at most 64, at most 100,000 nodes). Unknown node or mark types are rejected with `VALIDATION_FAILED` and nothing is stored; unknown attributes are dropped; a link mark with a disallowed URL is dropped and its text kept. A drift test feeds real editor output for every feature through the normalizer.
+- Consequences: D-048 is superseded. INF-EDIT-06 and INF-REF-07 rely on `BlockIdGuard`, not only on UniqueID.
+- Status: accepted.
+- Evidence: `planner-probe-tiptap.log`.
+
+### D-054 Paste and attachment pipeline
+- Context: Electron 44 replaced the synchronous clipboard API (`clipboard.writeImage` no longer exists) with an async W3C-style API (`clipboard.write([new ClipboardItem({...})])`, `clipboard.has`). The planner probe (`planner-probe-clipboard-{win,wslg,xvfb}.log`) wrote a PNG and HTML to the OS clipboard from main and pasted into a sandboxed, context-isolated renderer with `webContents.paste()` and with a synthesized Ctrl+V. On Windows 11, WSLg (ozone x11) and Xvfb the paste event carried one `image/png` File named `image.png`, or `text/html` plus `text/plain`. A `Uint8Array` sent through the bridge arrived in main as a `Uint8Array`. The DataTransfer files were no longer readable after the handler's first `await`.
+- Decision:
+  - Clipboard bitmaps use the paste-event PNG File. The renderer captures files synchronously in the handler, then sends the bytes through `attachment:importBytes`; main never trusts the declared type and re-checks the magic number. HTML paste is sanitized by DOMPurify (scripts, styles, frames, objects, embeds, forms, SVG, MathML and event-handler attributes removed), then parsed by the schema whitelist. Remote `<img>` becomes a link with the text "Image: <alt or host>" and is never fetched. `data:image/(png|jpeg|gif|webp)` images are decoded and imported.
+  - Main sniffs PNG, JPEG, GIF and WebP from the bytes, reads the dimensions from the header, rejects anything else (SVG, HTML, HEIC, unknown, truncated) and rejects images over 100 megapixels. Files are written to `attachments/tmp/<id>.part`, fsynced, renamed into `attachments/<aa>/<id>.<ext>`, then registered in a transaction with `unreferenced_since = now`. Identical SHA-256 reuses the row; an image import that hits a `document` row with valid image bytes promotes it to `image`. `attachments/tmp` entries older than 1 hour are deleted at startup.
+  - Limits come from the public settings `attachments.imageMaxMb` (1-100, default 20) and `attachments.documentMaxMb` (1-200, default 50). The renderer checks `File.size` before reading bytes, and main checks again (`stat` before reading for the dialog path). Until the Settings control exists (Phase 08) the messages are "This image is larger than N MB. Use a smaller image." and "This file is larger than N MB. Use a smaller file."
+  - F-01-2 lands early: the attachment protocol also compares `realpath` of the file with `realpath` of the attachments directory and refuses symlinks or junctions that escape it.
+  - E2E seeds the real OS clipboard from main (`clipboard.write` with `ClipboardItem`) and pastes with a real Ctrl+V. If a host does not deliver the keystroke paste, `webContents.paste()` (the Edit > Paste menu path) is the fallback and is recorded. A synthetic DataTransfer is used only for file drop, which Playwright cannot perform natively, and is labelled synthetic.
+- Status: accepted.
+- Evidence: planner probe logs listed above.
+
+### D-055 Autosave, conflict and lease behavior in Phase 03
+- Decision:
+  - The renderer saves the editor JSON lazily: an edit marks the controller dirty, and the debounced drain reads `editor.getJSON()`, removes transient upload nodes and sends `note:save`. Transactions with `addToHistory:false` that the app did not mark `infinity:persist` (the create-time ID pass, external reloads) are not edits.
+  - On `CONFLICT` (stale) the controller reloads the current content and shows the conflict banner with Compare, Restore draft and Dismiss; the edits are already in `note_drafts`. On `CONFLICT` (trashed) the tab closes through `tree:changed` and a notice says the edits were kept as a recovered draft (F-02-1). On `LEASE_REQUIRED` the note becomes read-only with the lease banner and the recovered-draft actions. Opening a note with unresolved drafts shows the recovered-draft banner.
+  - A tab or the window is never closed after a failed flush unless main kept a draft (`CONFLICT`, `LEASE_REQUIRED`) or the note no longer exists (`NOT_FOUND`).
+  - Lease reset when a window's renderer document goes away (main-frame `did-navigate` or `render-process-gone`), crash auto-reload and the `FlushCoordinator` as in ARCHITECTURE section 6. A second `viewId` in the same live document (as the E2E seed helper uses) still gets `granted:false` and never steals the lease. Retried conflicts reuse the first draft (F-01-3).
+  - Flush awaits in-flight image imports for up to 10 s, but window close and quit still stop waiting after 2000 ms per window; an image still importing then may be missing from the note (stated limitation).
+- Status: accepted.
+- Evidence: plan sections 8 and 10.
+
+### D-056 Version retention scaffolding
+- Decision: `note_versions` rows are written inside the save transaction: `auto` snapshots the stored content before a save when the note has revision of at least 1 and no `auto` version from the last 10 minutes; `conversion` before a format change; `conflict` before Restore draft; `restore` before a version restore. Each stores the format, the content and the attachment IDs it references. After an `auto` insert, `auto` versions of that note older than 30 days, or beyond the newest 100, are deleted; other reasons are kept until the note is purged (D-034). Titles are not versioned; a restore keeps the current title. Constants live in `src/shared/versions/retention.ts`; Phase 08 makes them configurable and adds the full history screen (INF-PORT-07). Phase 03 has a minimal Version history dialog (list and Restore).
+- Status: accepted.
+- Evidence: D-034; plan section 8.4.
+
+### D-057 Spellcheck stays off in V1
+- Context: D-043 turned spellcheck off until Phase 03 decided on dictionaries, because Linux dictionary downloads would be network traffic.
+- Decision: `spellcheck: false` stays in every window and the editor sets `spellcheck="false"`. No dictionary is bundled. A later release may enable the OS spellchecker on Windows only, with a new decision.
+- Status: accepted.
+- Evidence: D-043.
+
+### D-058 Find in note
+- Decision: Ctrl+F opens an in-editor find bar implemented as a ProseMirror decoration plugin (literal, case-insensitive, Unicode-aware RegExp with the `iu` flags over each text block, at most 1,000 matches, Enter and Shift+Enter for next and previous with wrap, Escape closes and returns focus to the editor at the current match). `webContents.findInPage` is not used because it searches the whole window (tree, tabs, panel).
+- Status: accepted.
+- Evidence: plan section 9.6.
+
+### D-059 Files dropped or pasted into a plain-text note
+- Context: the Phase 03 plan defines the message for an image pasted into a plain-text note but not for a document file; the plain-text schema has no file chip node.
+- Decision: a plain-text note refuses every pasted or dropped file. When any file is an image the message is "Plain-text notes cannot contain images. Convert to rich text to add images."; otherwise "Plain-text notes cannot contain files. Convert to rich text to add files." Nothing is imported. Plain-text notes take only the text of a paste or drop.
+- Status: accepted (implementer, Phase 03).
+- Evidence: `src/renderer/editor/paste.ts`; `tests/unit/renderer/editor/paste-pipeline.test.ts`.
+
+### D-060 Paste size limit, flush before large pastes, linear block IDs (Phase 03 Repair 1, QA-2)
+- Context: QA-2 found that pasting 12,000 paragraphs took 34 s (Windows) and a 9.6 MB paste ran the renderer out of memory, losing the typing of the last 400 ms. The quadratic step was UniqueID's per-node pass over the pasted range (one `setNodeMarkup` per block plus a duplicate search per block).
+- Decision:
+  - Pasted and dropped slices receive fresh block IDs inside `BlockIdGuard.transformPasted`; UniqueID skips paste and drop transactions (`filterTransaction`), and the duplicate repair is one scan of each document. 12,000 pasted paragraphs now take well under a second in the app.
+  - The clipboard text or HTML of one paste (or non-file drop) may be at most 8 MiB (8,388,608 characters); a larger paste is refused before ProseMirror parses it, with "This paste is too large (over 8 MB). Paste a smaller part." Nothing is inserted. 8 MB is above the 5 MB note limit, so a paste that a note could still store is never refused for size.
+  - From 256 KiB on, the editor first saves pending edits (the controller flush) and then runs the paste, so text typed just before a large paste is acknowledged first.
+- Status: accepted (implementer, Phase 03 Repair 1).
+- Evidence: `src/renderer/editor/{paste,block-id-guard,extensions}.ts`; `tests/unit/renderer/editor/{paste-scaling,paste-limits}.test.ts`; `tests/e2e/paste.spec.ts › large pastes are linear…`; QA probes `p03-probe-big*.spec.ts`.
+
+### D-061 The editor keeps notes within the save limits (Phase 03 Repair 1, QA-3)
+- Context: `normalizeRichDoc` refuses documents deeper than 64 levels or with more than 100,000 nodes (D-053), but the editor accepted such content (a 40-level pasted list), leaving the note unsavable until the paste was undone.
+- Decision: a `DocLimits` editor plugin refuses any change that would make the document deeper than 64 levels or larger than 100,000 nodes, counted the way `normalizeRichDoc` counts, with "This would nest lists or quotes more deeply than a note can store. Use fewer levels." or "This would make the note too large to store. Paste or add a smaller part." The check is proportional to the size of each change (the node count is tracked incrementally). Lists can therefore be nested 31 levels deep.
+- Also (QA-1): an oversized `note:save` request answers with the UX_SPEC copy "This note is too large to save (over 5 MB). Remove some content to keep editing safely." whether the router's payload ceiling or the writer's content limit trips (`RegisterOptions.tooLargeMessage`), and the note view shows a save error as visible text below the save status, not only as a tooltip.
+- Status: accepted (implementer, Phase 03 Repair 1).
+- Evidence: `src/renderer/editor/doc-limits.ts`, `src/main/ipc/router.ts`, `src/main/ipc/handlers/note-handlers.ts`, `src/renderer/notes/NoteView.tsx`; `tests/unit/renderer/editor/paste-limits.test.ts`; `tests/integration/ipc-handlers-phase02.test.ts`; `tests/e2e/paste.spec.ts` (QA-1, QA-3 cases).
+
 ## Risks carried forward
 
 - R-01 better-sqlite3 prebuild in Electron 44: N-API should load unchanged but V8 memory-cage rules may reject external buffers; Phase 01 proves loading (dev and packaged, Windows and WSL); fallback `node:sqlite`; builder must not trigger node-gyp.
@@ -309,7 +402,7 @@ Recorded by the Phase 02 planner on 2026-10-08. The implementation plan is `docs
 - R-03 WSLg window behavior differs from GNOME; positions are compositor-controlled; record actual behavior and never label it GNOME.
 - R-04 TypeScript held at 6.0.3 and vite at 7.3.7 by peer ranges.
 - R-05 Electron 44 end of life 2027-03-02.
-- R-06 Tiptap UniqueID may keep source IDs on paste; policy strips them (Phase 03 test).
+- R-06 Tiptap UniqueID may keep source IDs on paste; policy strips them (Phase 03 test). Phase 03 planner probe confirmed UniqueID keeps an ID duplicated by inserting a copy of an existing block; mitigated by the app `BlockIdGuard` (D-053).
 - R-07 FTS5 `categories` tokenizer with Bangla needs fixture verification; fallback trigram.
 - R-08 Windows toast visibility in development needs `app.setAppUserModelId`; packaged NSIS shortcut needed for reliable click activation.
 - R-09 Electron default ozone platform under WSLg must be logged (Wayland versus XWayland); production never forces X11. Phase 01 planner observation: Electron 44 picks `x11` (XWayland) under WSLg when `XDG_SESSION_TYPE` is unset; `--ozone-platform=wayland` also works (D-039). The app logs the actual value at startup.

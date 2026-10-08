@@ -129,7 +129,12 @@ export class LeaseManager {
     return this.leases.get(noteId)?.viewId ?? null;
   }
 
-  webContentsDestroyed(wcId: number): void {
+  /**
+   * The renderer document of a webContents went away (destroyed, reloaded or crashed, D-055): revoke its leases,
+   * forget its view bindings so the next document can acquire again, and finish takes it was part of. A late save
+   * with a revoked token is kept as a lease_lost draft by the writer.
+   */
+  webContentsReset(wcId: number): void {
     for (const [noteId, lease] of [...this.leases]) {
       if (lease.webContentsId !== wcId) continue;
       this.leases.delete(noteId);

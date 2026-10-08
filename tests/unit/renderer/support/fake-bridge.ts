@@ -1,5 +1,6 @@
+import type { AttachmentDtoType, AttachmentImportDialogResponseType } from '../../../../src/shared/contracts/attachments';
 import type { InfinityBridge } from '../../../../src/shared/contracts/bridge';
-import type { EventChannel } from '../../../../src/shared/contracts/channel-names';
+import { EVENT_CHANNELS, type EventChannel } from '../../../../src/shared/contracts/channel-names';
 import { fail, ok, type ErrorCode, type Result } from '../../../../src/shared/contracts/envelope';
 import type {
   FolderDtoType,
@@ -11,7 +12,30 @@ import type {
 import type { HomeScopeType } from '../../../../src/shared/contracts/home';
 import { DEFAULT_SESSION, type TabSessionType } from '../../../../src/shared/contracts/session';
 import { SETTINGS, type SettingKey } from '../../../../src/shared/contracts/settings';
+import type { ContentOpBaseType, DraftsResolveResponseType, NoteContentResponseType } from '../../../../src/shared/contracts/notes';
+import { extractPlainText } from '../../../../src/shared/text/plain-text';
+import { textToDoc } from '../../../../src/shared/text/textarea-doc';
 import { buildPathIndex, pathOf } from '../../../../src/shared/tree/paths';
+
+export interface FakeDraft {
+  id: string;
+  noteId: string;
+  content: unknown;
+  format: 'rich' | 'plain';
+  baseRevision: number;
+  reason: 'conflict' | 'lease_lost';
+  createdAt: number;
+  resolved: boolean;
+}
+
+export interface FakeVersion {
+  id: string;
+  noteId: string;
+  format: 'rich' | 'plain';
+  content: unknown;
+  reason: 'conversion' | 'conflict' | 'restore';
+  createdAt: number;
+}
 
 export interface FakeNote extends NoteDtoType {
   content: unknown;
@@ -43,6 +67,12 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const folders: Array<FolderDtoType & { deletedAt: number | null; batch: string | null }> = [];
   const notes: FakeNote[] = [];
   const leases = new Map<string, string>();
+  const drafts: FakeDraft[] = [];
+  const versions: FakeVersion[] = [];
+  const imports: Array<{ kind: string; originalName?: string; size: number }> = [];
+  /** Each importFromDialog call takes the next entry; an empty queue means canceled. */
+  const dialogResults: AttachmentImportDialogResponseType[] = [];
+  const shellCalls: string[] = [];
   const subscribers = new Map<string, Set<(payload: unknown) => void>>();
   const failures = new Map<string, Array<{ code: ErrorCode; message: string; details?: unknown }>>();
   const calls: Array<{ channel: string; req: unknown }> = [];
@@ -82,6 +112,27 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     for (const n of notes) if (ids.includes(n.id) && n.deletedAt === null) Object.assign(n, { deletedAt: clock, batch });
   };
 
+  /** Lease and revision checks shared by conversion and restores; applies the change and bumps the revision. */
+  const contentOp = (
+    req: ContentOpBaseType,
+    change: (n: FakeNote) => { format: 'rich' | 'plain'; content: unknown; versionId: string | null } | Result<never>,
+  ): Result<NoteContentResponseType> => {
+    const n = notes.find((x) => x.id === req.noteId && x.deletedAt === null);
+    if (!n) return fail('NOT_FOUND', 'That item no longer exists.');
+    if (leases.get(n.id) !== req.leaseToken) return fail('LEASE_REQUIRED', 'Edit control was lost');
+    if (n.revision !== req.baseRevision) return fail('CONFLICT', 'This note changed elsewhere', { currentRevision: n.revision, reason: 'stale' });
+    const c = change(n);
+    if ('ok' in c) return c;
+    clock += 1;
+    Object.assign(n, { format: c.format, content: c.content, revision: n.revision + 1, updatedAt: clock });
+    return ok({ noteId: n.id, revision: n.revision, format: c.format, content: c.content as never, versionId: c.versionId, updatedAt: clock });
+  };
+  const snapshot = (n: FakeNote, reason: FakeVersion['reason']): string => {
+    const id = uid();
+    versions.push({ id, noteId: n.id, format: n.format, content: n.content, reason, createdAt: clock });
+    return id;
+  };
+
   const bridge: InfinityBridge = {
     app: {
       getInfo: () =>
@@ -101,6 +152,77 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
         ),
       showDataFolder: () => handle('app:showDataFolder', {}, () => ok({ opened: true as const })),
       quit: () => handle('app:quit', {}, () => ok({})),
+      flushed: (req) => handle('app:flushed', req, () => ok({})),
+    },
+    attachment: {
+      importBytes: (req) =>
+        handle('attachment:importBytes', req, () => {
+          imports.push({ kind: req.kind, originalName: req.originalName, size: req.bytes.byteLength });
+          const dto: AttachmentDtoType = {
+            id: uid(),
+            kind: req.kind,
+            mime: req.kind === 'image' ? 'image/png' : 'application/octet-stream',
+            sizeBytes: req.bytes.byteLength,
+            originalName: req.originalName ?? null,
+            width: req.kind === 'image' ? 4 : null,
+            height: req.kind === 'image' ? 3 : null,
+          };
+          return ok({ attachment: dto });
+        }),
+      importFromDialog: (req) => handle('attachment:importFromDialog', req, () => ok(dialogResults.shift() ?? { canceled: true, imported: [], rejected: [] })),
+    },
+    shell: {
+      openExternal: (req) =>
+        handle('shell:openExternal', req, () => {
+          shellCalls.push(req.url);
+          return ok({ opened: true as const });
+        }),
+    },
+    versions: {
+      list: (req) =>
+        handle('versions:list', req, () =>
+          ok({
+            versions: versions
+              .filter((v) => v.noteId === req.noteId)
+              .reverse()
+              .map((v) => ({ id: v.id, revision: 0, format: v.format, reason: v.reason, createdAt: v.createdAt, preview: extractPlainText(v.format, v.content).slice(0, 200), attachmentCount: 0 })),
+          }),
+        ),
+      restore: (req) =>
+        handle('versions:restore', req, () =>
+          contentOp(req, (n) => {
+            const v = versions.find((x) => x.id === req.versionId && x.noteId === n.id);
+            if (!v) return fail('NOT_FOUND', 'That version no longer exists.');
+            return { format: v.format, content: v.content, versionId: snapshot(n, 'restore') };
+          }),
+        ),
+    },
+    drafts: {
+      list: (req) =>
+        handle('drafts:list', req, () =>
+          ok({
+            drafts: drafts
+              .filter((d) => d.noteId === req.noteId && !d.resolved)
+              .reverse()
+              .map((d) => {
+                const text = extractPlainText(d.format, d.content);
+                return { id: d.id, reason: d.reason, baseRevision: d.baseRevision, format: d.format, title: null, createdAt: d.createdAt, plainText: text, truncated: false };
+              }),
+          }),
+        ),
+      resolve: (req) =>
+        handle<DraftsResolveResponseType>('drafts:resolve', req, () => {
+          const d = drafts.find((x) => x.id === req.draftId && x.noteId === req.noteId && !x.resolved);
+          if (!d) return fail('NOT_FOUND', 'That recovered draft no longer exists.');
+          if (req.action === 'dismiss') {
+            d.resolved = true;
+            return ok({ resolved: true as const, content: null });
+          }
+          const res = contentOp(req, (n) => ({ format: d.format, content: d.content, versionId: snapshot(n, 'conflict') }));
+          if (!res.ok) return res;
+          d.resolved = true;
+          return ok({ resolved: true as const, content: res.data });
+        }),
     },
     settings: {
       get: (req) =>
@@ -226,8 +348,8 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
             revision: 0,
             createdAt: clock,
             updatedAt: clock,
-            content: { type: 'doc', content: [{ type: 'paragraph' }] },
-            format: 'rich',
+            content: req.format === 'plain' ? '' : { type: 'doc', content: [{ type: 'paragraph' }] },
+            format: req.format ?? 'rich',
             deletedAt: null,
             batch: null,
           };
@@ -283,14 +405,32 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
         handle('note:save', req, () => {
           const n = notes.find((x) => x.id === req.noteId);
           if (!n) return fail('NOT_FOUND', 'Note not found');
-          if (leases.get(n.id) !== req.leaseToken) return fail('LEASE_REQUIRED', 'Edit control was lost');
-          if (n.revision !== req.baseRevision) return fail('CONFLICT', 'This note changed elsewhere');
+          if (leases.get(n.id) !== req.leaseToken) {
+            const draftId = uid();
+            drafts.push({ id: draftId, noteId: n.id, content: req.content, format: req.format, baseRevision: req.baseRevision, reason: 'lease_lost', createdAt: clock, resolved: false });
+            return fail('LEASE_REQUIRED', 'Edit control was lost', { draftId });
+          }
+          if (n.deletedAt !== null || n.revision !== req.baseRevision) {
+            const draftId = uid();
+            drafts.push({ id: draftId, noteId: n.id, content: req.content, format: req.format, baseRevision: req.baseRevision, reason: 'conflict', createdAt: clock, resolved: false });
+            const reason = n.deletedAt !== null ? 'trashed' : 'stale';
+            return fail('CONFLICT', 'This note changed elsewhere', { currentRevision: n.revision, draftId, reason });
+          }
           n.content = req.content;
           n.revision += 1;
           clock += 1;
           n.updatedAt = clock;
           return ok({ noteId: n.id, revision: n.revision, requestId: req.requestId, updatedAt: clock });
         }),
+      convertFormat: (req) =>
+        handle('note:convertFormat', req, () =>
+          contentOp(req, (n) => {
+            if (n.format === req.targetFormat) return fail('VALIDATION_FAILED', 'Same format');
+            const versionId = snapshot(n, 'conversion');
+            const content = req.targetFormat === 'plain' ? extractPlainText('rich', n.content) : textToDoc(String(n.content), { id: uid });
+            return { format: req.targetFormat, content, versionId };
+          }),
+        ),
     },
     item: {
       setFavorite: (req) =>
@@ -315,6 +455,12 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           const held = leases.get(req.noteId) === req.leaseToken;
           if (held) leases.delete(req.noteId);
           return ok({ released: held });
+        }),
+      take: (req) =>
+        handle('lease:take', req, () => {
+          const token = 'take-' + req.noteId + '-' + uid();
+          leases.set(req.noteId, token);
+          return ok({ leaseToken: token });
         }),
     },
     trash: {
@@ -404,7 +550,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
         }),
     },
     subscribe(channel, cb) {
-      if (!['settings:changed', 'tree:changed'].includes(channel)) throw new Error('Unknown event channel');
+      if (!(EVENT_CHANNELS as readonly string[]).includes(channel)) throw new Error('Unknown event channel');
       let set = subscribers.get(channel);
       if (!set) {
         set = new Set();
@@ -430,7 +576,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     },
     callsTo: (channel: string) => calls.filter((c) => c.channel === channel),
     /** Direct access for arranging state in tests. */
-    data: { setDropped: (d: typeof dropped) => (dropped = d), settings, projects, folders, notes, leases, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
+    data: { setDropped: (d: typeof dropped) => (dropped = d), settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
   };
 }
 

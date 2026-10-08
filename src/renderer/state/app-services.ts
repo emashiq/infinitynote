@@ -1,6 +1,9 @@
+import { DEFAULT_DOCUMENT_MAX_MB, DEFAULT_IMAGE_MAX_MB } from '../../shared/attachments/limits';
 import type { AppInfoType } from '../../shared/contracts/app';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
-import { PUBLIC_SETTING_KEYS, ThemeSetting } from '../../shared/contracts/settings';
+import { PUBLIC_SETTING_KEYS, SETTINGS, ThemeSetting } from '../../shared/contracts/settings';
+import type { EditorServices } from '../editor/editor-services';
+import type { AttachmentLimits } from '../editor/uploader';
 import { createCommandRunner, type CommandRunner } from './commands';
 import { HomeStore } from './home-store';
 import { LayoutStore } from './layout-store';
@@ -25,6 +28,8 @@ export interface MetaState {
   info: AppInfoType | null;
 }
 
+const LIMIT_KEYS = { 'attachments.imageMaxMb': 'imageMaxMb', 'attachments.documentMaxMb': 'documentMaxMb' } as const;
+
 export interface AppServices {
   bridge: InfinityBridge;
   viewId: string;
@@ -38,6 +43,10 @@ export interface AppServices {
   ui: UiStore;
   notices: NoticeStore;
   commands: CommandRunner;
+  /** Attachment size limits from the public settings (followed live through settings:changed). */
+  attachmentLimits: Store<AttachmentLimits>;
+  /** What every note editor uses from the app; one stable object. */
+  editor: EditorServices;
   ready: Promise<void>;
   init(): Promise<void>;
   dispose(): Promise<void>;
@@ -87,6 +96,18 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
   const layout = new LayoutStore(bridge, viewport.width());
   const ui = new UiStore();
   const commands = createCommandRunner({ tree, tabs, home, layout, ui, notices });
+  const attachmentLimits = createStore<AttachmentLimits>({ imageMaxMb: DEFAULT_IMAGE_MAX_MB, documentMaxMb: DEFAULT_DOCUMENT_MAX_MB });
+  const editor: EditorServices = {
+    bridge,
+    notify: (message) => notices.push(message, 'error'),
+    limits: () => attachmentLimits.getState(),
+  };
+  const setLimit = (key: string, value: unknown): void => {
+    if (!(key in LIMIT_KEYS)) return;
+    const limitKey = key as keyof typeof LIMIT_KEYS;
+    const parsed = SETTINGS[limitKey].schema.safeParse(value);
+    if (parsed.success) attachmentLimits.setState({ [LIMIT_KEYS[limitKey]]: parsed.data });
+  };
 
   const unsubscribers: Array<() => void> = [];
   let lastActive = tabs.store.getState().session.activeTabId;
@@ -111,6 +132,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
       });
       if (v['home.scope']) home.hydrate(v['home.scope']);
       if (v['tree.expanded']) tree.hydrate(v['tree.expanded']);
+      for (const key of Object.keys(LIMIT_KEYS)) setLimit(key, v[key as keyof typeof LIMIT_KEYS]);
     }
     await home.load();
   }
@@ -118,12 +140,24 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
   // Event wiring: settings changes from other writers and tree changes from main.
   unsubscribers.push(
     bridge.subscribe('settings:changed', ({ key, value }) => {
+      setLimit(key, value);
       if (key !== 'appearance.theme') return;
       const parsed = ThemeSetting.safeParse(value);
       if (parsed.success && theme.store.getState().value !== parsed.data) theme.hydrate(parsed.data);
     }),
+    // Note events go to the controller of the active note tab (the only one that exists).
+    bridge.subscribe('note:revision', (event) => tabs.activeController()?.onRevision(event)),
+    bridge.subscribe('note:lease', (event) => tabs.activeController()?.onLease(event)),
+    bridge.subscribe('lease:release-request', ({ noteId }) => {
+      const controller = tabs.activeController();
+      if (controller?.noteId === noteId) void controller.onReleaseRequest();
+    }),
     bridge.subscribe('tree:changed', (event) => {
       void tree.handleChanged(event).then(() => home.refresh());
+    }),
+    // Window close and quit (INF-SAVE-01): flush, then acknowledge even when the flush failed (main keeps drafts).
+    bridge.subscribe('app:flush-request', ({ flushId }) => {
+      void tabs.flushActive().finally(() => bridge.app.flushed({ flushId }));
     }),
     viewport.onResize(() => layout.setViewportWidth(viewport.width())),
     // Refresh Home whenever its tab becomes active.
@@ -153,6 +187,8 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     ui,
     notices,
     commands,
+    attachmentLimits,
+    editor,
     ready,
     init: () => ready,
     async dispose() {

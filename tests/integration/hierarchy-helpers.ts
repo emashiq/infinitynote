@@ -1,25 +1,50 @@
+import path from 'node:path';
 import { expect } from 'vitest';
 import type { TreeChangedEventType } from '../../src/shared/contracts/hierarchy';
+import type { NoteLeaseEventType, NoteRevisionEventType } from '../../src/shared/contracts/notes';
 import { HierarchyRepo } from '../../src/main/db/repositories/hierarchy-repo';
-import { createMainServices } from '../../src/main/main-services';
+import { createMainServices, type MainServicesDeps } from '../../src/main/main-services';
+import type { OpenFilesRequest } from '../../src/main/services/dialog-adapter';
+import type { LeaseHolder } from '../../src/main/services/lease-manager';
 import { memoryLogger } from '../../src/main/services/logger';
 import { fixedClock, openFresh, randomIds } from './helpers';
 
-/** The production service graph (createMainServices) over a fresh temp database with an injectable clock. */
-export async function setupServices() {
+/**
+ * The production service graph (createMainServices) over a fresh temp database with an injectable clock, a
+ * queued fake file dialog and recorded events.
+ */
+export async function setupServices(opts: { testFaults?: MainServicesDeps['testFaults'] } = {}) {
   const t = await openFresh();
   const clock = fixedClock(1_800_000_000_000);
   const ids = randomIds();
   const logger = memoryLogger();
   const events: TreeChangedEventType[] = [];
   const settingsEvents: unknown[] = [];
+  const revisions: NoteRevisionEventType[] = [];
+  const leaseEvents: NoteLeaseEventType[] = [];
+  const releaseRequests: Array<{ holder: LeaseHolder; noteId: string }> = [];
+  /** Each dialog call takes the next entry; null or an empty queue means the user canceled. */
+  const dialogQueue: Array<string[] | null> = [];
+  const dialogCalls: OpenFilesRequest[] = [];
+  const dataDir = path.join(t.dir, 'data');
   const services = createMainServices({
     db: t.db,
     clock,
     ids,
     logger,
+    dataDir,
+    dialog: {
+      showOpenFiles: async (req) => {
+        dialogCalls.push(req);
+        return dialogQueue.shift() ?? null;
+      },
+    },
     onSettingsChanged: (p) => settingsEvents.push(p),
     onTreeChanged: (e) => events.push(e),
+    onNoteRevision: (e) => revisions.push(e),
+    onLeaseChanged: (e) => leaseEvents.push(e),
+    requestLeaseRelease: (holder, noteId) => releaseRequests.push({ holder, noteId }),
+    testFaults: opts.testFaults,
   });
   const { hierarchy } = services;
   const repo = new HierarchyRepo(t.db);
@@ -57,6 +82,12 @@ export async function setupServices() {
     logger,
     events,
     settingsEvents,
+    revisions,
+    leaseEvents,
+    releaseRequests,
+    dialogQueue,
+    dialogCalls,
+    dataDir,
     repo,
     tick,
     check,

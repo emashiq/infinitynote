@@ -5,6 +5,7 @@ describe('palette actions', () => {
   it('has the exact labels and shortcuts', () => {
     expect(PALETTE_ACTIONS.map((a) => [a.label, a.shortcut ?? null])).toEqual([
       ['New note', 'Ctrl+N'],
+      ['New plain-text note', null],
       ['New sticky', 'Ctrl+Shift+N'],
       ['New project', null],
       ['New folder', null],
@@ -17,13 +18,15 @@ describe('palette actions', () => {
       ['Close tab', 'Ctrl+W'],
       ['Next tab', 'Ctrl+Tab'],
       ['Previous tab', 'Ctrl+Shift+Tab'],
+      ['Find in note', 'Ctrl+F'],
     ]);
   });
 
   it('filters by substring or word prefix, keeping list order', () => {
     expect(filterActions(PALETTE_ACTIONS, 'new pro')[0]?.id).toBe('project.new');
     expect(filterActions(PALETTE_ACTIONS, '').length).toBe(PALETTE_ACTIONS.length);
-    expect(filterActions(PALETTE_ACTIONS, 'NEW').map((a) => a.id)).toEqual(['note.new', 'sticky.new', 'project.new', 'folder.new']);
+    expect(filterActions(PALETTE_ACTIONS, 'NEW').map((a) => a.id)).toEqual(['note.new', 'note.newPlain', 'sticky.new', 'project.new', 'folder.new']);
+    expect(filterActions(PALETTE_ACTIONS, 'plain').map((a) => a.id)).toEqual(['note.newPlain']);
     expect(filterActions(PALETTE_ACTIONS, 'tog tr').map((a) => a.id)).toEqual(['view.toggleTree']);
     expect(filterActions(PALETTE_ACTIONS, 'zzz')).toEqual([]);
   });

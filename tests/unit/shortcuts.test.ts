@@ -19,6 +19,9 @@ describe('matchShortcut', () => {
     expect(matchShortcut(key('Tab'))).toBe('tab.next');
     expect(matchShortcut(key('Tab', { shiftKey: true }))).toBe('tab.prev');
     expect(matchShortcut(key('k'))).toBe('palette.open');
+    expect(matchShortcut(key('f'))).toBe('note.find');
+    expect(matchShortcut(key('F'))).toBe('note.find');
+    expect(matchShortcut(key('f', { shiftKey: true }))).toBeNull();
   });
 
   it('is case-insensitive for letters', () => {

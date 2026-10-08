@@ -54,34 +54,34 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-TABS-04 | Tab overflow scrolls and offers an All tabs list | 02 | E,V | e2e/tabs.spec › overflow list; e2e/visual.spec › tab overflow | done |
 | INF-TABS-05 | Tabs, order and active tab restored after relaunch without duplicates | 02 | I,E | e2e/tabs.spec › restore after relaunch; integration/session.test; e2e/editor.spec › text area save increments revision and survives relaunch | done |
 | INF-TABS-06 | Trashing a note closes its tabs; restored session skips trashed/missing notes with notice | 02 | E | e2e/tabs.spec › trashed note tab closed; › session skips trashed and missing | done |
-| INF-TABS-07 | Only the active tab mounts an editor; inactive tabs keep lightweight state; editors disposed; image cache bounded | 03 | E,P | e2e/editor.spec › single editor instance; perf/editors | planned |
+| INF-TABS-07 | Only the active tab mounts an editor; inactive tabs keep lightweight state; editors disposed; image cache bounded | 03 | E,P | e2e/editor.spec › single editor instance (INF-TABS-07); e2e/editor-memory.spec › editor memory across tab cycles (perf record); unit/renderer/editor/editor-registry.test; unit/renderer/editor/uploader.test › bounded queue | done |
 | INF-TABS-08 | Singleton page tabs for Stickies, Reminders and Settings | 02 | E | e2e/tabs.spec › page singletons | done |
 | INF-KEY-01 | Ctrl+N creates a note in the current scope | 02 | E | e2e/keyboard.spec › ctrl+n; unit/renderer/state/current-location.test | done |
 | INF-KEY-02 | Ctrl+Shift+N creates a sticky in the current scope | 02 | E | e2e/keyboard.spec › ctrl+shift+n; unit/shortcuts.test | done |
 | INF-KEY-03 | Ctrl+K command palette with common actions and title search | 02 | E | e2e/palette.spec › actions and titles; integration/palette.test; unit/palette-actions.test | done |
-| INF-KEY-04 | Ctrl+F find in the current note | 03 | E | e2e/editor.spec › find in note | planned |
+| INF-KEY-04 | Ctrl+F find in the current note | 03 | E | e2e/editor.spec › find in note (INF-KEY-04); unit/renderer/editor/find.test | done |
 | INF-KEY-05 | Optional global quick-sticky shortcut, off by default, capability checked, failure reported | 08 | I,N | integration/shortcuts.test; native check | planned |
 | INF-KEY-06 | Keyboard help listing shortcuts | 08 | E | e2e/settings.spec › keyboard help | planned |
-| INF-EDIT-01 | One shared Tiptap editor component for tabs and stickies; no custom contentEditable engine | 03 | R,E | review; e2e/editor.spec | planned |
-| INF-EDIT-02 | Headings, bold, italic, bullet/numbered lists, checklist, links, inline code, code blocks, undo/redo | 03 | U,E | unit/editor-schema.test; e2e/editor.spec › formatting survives reload | planned |
-| INF-EDIT-03 | Title editing; empty title shows Untitled; rename flushes | 03 | E | e2e/editor.spec › rename | planned |
-| INF-EDIT-04 | Separate plain-text document format | 03 | U,I,E | integration/notes-format.test; e2e/editor.spec › plain note | planned |
-| INF-EDIT-05 | Rich to plain conversion warns about formatting/image loss and creates a recoverable version | 03 | I,E | integration/notes-format.test › version created; e2e/editor.spec › conversion warning | planned |
-| INF-EDIT-06 | Stable UUID block IDs preserved across edits; regenerated on paste and duplicate | 03 | U,E | unit/block-ids.test › paste regenerates | planned |
-| INF-EDIT-07 | Pasted HTML sanitized (scripts, handlers, iframes, objects, embeds); remote images not fetched | 03 | U,E | unit/sanitize.test; e2e/paste.spec › no script execution | planned |
-| INF-EDIT-08 | Clipboard bitmap paste stored as managed PNG attachment | 03 | I,E | integration/attachments.test; e2e/paste.spec › bitmap | planned |
-| INF-EDIT-09 | Image files pasted/dropped/imported are copied into managed storage and remain after the original is removed | 03 | I,E | e2e/paste.spec › original deleted, image still shown after restart | planned |
-| INF-EDIT-10 | Image size/type limits with friendly message; SVG/unknown rejected; editor stays responsive | 03 | U,I,E | integration/attachments.test › limits; e2e/paste.spec › oversized message | planned |
-| INF-EDIT-11 | Image display with simple size presets | 03 | E | e2e/editor.spec › image size preset | planned |
-| INF-EDIT-12 | Unicode including Bangla round-trips in title, content and extracted text | 03 | I,E | integration/notes-save.test › Bangla; e2e/editor.spec › Bangla | planned |
-| INF-EDIT-13 | Visible saving/saved/error status | 03 | E | e2e/editor.spec › save indicator | planned |
-| INF-EDIT-14 | Import local documents into managed attachments as file chips | 03 | I,E | integration/attachments.test › document import | planned |
-| INF-SAVE-01 | Debounced autosave with acknowledgments; flush on blur, tab switch/close, window close and quit | 03 | I,E | integration/notes-save.test › ack; e2e/editor.spec › flush on close | planned |
-| INF-SAVE-02 | Content, plain text, FTS and references committed in one transaction; revision broadcast | 03 | I | integration/notes-save.test › atomic commit | planned |
-| INF-SAVE-03 | Stale revision never overwrites; conflicting content kept as recoverable draft with UI | 03 | I,E | integration/revision.test › stale save -> draft; e2e/conflict.spec | planned |
-| INF-SAVE-04 | Main-managed editing lease; other views read-only with Take edit control; transfer after flush or persisted draft | 03 | I | integration/lease.test › transfer, timeout revoke | planned |
-| INF-SAVE-05 | Acknowledged saves survive renderer crash and restart; unacknowledged loss window documented | 03 | I,E | e2e/crash.spec › renderer crash keeps acked text | planned |
-| INF-SAVE-06 | Automatic throttled versions plus conversion/conflict/restore versions | 03 | I | integration/versions.test | planned |
+| INF-EDIT-01 | One shared Tiptap editor component for tabs and stickies; no custom contentEditable engine | 03 | R,E | review (unit/boundaries.test, single useEditor in editor/NoteEditor.tsx); e2e/editor.spec; unit/renderer/shell-smoke.test | done |
+| INF-EDIT-02 | Headings, bold, italic, bullet/numbered lists, checklist, links, inline code, code blocks, undo/redo | 03 | U,E | unit/renderer/editor/editor-schema.test; unit/renderer/editor/doc-drift.test; e2e/editor.spec › formatting survives reload; › undo and redo | done |
+| INF-EDIT-03 | Title editing; empty title shows Untitled; rename flushes | 03 | E | e2e/editor.spec › rename flushes (INF-EDIT-03); › editor save increments revision and survives relaunch | done |
+| INF-EDIT-04 | Separate plain-text document format | 03 | U,I,E | integration/notes-format.test › plain note; e2e/editor.spec › plain note (INF-EDIT-04); unit/renderer/editor/paste-pipeline.test | done |
+| INF-EDIT-05 | Rich to plain conversion warns about formatting/image loss and creates a recoverable version | 03 | I,E | integration/notes-format.test › version created; e2e/editor.spec › conversion warning and version history | done |
+| INF-EDIT-06 | Stable UUID block IDs preserved across edits; regenerated on paste and duplicate | 03 | U,E | unit/renderer/editor/block-ids.test; e2e/paste.spec › copied blocks get new IDs | done |
+| INF-EDIT-07 | Pasted HTML sanitized (scripts, handlers, iframes, objects, embeds); remote images not fetched | 03 | U,E | unit/renderer/editor/sanitize.test; unit/renderer/editor/paste-pipeline.test; e2e/paste.spec › no script execution from pasted HTML | done |
+| INF-EDIT-08 | Clipboard bitmap paste stored as managed PNG attachment | 03 | I,E | integration/attachments.test › png bytes; e2e/paste.spec › bitmap from the real clipboard | done |
+| INF-EDIT-09 | Image files pasted/dropped/imported are copied into managed storage and remain after the original is removed | 03 | I,E | integration/attachments.test › dialog import copies; e2e/paste.spec › the original image file may be removed; › drop an image file (synthetic) and a pasted data image | done |
+| INF-EDIT-10 | Image size/type limits with friendly message; SVG/unknown rejected; editor stays responsive | 03 | U,I,E | unit/sniff.test; integration/attachments.test › limits; e2e/paste.spec › oversized and unsupported files show the exact messages | done |
+| INF-EDIT-11 | Image display with simple size presets | 03 | E | e2e/editor.spec › image size preset (INF-EDIT-11) | done |
+| INF-EDIT-12 | Unicode including Bangla round-trips in title, content and extracted text | 03 | I,E | integration/notes-save.test › Bangla; e2e/editor.spec › Bangla title and text are stored exactly | done |
+| INF-EDIT-13 | Visible saving/saved/error status | 03 | E | e2e/editor.spec › save indicator (INF-EDIT-13) | done |
+| INF-EDIT-14 | Import local documents into managed attachments as file chips | 03 | I,E | integration/attachments.test › document import; e2e/paste.spec › document chip | done |
+| INF-SAVE-01 | Debounced autosave with acknowledgments; flush on blur, tab switch/close, window close and quit | 03 | I,E | integration/notes-save.test › ack; integration/flush-coordinator.test; unit/renderer/state/note-controller.test; e2e/editor.spec › flush on close; › flush on tab switch; › flush on window close; › flush on quit | done |
+| INF-SAVE-02 | Content, plain text, FTS and references committed in one transaction; revision broadcast | 03 | I | integration/notes-save.test › atomic commit | done |
+| INF-SAVE-03 | Stale revision never overwrites; conflicting content kept as recoverable draft with UI | 03 | I,E | integration/revision.test; integration/drafts.test; e2e/conflict.spec › stale save keeps a draft; › trashed while editing keeps a draft | done |
+| INF-SAVE-04 | Main-managed editing lease; other views read-only with Take edit control; transfer after flush or persisted draft | 03 | I | integration/lease.test; e2e/conflict.spec › read-only mirror and take control; › take from a busy holder; › silent holder times out | done |
+| INF-SAVE-05 | Acknowledged saves survive renderer crash and restart; unacknowledged loss window documented | 03 | I,E | e2e/crash.spec › renderer crash keeps acked text; › killed process keeps acked text | done |
+| INF-SAVE-06 | Automatic throttled versions plus conversion/conflict/restore versions | 03 | I | integration/versions.test; e2e/editor.spec › conversion warning and version history | done |
 | INF-STKY-01 | Float opens a native window for the same note ID; one window per note | 04 | E | e2e/stickies.spec › float same id, no duplicate | planned |
 | INF-STKY-02 | Two or more stickies are independent native windows that move/resize outside the main window | 04 | E,N | e2e/stickies.spec › two windows; native move/resize | planned |
 | INF-STKY-03 | Dock/Open in app closes the window and opens the note tab with content intact | 04 | E | e2e/stickies.spec › dock | planned |
@@ -197,7 +197,7 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-PKG-04 | Reinstall/update preserves data; uninstall behavior documented | 09 | N,R | native reinstall; docs review | planned |
 | INF-PKG-05 | Native OS matrix with host/compositor details; GNOME/X11-only cases marked outside_validation_scope | 09 | N,R | docs/NATIVE_OS_MATRIX.md review | planned |
 | INF-PKG-06 | FINAL_REPORT, NATIVE_OS_MATRIX, RELEASE_CHECKLIST and user install/use/backup docs | 09 | R | docs review | planned |
-| INF-SEC-01 | External links open only http/https via validated handoff on explicit action | 03 | U,E | unit/url-policy.test; e2e/editor.spec › link open | planned |
+| INF-SEC-01 | External links open only http/https via validated handoff on explicit action | 03 | U,E | unit/url-policy.test; integration/ipc-handlers-phase03.test › shell:openExternal; e2e/editor.spec › link open (INF-SEC-01) | done |
 | INF-SEC-02 | Production keeps Chromium sandbox; packaged security settings reviewed | 09 | R | review builder/fuses config | planned |
 | INF-SEC-03 | Dependency audit and license review before release | 09 | R | npm audit + license list log | planned |
 <!-- BACKLOG-TABLE-END -->
@@ -249,7 +249,7 @@ Work items are ordered; each lists the requirement IDs it satisfies. Phase 01 is
 ### Phase 02
 
 - W02-01 App shell: rail, header, tab strip, resizable tree, context panel, drawers, tokens and themes. IDs: INF-SHELL-01, INF-SHELL-02, INF-SHELL-03, INF-SHELL-04, INF-SHELL-05, INF-SHELL-06
-- W02-02 Hierarchy services in main: projects, folders, notes, stickies, move, cycle check, trash, pin, favorite (columns already in 001; migration 002 adds indexes, D-044). IDs: INF-HIER-01, INF-HIER-02, INF-HIER-03, INF-HIER-04, INF-HIER-05, INF-HIER-06, INF-HIER-07, INF-HIER-08, INF-HIER-09, INF-HIER-10, INF-HIER-12
+- W02-02 Hierarchy services in main: projects, folders, notes, stickies, move, cycle check, trash, pin, favorite (columns already in 001; migration 002 adds indexes, D-044; migration 003 `trash_reanchored` added by Phase 02 Repair 1, D-051). IDs: INF-HIER-01, INF-HIER-02, INF-HIER-03, INF-HIER-04, INF-HIER-05, INF-HIER-06, INF-HIER-07, INF-HIER-08, INF-HIER-09, INF-HIER-10, INF-HIER-12
 - W02-03 Tree UI with ARIA tree keyboard model and Move to dialog. IDs: INF-HIER-07, INF-HIER-12
 - W02-04 Tab strip, singleton pages, session persistence and restore. IDs: INF-TABS-01, INF-TABS-02, INF-TABS-03, INF-TABS-04, INF-TABS-05, INF-TABS-06, INF-TABS-08
 - W02-05 Home dashboard and scope filter. IDs: INF-HOME-01, INF-HOME-02, INF-HOME-03
@@ -264,23 +264,23 @@ Work items are ordered; each lists the requirement IDs it satisfies. Phase 01 is
 
 ### Phase 04
 
-- W04-01 Sticky windows keyed by note ID, header, dock, colors, window_state (migration 003). IDs: INF-STKY-01, INF-STKY-02, INF-STKY-03, INF-STKY-04, INF-STKY-05, INF-STKY-06, INF-STKY-07, INF-STKY-08, INF-STKY-09, INF-STKY-10, INF-STKY-11, INF-STKY-12, INF-STKY-13
+- W04-01 Sticky windows keyed by note ID, header, dock, colors, window_state (migration 004, D-051). IDs: INF-STKY-01, INF-STKY-02, INF-STKY-03, INF-STKY-04, INF-STKY-05, INF-STKY-06, INF-STKY-07, INF-STKY-08, INF-STKY-09, INF-STKY-10, INF-STKY-11, INF-STKY-12, INF-STKY-13
 - W04-02 Close/tray/quit lifecycle and tray-less fallback. IDs: INF-DESK-01, INF-DESK-02
 
 ### Phase 05
 
-- W05-01 Reminder data and services (migration 004), time resolver, recurrence. IDs: INF-REM-01, INF-REM-02, INF-REM-03, INF-REM-04, INF-REM-05, INF-REM-06, INF-REM-07, INF-REM-08, INF-REM-09, INF-REM-10, INF-REM-11, INF-REM-12, INF-REM-13, INF-REM-14, INF-REM-15, INF-REM-16, INF-REM-17, INF-REM-18
+- W05-01 Reminder data and services (migration 005, D-051), time resolver, recurrence. IDs: INF-REM-01, INF-REM-02, INF-REM-03, INF-REM-04, INF-REM-05, INF-REM-06, INF-REM-07, INF-REM-08, INF-REM-09, INF-REM-10, INF-REM-11, INF-REM-12, INF-REM-13, INF-REM-14, INF-REM-15, INF-REM-16, INF-REM-17, INF-REM-18
 - W05-02 ReminderService scheduler, delivery claims, recovery, quiet hours. IDs: INF-SCHED-01, INF-SCHED-02, INF-SCHED-03, INF-SCHED-04, INF-SCHED-05, INF-SCHED-06, INF-SCHED-07, INF-SCHED-08, INF-SCHED-09
 - W05-03 Reminder widget and Home reminder section. IDs: INF-HOME-04, INF-WIDG-01, INF-WIDG-02, INF-WIDG-03
 
 ### Phase 06
 
 - W06-01 NLP parser pipeline with frozen-clock tables. IDs: INF-NLP-01, INF-NLP-02, INF-NLP-03, INF-NLP-04, INF-NLP-05, INF-NLP-06, INF-NLP-07, INF-NLP-08, INF-NLP-09, INF-NLP-10, INF-NLP-11, INF-NLP-12, INF-NLP-13, INF-NLP-14
-- W06-02 Suggestions, confirmation card, sources and dismissals (migration 005). IDs: INF-SUG-01, INF-SUG-02, INF-SUG-03, INF-SUG-04, INF-SUG-05, INF-SUG-06, INF-SUG-07, INF-SUG-08, INF-SUG-09, INF-SUG-10
+- W06-02 Suggestions, confirmation card, sources and dismissals (migration 006, D-051). IDs: INF-SUG-01, INF-SUG-02, INF-SUG-03, INF-SUG-04, INF-SUG-05, INF-SUG-06, INF-SUG-07, INF-SUG-08, INF-SUG-09, INF-SUG-10
 
 ### Phase 07
 
-- W07-01 References and backlinks (migration 006). IDs: INF-REF-01, INF-REF-02, INF-REF-03, INF-REF-04, INF-REF-05, INF-REF-06, INF-REF-07, INF-REF-08, INF-REF-09
+- W07-01 References and backlinks (migration 007, D-051). IDs: INF-REF-01, INF-REF-02, INF-REF-03, INF-REF-04, INF-REF-05, INF-REF-06, INF-REF-07, INF-REF-08, INF-REF-09
 - W07-02 Search (FTS5, palette results, filters), tags. IDs: INF-HIER-11, INF-SRCH-01, INF-SRCH-02, INF-SRCH-03, INF-SRCH-04, INF-SRCH-05, INF-SRCH-06
 
 ### Phase 08

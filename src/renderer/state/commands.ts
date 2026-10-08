@@ -4,6 +4,8 @@ import { resolveNewItemLocation } from './current-location';
 
 export type CommandId =
   | 'note.new'
+  | 'note.newPlain'
+  | 'note.find'
   | 'sticky.new'
   | 'project.new'
   | 'folder.new'
@@ -42,8 +44,9 @@ export function createCommandRunner(services: Pick<AppServices, 'tree' | 'tabs' 
     });
   };
 
-  const newNote = async (sticky: boolean): Promise<void> => {
-    const res = await tree.createNote(currentLocation(), { sticky });
+  /** Creates a note where the user is working (rich text unless a plain-text note is asked for) and opens it. */
+  const newNote = async (sticky: boolean, format?: 'plain'): Promise<void> => {
+    const res = await tree.createNote(currentLocation(), { sticky, ...(format ? { format } : {}) });
     if (!res.ok) {
       notices.push(res.message, 'error');
       return;
@@ -58,6 +61,15 @@ export function createCommandRunner(services: Pick<AppServices, 'tree' | 'tabs' 
       switch (id) {
         case 'note.new':
           return newNote(false);
+        case 'note.newPlain':
+          return newNote(false, 'plain');
+        case 'note.find': {
+          // Only a note tab has a find bar (D-058).
+          const session = tabs.store.getState().session;
+          const active = session.tabs.find((t) => t.id === session.activeTabId);
+          if (active?.kind === 'note') ui.requestFocus({ target: 'noteFind', noteId: active.noteId });
+          return;
+        }
         case 'sticky.new':
           return newNote(true);
         case 'project.new':

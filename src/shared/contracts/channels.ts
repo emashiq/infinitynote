@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { AppInfo, Capabilities } from './app';
+import { AppFlushedRequest, AppFlushRequestEvent, AppInfo, Capabilities, ShellOpenExternalRequest, ShellOpenExternalResponse } from './app';
+import {
+  AttachmentImportBytesRequest,
+  AttachmentImportBytesResponse,
+  AttachmentImportDialogRequest,
+  AttachmentImportDialogResponse,
+} from './attachments';
 import type { EventChannel, InvokeChannel } from './channel-names';
 import {
   FolderCreateRequest,
@@ -31,14 +37,28 @@ import {
 } from './hierarchy';
 import { HomeSummaryRequest, HomeSummaryResponse } from './home';
 import {
+  DraftsListRequest,
+  DraftsListResponse,
+  DraftsResolveRequest,
+  DraftsResolveResponse,
   LeaseAcquireRequest,
   LeaseAcquireResponse,
   LeaseReleaseRequest,
+  LeaseReleaseRequestEvent,
   LeaseReleaseResponse,
+  LeaseTakeRequest,
+  LeaseTakeResponse,
+  NoteContentResponse,
+  NoteConvertRequest,
+  NoteLeaseEvent,
   NoteOpenRequest,
   NoteOpenResponse,
+  NoteRevisionEvent,
   NoteSaveAck,
   NoteSaveRequest,
+  VersionsListRequest,
+  VersionsListResponse,
+  VersionsRestoreRequest,
 } from './notes';
 import { PaletteSearchRequest, PaletteSearchResponse } from './palette';
 import { SessionGetResponse, SessionSetRequest, SessionSetResponse } from './session';
@@ -89,11 +109,25 @@ export const CHANNEL_SCHEMAS = {
   'note:save': { request: NoteSaveRequest, response: NoteSaveAck },
   'lease:acquire': { request: LeaseAcquireRequest, response: LeaseAcquireResponse },
   'lease:release': { request: LeaseReleaseRequest, response: LeaseReleaseResponse },
+  'lease:take': { request: LeaseTakeRequest, response: LeaseTakeResponse },
+  'note:convertFormat': { request: NoteConvertRequest, response: NoteContentResponse },
+  'versions:list': { request: VersionsListRequest, response: VersionsListResponse },
+  'versions:restore': { request: VersionsRestoreRequest, response: NoteContentResponse },
+  'drafts:list': { request: DraftsListRequest, response: DraftsListResponse },
+  'drafts:resolve': { request: DraftsResolveRequest, response: DraftsResolveResponse },
+  'attachment:importBytes': { request: AttachmentImportBytesRequest, response: AttachmentImportBytesResponse },
+  'attachment:importFromDialog': { request: AttachmentImportDialogRequest, response: AttachmentImportDialogResponse },
+  'shell:openExternal': { request: ShellOpenExternalRequest, response: ShellOpenExternalResponse },
+  'app:flushed': { request: AppFlushedRequest, response: Empty },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {
   'settings:changed': SettingsChangedEvent,
   'tree:changed': TreeChangedEvent,
+  'note:revision': NoteRevisionEvent,
+  'note:lease': NoteLeaseEvent,
+  'lease:release-request': LeaseReleaseRequestEvent,
+  'app:flush-request': AppFlushRequestEvent,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 type ChannelSchemas = typeof CHANNEL_SCHEMAS;

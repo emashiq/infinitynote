@@ -92,6 +92,8 @@ describe('Phase 02 request schemas', () => {
       'home.scope',
       'tree.expanded',
       'session.tabs',
+      'attachments.imageMaxMb',
+      'attachments.documentMaxMb',
     ]);
   });
 

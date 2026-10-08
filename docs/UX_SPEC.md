@@ -86,6 +86,21 @@ Banners and states:
 - Restore notice: "Restored to <path>" or, when the original location is gone, "Restored to <path> because its original location is in Trash or no longer exists".
 - Common protection: "Common cannot be renamed" and "Common cannot be moved to Trash" (status messages for F2 and Delete on Common).
 
+Editor copy added in Phase 03 (D-053 to D-058; exact strings):
+- Recovered draft on open: "This note has a recovered draft from <relative time>." (several: "This note has N recovered drafts. The newest is from <relative time>.") with Compare, Restore draft, Dismiss. Restore draft is disabled with the tooltip "Take edit control first" while the note is read-only.
+- Lease lost: "Another window took edit control. Your last edits were kept as a recovered draft." with Take edit control and Compare.
+- Trashed while editing (notice): `Your unsaved edits to "<title>" were kept as a recovered draft. Restore the note from Trash to see them.`
+- Compare dialog: title "Compare recovered draft", columns "Current note" and "Recovered draft", buttons Restore draft and Close.
+- Converted banner: "Converted to plain text. A version with formatting and images was saved." with "Restore formatted version" and Dismiss.
+- Version history dialog: title "Version history"; reasons "Automatic", "Before conversion", "Before restoring a draft", "Before restoring a version", "Before import"; restore confirmation "Restore this version? The current content is saved as a version first." with Restore and Cancel.
+- Attachments: "This image is larger than N MB. Use a smaller image."; "This file is larger than N MB. Use a smaller file."; "This image type is not supported. Use PNG, JPEG, GIF or WebP."; "This image is too large to display. Use an image under 100 megapixels."; "Only the first 20 files were added."; "Plain-text notes cannot contain images. Convert to rich text to add images."; "Plain-text notes cannot contain files. Convert to rich text to add files." (D-059); generic "The image could not be added." and "The file could not be added."; in-content states "Adding image…", "Adding file…", "Image unavailable".
+- Note too large: "This note is too large to save (over 5 MB). Remove some content to keep editing safely." Shown as visible text below the save status (D-061).
+- Paste too large (D-060): "This paste is too large (over 8 MB). Paste a smaller part."
+- Document limits (D-061): "This would nest lists or quotes more deeply than a note can store. Use fewer levels." and "This would make the note too large to store. Paste or add a smaller part."
+- Link dialog: title "Link", field "Address", error "Use an address that starts with http:// or https://", buttons Save, Remove link, Cancel. Link bar: the address with "Open link", "Edit link", "Remove link"; links open only on Ctrl+Click or Open link.
+- Find bar: field "Find in note", counter "<i> of <n>" or "No results", buttons "Previous match", "Next match", "Close find".
+- Toolbar (role toolbar, label "Formatting"): Heading menu (Paragraph, Heading 1, Heading 2, Heading 3), Bold, Italic, Bulleted list, Numbered list, Checklist, Link, Code block, Insert image, More (Inline code, Attach file, Find in note, Convert to plain text or Convert to rich text, Version history). With an image selected the toolbar shows "Image size": Small (240 px), Medium (480 px), Full width. Plain-text notes show only Find in note, Convert to rich text and Version history.
+
 ## 7. Keyboard map
 
 | Keys | Action |
@@ -107,6 +122,11 @@ Banners and states:
 | Ctrl+B, Ctrl+I | Bold, italic |
 | Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y | Undo, redo |
 | Ctrl+Shift+7 / 8 / 9 | List shortcuts (Tiptap defaults) |
+| Ctrl+Alt+1 / 2 / 3 | Heading levels (Tiptap defaults) |
+| Ctrl+E | Inline code |
+| Ctrl+Enter | Toggle the checklist item at the cursor (Phase 03) |
+| Ctrl+Click | Open a link (http and https only) |
+| Enter / Shift+Enter in find | Next / previous match |
 
 The global quick-sticky shortcut is optional and off by default; registration failure is shown in Settings.
 

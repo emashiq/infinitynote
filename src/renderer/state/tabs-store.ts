@@ -1,8 +1,9 @@
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import { DEFAULT_SESSION, type TabSessionType, type TabType } from '../../shared/contracts/session';
 import { activateTab, closeTab, nextTab, noteTabId, openTab, prevTab, removeNoteTabs, setTabScroll } from '../../shared/tabs/tab-session';
+import { displayTitle } from '../../shared/names';
 import { NoteController, type FlushResult } from '../notes/note-controller';
-import { closedTabsNotice, type NoticeStore } from './notice-store';
+import { closedTabsNotice, trashedDraftNotice, type NoticeStore } from './notice-store';
 import { createDebouncer, createStore, type Store, type Timers } from './store';
 
 export type PageKind = 'stickies' | 'reminders' | 'settings';
@@ -17,6 +18,12 @@ export interface TabsState {
 export const SCROLL_DEBOUNCE_MS = 500;
 export const SAVE_FAILED_NOTICE = 'Could not save this note. The tab stays open.';
 export const TAB_LIMIT_NOTICE = 'You have 200 open tabs. Close some tabs to open more.';
+
+const LEAVE_AFTER_FAILURE = new Set(['CONFLICT', 'LEASE_REQUIRED', 'NOT_FOUND']);
+
+function isTrashedConflict(r: FlushResult): boolean {
+  return !r.ok && r.code === 'CONFLICT' && (r.details as { reason?: unknown } | undefined)?.reason === 'trashed';
+}
 
 export interface TabsDeps {
   bridge: InfinityBridge;
@@ -119,12 +126,16 @@ export class TabsStore {
     if (this.store.getState().controllerNoteId !== noteId) this.store.setState({ controllerNoteId: noteId });
   }
 
-  /** Flushes and releases the active note. Returns false when a save failure must keep the tab open. */
+  /**
+   * Flushes and releases the active note. Returns false when a save failure must keep the tab open: only a
+   * failure after which main kept the edits as a draft (CONFLICT, LEASE_REQUIRED) or the note is gone (NOT_FOUND)
+   * lets the tab go (D-055).
+   */
   private async leaveActive(): Promise<boolean> {
     const c = this.controller;
     if (!c) return true;
     const r = await c.flush();
-    if (!r.ok && r.code === 'INTERNAL') {
+    if (!r.ok && !LEAVE_AFTER_FAILURE.has(r.code)) {
       this.deps.notices.push(SAVE_FAILED_NOTICE, 'error');
       return false;
     }
@@ -155,6 +166,8 @@ export class TabsStore {
   // Operations ------------------------------------------------------------------
   private async switchTo(next: TabSessionType): Promise<boolean> {
     if (next === this.session) return true;
+    // A scroll position reported just before switching must reach the session the next view reads.
+    this.applyScrollNow();
     if (next.activeTabId !== this.session.activeTabId && !(await this.leaveActive())) return false;
     this.store.setState({ session: next });
     this.syncController();
@@ -218,7 +231,11 @@ export class TabsStore {
       if (removed === 0) return 0;
       const activeGone = session.activeTabId !== this.session.activeTabId;
       if (activeGone && this.controller) {
-        await this.controller.dispose({ flush: false });
+        // Flush, not discard: main stores the pending edits of a trashed note as a recovered draft (F-02-1).
+        const c = this.controller;
+        const r = await c.flush();
+        if (isTrashedConflict(r)) this.deps.notices.push(trashedDraftNotice(displayTitle(c.store.getState().note?.title ?? '')), 'info');
+        await c.dispose({ flush: false });
         this.controller = null;
       }
       this.store.setState({ session });

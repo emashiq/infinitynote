@@ -8,13 +8,14 @@ export function openModal(el: HTMLDialogElement): void {
 }
 
 /** Captures the focused element at mount and restores it on unmount when it is still attached. */
-export function useReturnFocus(): void {
+export function useReturnFocus(enabled = true): void {
   useEffect(() => {
+    if (!enabled) return undefined;
     const previous = document.activeElement as HTMLElement | null;
     return () => {
       if (previous && previous.isConnected && typeof previous.focus === 'function') previous.focus();
     };
-  }, []);
+  }, [enabled]);
 }
 
 export function focusInitial(root: HTMLElement): void {
@@ -23,10 +24,23 @@ export function focusInitial(root: HTMLElement): void {
   if (target instanceof HTMLInputElement && target.hasAttribute('data-select')) target.select();
 }
 
-export function Dialog({ title, onClose, children, className }: { title: string; onClose: () => void; children: ReactNode; className?: string }) {
+export function Dialog({
+  title,
+  onClose,
+  children,
+  className,
+  returnFocus = true,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  className?: string;
+  /** False when the caller moves the focus itself on close (for example back into the editor). */
+  returnFocus?: boolean;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  useReturnFocus();
+  useReturnFocus(returnFocus);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

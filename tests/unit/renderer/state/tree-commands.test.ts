@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeNote, setupServices } from '../support/services';
+import { typeInto } from '../support/editor-source';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -69,7 +70,7 @@ describe('TreeStore', () => {
     const a = await makeNote(fake, undefined, 'A');
     await services.tabs.openNote(a.id);
     await vi.advanceTimersByTimeAsync(0);
-    services.tabs.activeController()!.setText('last words');
+    typeInto(services.tabs.activeController()!, 'last words');
     const r = await services.tree.trashNote(a.id);
     expect(r.ok).toBe(true);
     const order = fake.calls.map((c) => c.channel).filter((c) => c === 'note:save' || c === 'note:trash');
@@ -245,7 +246,7 @@ describe('app services', () => {
     const note = await makeNote(fake, undefined, 'A');
     await services.tabs.openNote(note.id);
     await vi.advanceTimersByTimeAsync(0);
-    services.tabs.activeController()!.setText('kept');
+    typeInto(services.tabs.activeController()!, 'kept');
     await services.dispose();
     expect(JSON.stringify(fake.data.notes[0]!.content)).toContain('kept');
     expect(fake.data.leases.size).toBe(0);

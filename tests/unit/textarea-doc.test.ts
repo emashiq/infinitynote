@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { docToText, isTextareaCompatible, textToDoc } from '../../src/shared/text/textarea-doc';
+import { docToText, textToDoc } from '../../src/shared/text/textarea-doc';
 
 describe('textarea-doc', () => {
   it('round-trips text including empty lines, a trailing newline and Bangla', () => {
@@ -19,6 +19,19 @@ describe('textarea-doc', () => {
     });
   });
 
+  it('gives every paragraph a block id when an id generator is passed', () => {
+    let n = 0;
+    const id = () => `00000000-0000-4000-8000-00000000000${++n}`;
+    expect(textToDoc('a\n\nb', { id })).toEqual({
+      type: 'doc',
+      content: [
+        { type: 'paragraph', attrs: { id: '00000000-0000-4000-8000-000000000001' }, content: [{ type: 'text', text: 'a' }] },
+        { type: 'paragraph', attrs: { id: '00000000-0000-4000-8000-000000000002' } },
+        { type: 'paragraph', attrs: { id: '00000000-0000-4000-8000-000000000003' }, content: [{ type: 'text', text: 'b' }] },
+      ],
+    });
+  });
+
   it('normalizes CRLF', () => {
     expect(docToText(textToDoc('a\r\nb'))).toBe('a\nb');
   });
@@ -26,20 +39,5 @@ describe('textarea-doc', () => {
   it('treats hardBreak as a newline inside a paragraph', () => {
     const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }, { type: 'hardBreak' }, { type: 'text', text: 'b' }] }] };
     expect(docToText(doc)).toBe('a\nb');
-    expect(isTextareaCompatible(doc)).toBe(true);
-  });
-
-  it('isTextareaCompatible is false for headings, marks, lists and non-documents', () => {
-    expect(isTextareaCompatible({ type: 'doc' })).toBe(true);
-    expect(isTextareaCompatible(textToDoc('x'))).toBe(true);
-    expect(isTextareaCompatible({ type: 'doc', content: [{ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'H' }] }] })).toBe(false);
-    expect(
-      isTextareaCompatible({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b', marks: [{ type: 'bold' }] }] }] }),
-    ).toBe(false);
-    expect(isTextareaCompatible({ type: 'doc', content: [{ type: 'bulletList', content: [] }] })).toBe(false);
-    expect(isTextareaCompatible({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'image' }] }] })).toBe(false);
-    expect(isTextareaCompatible({ type: 'other' })).toBe(false);
-    expect(isTextareaCompatible(null)).toBe(false);
-    expect(isTextareaCompatible('text')).toBe(false);
   });
 });

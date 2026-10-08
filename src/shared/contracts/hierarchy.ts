@@ -83,7 +83,13 @@ export const FolderCreateRequest = z.strictObject({ location: FolderTarget, name
 export const FolderRenameRequest = z.strictObject({ folderId: Uuid, name: NameInput });
 export const FolderMoveRequest = z.strictObject({ folderId: Uuid, target: FolderTarget });
 export const FolderIdRequest = z.strictObject({ folderId: Uuid });
-export const NoteCreateRequest = z.strictObject({ location: Location, sticky: z.boolean(), title: TitleInput.optional() });
+export const NoteCreateRequest = z.strictObject({
+  location: Location,
+  sticky: z.boolean(),
+  title: TitleInput.optional(),
+  /** Rich text by default; plain-text notes are created with an empty string (INF-EDIT-04). */
+  format: z.enum(['rich', 'plain']).optional(),
+});
 export const NoteRenameRequest = z.strictObject({ noteId: Uuid, title: TitleInput });
 export const NoteMoveRequest = z.strictObject({ noteId: Uuid, target: Location });
 export const NoteIdRequest = z.strictObject({ noteId: Uuid });

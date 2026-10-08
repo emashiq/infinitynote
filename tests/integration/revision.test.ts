@@ -2,20 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { NotesRepo } from '../../src/main/db/repositories/notes-repo';
 import { AppError } from '../../src/main/services/app-error';
-import { LeaseManager } from '../../src/main/services/lease-manager';
-import { NoteWriter } from '../../src/main/services/note-writer';
-import { MAX_CONTENT_BYTES, type NoteRevisionEventType, type NoteSaveRequestType } from '../../src/shared/contracts/notes';
-import { fixedClock, openFresh, randomIds } from './helpers';
+import { MAX_CONTENT_BYTES, type NoteSaveRequestType } from '../../src/shared/contracts/notes';
+import { setupServices } from './hierarchy-helpers';
 
 const WC = 7;
 
 async function setup() {
-  const t = await openFresh();
-  const clock = fixedClock();
-  const ids = randomIds();
-  const revisions: NoteRevisionEventType[] = [];
-  const leases = new LeaseManager({ ids, clock, requestRelease: () => {}, emit: () => {} });
-  const writer = new NoteWriter({ db: t.db, leases, clock, ids, emit: (e) => revisions.push(e) });
+  const { t, clock, ids, revisions, leases, writer } = await setupServices();
   const notes = new NotesRepo(t.db);
   const noteId = randomUUID();
   notes.createNote({ id: noteId, title: 'start', format: 'rich', contentJson: '{"type":"doc"}', now: clock.now() });
@@ -144,6 +137,44 @@ describe('note save revision (INF-FND-13)', () => {
     expect(row.content_json).toBeNull();
     expect(row.content_text).toBe('line1\r\nপ্লেইন');
     expect(row.plain_text).toBe('line1\nপ্লেইন');
+  });
+
+  it('retried conflict reuses the draft (F-01-3)', async () => {
+    const s = await setup();
+    s.writer.save(s.req(), { webContentsId: WC });
+    const stale = s.req({ baseRevision: 0, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'retry me' }] }] } });
+    const first = catchApp(() => s.writer.save(stale, { webContentsId: WC }));
+    const second = catchApp(() => s.writer.save(stale, { webContentsId: WC }));
+    expect(first.code).toBe('CONFLICT');
+    expect(second.code).toBe('CONFLICT');
+    expect(second.details).toEqual(first.details);
+    expect(s.drafts()).toHaveLength(1);
+    // a new requestId with the same stale content is a new attempt and keeps its own draft
+    catchApp(() => s.writer.save({ ...stale, requestId: randomUUID() }, { webContentsId: WC }));
+    expect(s.drafts()).toHaveLength(2);
+  });
+
+  it('retried trashed conflict reuses the draft (F-01-3)', async () => {
+    const s = await setup();
+    s.t.db.prepare<[string]>('UPDATE notes SET deleted_at = 5 WHERE id = ?').run(s.noteId);
+    const request = s.req();
+    const first = catchApp(() => s.writer.save(request, { webContentsId: WC }));
+    const second = catchApp(() => s.writer.save(request, { webContentsId: WC }));
+    expect(second.details).toEqual(first.details);
+    expect(first.details).toMatchObject({ reason: 'trashed', draftId: expect.any(String) });
+    expect(s.drafts()).toHaveLength(1);
+  });
+
+  it('retried lease-lost reuses the draft (F-01-3)', async () => {
+    const s = await setup();
+    s.leases.release(s.noteId, s.viewId, s.lease.leaseToken, WC);
+    const request = s.req();
+    const first = catchApp(() => s.writer.save(request, { webContentsId: WC }));
+    const second = catchApp(() => s.writer.save(request, { webContentsId: WC }));
+    expect(first.code).toBe('LEASE_REQUIRED');
+    expect(second.code).toBe('LEASE_REQUIRED');
+    expect(second.details).toEqual(first.details);
+    expect(s.drafts()).toEqual([expect.objectContaining({ reason: 'lease_lost' })]);
   });
 
   it('a missing note gives NOT_FOUND', async () => {

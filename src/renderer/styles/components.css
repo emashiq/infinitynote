@@ -692,18 +692,98 @@ dialog::backdrop {
   background: var(--accent-soft);
 }
 
-.temp-editor {
-  flex: 1;
-  min-height: 0;
-  padding: 8px 4px;
-  border: 1px solid transparent;
+.note-banners {
+  flex: none;
+}
+
+.note-banners .banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.banner-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.note-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+
+.compare-dialog {
+  width: min(880px, 92vw);
+}
+
+.compare-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.compare-heading {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.compare-text {
+  max-height: 50vh;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text);
+  background: var(--bg-subtle);
   font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 1.55;
-  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.versions-dialog {
+  width: min(560px, 92vw);
+}
+
+.version-list {
+  max-height: 50vh;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.version-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.version-meta {
+  display: flex;
+  gap: 10px;
+}
+
+.version-preview {
+  grid-column: 1;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-row > .btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .note-empty {
@@ -784,4 +864,9 @@ dialog::backdrop {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

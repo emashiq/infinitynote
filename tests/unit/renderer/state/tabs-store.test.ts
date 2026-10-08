@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SAVE_FAILED_NOTICE, TAB_LIMIT_NOTICE } from '../../../../src/renderer/state/tabs-store';
 import { DEFAULT_SESSION } from '../../../../src/shared/contracts/session';
 import { makeNote, setupServices } from '../support/services';
+import { typeInto } from '../support/editor-source';
 
 const noticeTexts = (s: Awaited<ReturnType<typeof setupServices>>['services']) => s.notices.store.getState().notices.map((n) => n.text);
 const ids = (s: Awaited<ReturnType<typeof setupServices>>['services']) => s.tabs.store.getState().session.tabs.map((t) => t.id);
@@ -49,7 +50,7 @@ describe('TabsStore', () => {
     await vi.advanceTimersByTimeAsync(0);
     const ca = services.tabs.activeController()!;
     expect(ca.noteId).toBe(a.id);
-    ca.setText('typed in A');
+    typeInto(ca, 'typed in A');
     await services.tabs.openNote(b.id);
     await vi.advanceTimersByTimeAsync(0);
     expect(services.tabs.activeController()?.noteId).toBe(b.id);
@@ -66,7 +67,7 @@ describe('TabsStore', () => {
     const a = await makeNote(fake, undefined, 'A');
     await services.tabs.openNote(a.id);
     await vi.advanceTimersByTimeAsync(0);
-    services.tabs.activeController()!.setText('unsaved');
+    typeInto(services.tabs.activeController()!, 'unsaved');
     fake.failNext('note:save', { code: 'INTERNAL' }, 4);
     const attempt = services.tabs.activate('home');
     await vi.advanceTimersByTimeAsync(3500);
@@ -87,7 +88,7 @@ describe('TabsStore', () => {
     const a = await makeNote(fake, undefined, 'A');
     await services.tabs.openNote(a.id);
     await vi.advanceTimersByTimeAsync(0);
-    services.tabs.activeController()!.setText('x');
+    typeInto(services.tabs.activeController()!, 'x');
     fake.failNext('note:save', { code: 'CONFLICT' });
     expect(await services.tabs.activate('home')).toBe(true);
     expect(services.tabs.store.getState().session.activeTabId).toBe('home');
@@ -133,6 +134,57 @@ describe('TabsStore', () => {
     expect(services.tabs.store.getState().session.activeTabId).toBe('home');
     expect(noticeTexts(services).at(-1)).toMatch(/^(2 tabs were closed because their notes are in Trash|1 tab was closed because its note is in Trash)$/);
     expect(fake.data.leases.size).toBe(0);
+  });
+
+  it('trashing the active note while edits are pending flushes them into a draft and says so (F-02-1)', async () => {
+    const { services, fake } = await setupServices();
+    const a = await makeNote(fake, undefined, 'Shopping');
+    await services.tabs.openNote(a.id);
+    await vi.advanceTimersByTimeAsync(0);
+    typeInto(services.tabs.activeController()!, 'milk and more');
+    // Trash inside the 400 ms debounce: the pending text has not been sent yet.
+    await fake.bridge.note.trash({ noteId: a.id });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(ids(services)).toEqual(['home']);
+    expect(fake.data.drafts).toHaveLength(1);
+    expect(fake.data.drafts[0]).toMatchObject({ noteId: a.id });
+    expect(JSON.stringify(fake.data.drafts[0]!.content)).toContain('milk and more');
+    expect(noticeTexts(services)).toEqual([
+      'Your unsaved edits to "Shopping" were kept as a recovered draft. Restore the note from Trash to see them.',
+      '1 tab was closed because its note is in Trash',
+    ]);
+    expect(fake.data.leases.size).toBe(0);
+  });
+
+  it('trashing the active note without pending edits stores no draft and shows only the closed notice', async () => {
+    const { services, fake } = await setupServices();
+    const a = await makeNote(fake, undefined, 'Clean');
+    await services.tabs.openNote(a.id);
+    await vi.advanceTimersByTimeAsync(0);
+    await fake.bridge.note.trash({ noteId: a.id });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(fake.data.drafts).toHaveLength(0);
+    expect(noticeTexts(services)).toEqual(['1 tab was closed because its note is in Trash']);
+  });
+
+  it('keeps the tab open for every failed flush except CONFLICT, LEASE_REQUIRED and NOT_FOUND', async () => {
+    const { services, fake } = await setupServices();
+    const a = await makeNote(fake, undefined, 'A');
+    await services.tabs.openNote(a.id);
+    await vi.advanceTimersByTimeAsync(0);
+    typeInto(services.tabs.activeController()!, 'too big');
+    fake.failNext('note:save', { code: 'LIMIT_EXCEEDED' });
+    expect(await services.tabs.activate('home')).toBe(false);
+    expect(services.tabs.store.getState().session.activeTabId).toBe(`note:${a.id}`);
+    expect(noticeTexts(services)).toEqual([SAVE_FAILED_NOTICE]);
+
+    for (const code of ['LEASE_REQUIRED', 'NOT_FOUND'] as const) {
+      await services.tabs.openNote(a.id);
+      await vi.advanceTimersByTimeAsync(0);
+      typeInto(services.tabs.activeController()!, `after ${code}`);
+      fake.failNext('note:save', { code });
+      expect(await services.tabs.activate('home')).toBe(true);
+    }
   });
 
   it('folder trash closes both open notes with one plural notice', async () => {

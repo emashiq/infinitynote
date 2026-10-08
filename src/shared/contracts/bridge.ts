@@ -20,6 +20,11 @@ export interface InfinityBridge {
     getInfo: Query<'app:getInfo'>;
     showDataFolder: Query<'app:showDataFolder'>;
     quit: Query<'app:quit'>;
+    flushed: Call<'app:flushed'>;
+  };
+  readonly attachment: {
+    importBytes: Call<'attachment:importBytes'>;
+    importFromDialog: Call<'attachment:importFromDialog'>;
   };
   readonly settings: {
     get(req: { keys: PublicSettingKey[] }): Res<{ values: Partial<{ [K in PublicSettingKey]: SettingValue<K> }> }>;
@@ -50,6 +55,7 @@ export interface InfinityBridge {
     setPinned: Call<'note:setPinned'>;
     open: Call<'note:open'>;
     save: Call<'note:save'>;
+    convertFormat: Call<'note:convertFormat'>;
   };
   readonly item: {
     setFavorite: Call<'item:setFavorite'>;
@@ -57,6 +63,18 @@ export interface InfinityBridge {
   readonly lease: {
     acquire: Call<'lease:acquire'>;
     release: Call<'lease:release'>;
+    take: Call<'lease:take'>;
+  };
+  readonly versions: {
+    list: Call<'versions:list'>;
+    restore: Call<'versions:restore'>;
+  };
+  readonly drafts: {
+    list: Call<'drafts:list'>;
+    resolve: Call<'drafts:resolve'>;
+  };
+  readonly shell: {
+    openExternal: Call<'shell:openExternal'>;
   };
   readonly trash: {
     list: Query<'trash:list'>;

@@ -85,18 +85,35 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
     }
   });
 
-  it('event channels are settings:changed and tree:changed', () => {
-    expect([...EVENT_CHANNELS]).toEqual(['settings:changed', 'tree:changed']);
-    expect(Object.keys(EVENT_SCHEMAS)).toEqual(['settings:changed', 'tree:changed']);
+  it('event channels are the Phase 01-03 events (D-052)', () => {
+    const events = ['settings:changed', 'tree:changed', 'note:revision', 'note:lease', 'lease:release-request', 'app:flush-request'];
+    expect([...EVENT_CHANNELS]).toEqual(events);
+    expect(Object.keys(EVENT_SCHEMAS)).toEqual(events);
   });
 
-  it('no Phase 03-only channel is registered in Phase 02', () => {
+  it('the Phase 03 channels are in the catalogue in order (D-052)', () => {
+    expect(INVOKE_CHANNELS.slice(-10)).toEqual([
+      'lease:take',
+      'note:convertFormat',
+      'versions:list',
+      'versions:restore',
+      'drafts:list',
+      'drafts:resolve',
+      'attachment:importBytes',
+      'attachment:importFromDialog',
+      'shell:openExternal',
+      'app:flushed',
+    ]);
+    expect(INVOKE_CHANNELS).toHaveLength(41);
+  });
+
+  it('no Phase 04 channel is registered in Phase 03', () => {
     const all: string[] = [...INVOKE_CHANNELS, ...EVENT_CHANNELS];
-    for (const name of ['lease:take', 'note:revision', 'note:lease', 'lease:release-request', 'note:convertFormat']) {
+    for (const name of ['sticky:float', 'window:getState', 'note:trashed', 'sticky:state', 'attachment:importImageBytes']) {
       expect(all, name).not.toContain(name);
     }
     expect(all).toContain('note:save');
-    expect(all).toContain('lease:acquire');
+    expect(all).toContain('lease:take');
   });
 
   it('empty-request channels are strict objects', () => {

@@ -31,9 +31,26 @@ export const INVOKE_CHANNELS = [
   'note:save',
   'lease:acquire',
   'lease:release',
+  'lease:take',
+  'note:convertFormat',
+  'versions:list',
+  'versions:restore',
+  'drafts:list',
+  'drafts:resolve',
+  'attachment:importBytes',
+  'attachment:importFromDialog',
+  'shell:openExternal',
+  'app:flushed',
 ] as const;
 
-export const EVENT_CHANNELS = ['settings:changed', 'tree:changed'] as const;
+export const EVENT_CHANNELS = [
+  'settings:changed',
+  'tree:changed',
+  'note:revision',
+  'note:lease',
+  'lease:release-request',
+  'app:flush-request',
+] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];
 export type EventChannel = (typeof EVENT_CHANNELS)[number];

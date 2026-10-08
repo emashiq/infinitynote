@@ -41,10 +41,24 @@ describe('import boundaries', () => {
     expect(await restricted('src/main/db/better-sqlite3-driver.ts', "import Database from 'better-sqlite3';\nexport default Database;\n")).toEqual([]);
   });
 
-  it('the preload surface and router expose no Phase 03-only channels', async () => {
+  it('one editor engine (INF-EDIT-01): no hand-made contentEditable or execCommand; only NoteEditor creates editors', async () => {
+    const fs = await import('node:fs');
+    const files = fs
+      .readdirSync('src/renderer', { recursive: true, encoding: 'utf8' })
+      .filter((f) => /\.(ts|tsx)$/.test(f))
+      .map((f) => ({ file: f.replace(/\\/g, '/'), text: fs.readFileSync(`src/renderer/${f}`, 'utf8') }));
+    expect(files.length).toBeGreaterThan(50);
+    for (const { file, text } of files) {
+      expect(text, file).not.toMatch(/contenteditable="true"|contentEditable=\{true\}|execCommand/);
+    }
+    expect(files.filter((f) => /\buseEditor\(/.test(f.text)).map((f) => f.file)).toEqual(['editor/NoteEditor.tsx']);
+  });
+
+  it('the preload surface and router expose no Phase 04 channels', async () => {
     const fs = await import('node:fs');
     const preload = fs.readFileSync('src/preload/index.ts', 'utf8');
-    expect(preload).not.toMatch(/lease:take|note:revision|note:lease|lease:release-request|note:convertFormat/);
+    expect(preload).toContain("call('lease:take')");
+    expect(preload).not.toMatch(/sticky:float|window:getState|note:trashed|sticky:state/);
     expect(preload).not.toMatch(/exposeInMainWorld\('(?!infinity')/);
     const ipcSources = fs
       .readdirSync('src/main/ipc', { recursive: true, encoding: 'utf8' })
@@ -53,6 +67,6 @@ describe('import boundaries', () => {
       .join('\n');
     // Positive control: the pattern below must be able to see how channels are registered.
     expect(ipcSources).toContain("router.register('note:save'");
-    expect(ipcSources).not.toMatch(/'(lease:take|note:revision|note:lease|lease:release-request|note:convertFormat)'/);
+    expect(ipcSources).not.toMatch(/'(sticky:float|window:getState|note:trashed|sticky:state)'/);
   });
 });

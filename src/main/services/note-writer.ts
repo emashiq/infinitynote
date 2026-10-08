@@ -1,103 +1,129 @@
-import { MAX_CONTENT_BYTES, type NoteRevisionEventType, type NoteSaveAckType, type NoteSaveRequestType } from '../../shared/contracts/notes';
-import { extractPlainText } from '../../shared/text/plain-text';
+import {
+  MAX_CONTENT_BYTES,
+  NOTE_TOO_LARGE_MESSAGE,
+  type NoteRevisionEventType,
+  type NoteSaveAckType,
+  type NoteSaveRequestType,
+} from '../../shared/contracts/notes';
 import type { Db } from '../db/driver';
+import { DraftsRepo } from '../db/repositories/drafts-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
-import { AppError } from './app-error';
+import { AppError, errorDetail } from './app-error';
 import type { Clock } from './clock';
 import type { IdGenerator } from './ids';
 import type { LeaseManager } from './lease-manager';
+import type { Logger } from './logger';
+import { MSG } from './messages';
+import { normalizeContent, type NoteContent, type NoteContentValue } from './note-content';
+import { RequestCache } from './request-cache';
+import type { VersionService } from './version-service';
+
+/** Test-only fault injection (installed by the E2E test hooks, never in a packaged build). */
+export interface SaveFaults {
+  beforeSave(): void;
+}
 
 export interface NoteWriterDeps {
   db: Db;
   leases: LeaseManager;
   clock: Clock;
   ids: IdGenerator;
+  logger: Logger;
+  content: NoteContent;
+  versions: VersionService;
   emit: (event: NoteRevisionEventType) => void;
-  extract?: typeof extractPlainText;
+  faults?: SaveFaults;
 }
 
 type SaveOutcome =
   | { kind: 'ok'; ack: NoteSaveAckType }
   | { kind: 'conflict'; currentRevision: number; draftId: string; reason: 'stale' | 'trashed' };
 
-const ACK_CACHE_PER_NOTE = 100;
-
 /**
- * The single writer of note content (ARCHITECTURE 6): verifies the lease and the base revision, writes the
- * next revision, and keeps rejected content as a draft. Acks are cached per requestId so a retry is idempotent.
+ * Applies `note:save` (ARCHITECTURE 6, plan section 8.1): verifies the lease and the base revision, validates
+ * the document, writes the next revision with its index and automatic version, and keeps rejected content as a
+ * draft. Outcomes are cached per requestId, so a retried request returns the same ack or the same rejection
+ * (and draft) without writing twice (F-01-3).
  */
 export class NoteWriter {
-  private readonly acks = new Map<string, Map<string, NoteSaveAckType>>();
+  private readonly outcomes = new RequestCache<NoteSaveAckType | AppError>();
   private readonly notes: NotesRepo;
-  private readonly extract: typeof extractPlainText;
+  private readonly drafts: DraftsRepo;
 
   constructor(private readonly deps: NoteWriterDeps) {
     this.notes = new NotesRepo(deps.db);
-    this.extract = deps.extract ?? extractPlainText;
+    this.drafts = new DraftsRepo(deps.db);
   }
 
   save(req: NoteSaveRequestType, ctx: { webContentsId: number }): NoteSaveAckType {
     const serialized = typeof req.content === 'string' ? req.content : JSON.stringify(req.content);
-    if (Buffer.byteLength(serialized, 'utf8') > MAX_CONTENT_BYTES) {
-      throw new AppError('LIMIT_EXCEEDED', 'Note is too large to save');
-    }
+    if (Buffer.byteLength(serialized, 'utf8') > MAX_CONTENT_BYTES) throw new AppError('LIMIT_EXCEEDED', NOTE_TOO_LARGE_MESSAGE);
+    this.deps.faults?.beforeSave();
 
     const lease = this.deps.leases.verify(req.noteId, req.viewId, req.leaseToken, ctx.webContentsId);
     if (lease === 'forbidden') throw new AppError('FORBIDDEN', 'Not allowed');
-    if (lease === 'lost') {
-      if (!this.notes.getSaveState(req.noteId)) throw new AppError('NOT_FOUND', 'Note not found');
-      const draftId = this.insertDraft(req, serialized, 'lease_lost');
-      throw new AppError('LEASE_REQUIRED', 'Edit control was lost', { draftId });
-    }
 
-    const cached = this.acks.get(req.noteId)?.get(req.requestId);
+    const cached = this.outcomes.get(req.noteId, req.requestId);
+    if (cached instanceof AppError) throw cached;
     if (cached) return cached;
 
+    if (lease === 'lost') {
+      if (!this.notes.getContentRow(req.noteId)) throw new AppError('NOT_FOUND', MSG.missing);
+      const draftId = this.insertDraft(req, serialized, 'lease_lost');
+      throw this.reject(req, new AppError('LEASE_REQUIRED', 'Edit control was lost', { draftId }));
+    }
+
+    const content = normalizeContent(req.format, req.content);
     let outcome: SaveOutcome;
     try {
-      outcome = this.deps.db.transaction(() => this.write(req, serialized), 'immediate');
+      outcome = this.deps.db.transaction(() => this.write(req, content), 'immediate');
     } catch (err) {
       if (err instanceof AppError) throw err;
+      this.deps.logger.error(`save failed note=${req.noteId} ${errorDetail(err)}`);
       throw new AppError('INTERNAL', 'Could not save the note');
     }
 
     if (outcome.kind === 'conflict') {
       const { currentRevision, draftId, reason } = outcome;
-      throw new AppError('CONFLICT', 'This note changed elsewhere', { currentRevision, draftId, reason });
+      throw this.reject(req, new AppError('CONFLICT', 'This note changed elsewhere', { currentRevision, draftId, reason }));
     }
-    this.remember(outcome.ack);
+    this.outcomes.set(req.noteId, req.requestId, outcome.ack);
     this.deps.emit({ noteId: req.noteId, revision: outcome.ack.revision, sourceViewId: req.viewId });
     return outcome.ack;
   }
 
   /** Runs inside the save transaction. A trashed or stale note keeps the content as a conflict draft. */
-  private write(req: NoteSaveRequestType, serialized: string): SaveOutcome {
-    const note = this.notes.getSaveState(req.noteId);
-    if (!note) throw new AppError('NOT_FOUND', 'Note not found');
-    if (note.deleted_at !== null || note.revision !== req.baseRevision) {
+  private write(req: NoteSaveRequestType, content: NoteContentValue): SaveOutcome {
+    const row = this.notes.getContentRow(req.noteId);
+    if (!row) throw new AppError('NOT_FOUND', MSG.missing);
+    if (row.deleted_at !== null || row.revision !== req.baseRevision) {
+      const serialized = typeof content === 'string' ? content : JSON.stringify(content);
       const draftId = this.insertDraft(req, serialized, 'conflict');
-      return { kind: 'conflict', currentRevision: note.revision, draftId, reason: note.deleted_at !== null ? 'trashed' : 'stale' };
+      return { kind: 'conflict', currentRevision: row.revision, draftId, reason: row.deleted_at !== null ? 'trashed' : 'stale' };
     }
-    if (note.format !== req.format) {
-      throw new AppError('VALIDATION_FAILED', 'Format conversion is not part of a plain save');
-    }
+    if (row.format !== req.format) throw new AppError('VALIDATION_FAILED', 'Format conversion is not part of a plain save');
     const now = this.deps.clock.now();
-    const revision = note.revision + 1;
-    this.notes.writeContent({
-      id: req.noteId,
+    this.deps.versions.maybeAuto(row, now);
+    const written = this.deps.content.write({
+      noteId: req.noteId,
       format: req.format,
-      content: serialized,
-      plainText: this.extract(req.format, req.content),
-      title: req.title,
-      revision,
+      content,
+      title: req.title ?? null,
+      expectedRevision: row.revision,
       now,
     });
-    return { kind: 'ok', ack: { noteId: req.noteId, revision, requestId: req.requestId, updatedAt: now } };
+    return { kind: 'ok', ack: { noteId: req.noteId, revision: written.revision, requestId: req.requestId, updatedAt: written.updatedAt } };
+  }
+
+  /** Remembers a rejection that stored a draft, so a retry returns it again instead of storing a second draft. */
+  private reject(req: NoteSaveRequestType, error: AppError): AppError {
+    this.outcomes.set(req.noteId, req.requestId, error);
+    return error;
   }
 
   private insertDraft(req: NoteSaveRequestType, serialized: string, reason: 'conflict' | 'lease_lost'): string {
     const id = this.deps.ids.uuid();
-    this.notes.insertDraft({
+    this.drafts.insert({
       id,
       noteId: req.noteId,
       viewId: req.viewId,
@@ -109,18 +135,5 @@ export class NoteWriter {
       now: this.deps.clock.now(),
     });
     return id;
-  }
-
-  private remember(ack: NoteSaveAckType): void {
-    let cache = this.acks.get(ack.noteId);
-    if (!cache) {
-      cache = new Map();
-      this.acks.set(ack.noteId, cache);
-    }
-    cache.set(ack.requestId, ack);
-    if (cache.size > ACK_CACHE_PER_NOTE) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
-    }
   }
 }

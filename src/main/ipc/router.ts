@@ -23,8 +23,17 @@ export type Handler<C extends InvokeChannel> = (
 ) => ChannelResponse<C> | Promise<ChannelResponse<C>>;
 
 export interface RegisterOptions {
-  /** Upper bound for the JSON-encoded request; defaults to 5 MB. */
+  /** Upper bound for the measured request size; defaults to 5 MB. */
   maxPayloadBytes?: number;
+  /** Size of a request in bytes; defaults to its JSON length. Channels with binary fields measure them directly. */
+  measurePayload?: (payload: unknown) => number;
+  /** The message of the LIMIT_EXCEEDED answer for an oversized request; defaults to a generic one. */
+  tooLargeMessage?: string;
+}
+
+/** The JSON length of a request, the default size measure. Throws for values JSON cannot encode. */
+export function jsonByteLength(payload: unknown): number {
+  return Buffer.byteLength(JSON.stringify(payload ?? null));
 }
 
 export interface IpcRouter {
@@ -54,7 +63,7 @@ export function createIpcRouter(options: {
   async function dispatch(
     channel: InvokeChannel,
     handler: (request: unknown, ctx: HandlerContext) => unknown,
-    maxPayloadBytes: number,
+    limits: Required<RegisterOptions>,
     event: IpcEventLike,
     payload: unknown,
   ): Promise<Result<unknown>> {
@@ -64,11 +73,11 @@ export function createIpcRouter(options: {
     }
     let size: number;
     try {
-      size = Buffer.byteLength(JSON.stringify(payload ?? null));
+      size = limits.measurePayload(payload);
     } catch {
       return fail('VALIDATION_FAILED', 'Invalid request');
     }
-    if (size > maxPayloadBytes) return fail('LIMIT_EXCEEDED', 'Request is too large');
+    if (size > limits.maxPayloadBytes) return fail('LIMIT_EXCEEDED', limits.tooLargeMessage);
 
     const { request, response } = CHANNEL_SCHEMAS[channel];
     const parsed = request.safeParse(payload ?? {});
@@ -100,9 +109,13 @@ export function createIpcRouter(options: {
       }
       if (registered.has(channel)) throw new Error(`Channel already registered: ${channel}`);
       registered.add(channel);
-      const maxPayloadBytes = registerOptions.maxPayloadBytes ?? DEFAULT_MAX_PAYLOAD_BYTES;
+      const limits: Required<RegisterOptions> = {
+        maxPayloadBytes: registerOptions.maxPayloadBytes ?? DEFAULT_MAX_PAYLOAD_BYTES,
+        measurePayload: registerOptions.measurePayload ?? jsonByteLength,
+        tooLargeMessage: registerOptions.tooLargeMessage ?? 'Request is too large',
+      };
       const untyped = handler as (request: unknown, ctx: HandlerContext) => unknown;
-      ipcMain.handle(channel, (event, payload) => dispatch(channel, untyped, maxPayloadBytes, event, payload));
+      ipcMain.handle(channel, (event, payload) => dispatch(channel, untyped, limits, event, payload));
     },
     dispose() {
       for (const channel of registered) ipcMain.removeHandler(channel);

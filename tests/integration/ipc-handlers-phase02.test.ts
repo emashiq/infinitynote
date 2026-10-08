@@ -1,23 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { AppHandlerDeps } from '../../src/main/ipc/handlers/app-handlers';
-import { registerIpcHandlers } from '../../src/main/ipc/register-handlers';
-import { createIpcRouter } from '../../src/main/ipc/router';
-import { createSenderPolicy } from '../../src/main/ipc/sender-policy';
 import type { MainServices } from '../../src/main/main-services';
-import { memoryLogger } from '../../src/main/services/logger';
 import { INVOKE_CHANNELS } from '../../src/shared/contracts/channel-names';
+import { NOTE_TOO_LARGE_MESSAGE } from '../../src/shared/contracts/notes';
 import { textToDoc } from '../../src/shared/text/textarea-doc';
 import { setupServices } from './hierarchy-helpers';
-import { fakeIpcMain } from './ipc-helpers';
-
-// Loosely typed on purpose: the tests read many differently shaped response bodies.
-interface Loose {
-  ok: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: any;
-  error?: { code: string; message: string; details?: unknown };
-}
+import { catalogueRouter } from './ipc-helpers';
 
 const appDeps: AppHandlerDeps = {
   getInfo: () => {
@@ -26,24 +15,14 @@ const appDeps: AppHandlerDeps = {
   getCapabilities: () => {
     throw new Error('not used');
   },
-  shell: { openPath: async () => '' },
+  shell: { openPath: async () => '', openExternal: async () => {} },
   dataDir: '/data',
   quit: () => {},
+  flushed: () => false,
 };
 
 /** Every catalogue channel registered through registerIpcHandlers, as main does at startup. */
-function routerOver(services: MainServices | null) {
-  const ipc = fakeIpcMain();
-  const router = createIpcRouter({
-    ipcMain: ipc.ipcMain,
-    senderPolicy: createSenderPolicy({ registry: { has: (wcId) => wcId === 1 } }),
-    logger: memoryLogger(),
-    validateResponses: true,
-  });
-  registerIpcHandlers(router, { app: appDeps, services });
-  const call = async (channel: string, payload: unknown): Promise<Loose> => (await ipc.call(channel, payload)) as Loose;
-  return { handlers: ipc.handlers, call, router };
-}
+const routerOver = (services: MainServices | null) => catalogueRouter(services, appDeps);
 
 async function setup() {
   const s = await setupServices();
@@ -186,8 +165,11 @@ describe('Phase 02 IPC handlers', () => {
     const mib = 1024 * 1024;
     const okRes = await save('x'.repeat(Math.floor(4.9 * mib)), 0);
     expect(okRes).toMatchObject({ ok: true, data: { revision: 1 } });
-    expect(await save('x'.repeat(5 * mib + 1), 1)).toMatchObject({ ok: false, error: { code: 'LIMIT_EXCEEDED' } });
-    expect(await save('x'.repeat(5 * mib + 70_000), 1)).toMatchObject({ ok: false, error: { code: 'LIMIT_EXCEEDED' } });
+    // Both the writer's content limit and the router's payload ceiling answer with the UX_SPEC copy (QA-1).
+    const tooLarge = { ok: false, error: { code: 'LIMIT_EXCEEDED', message: NOTE_TOO_LARGE_MESSAGE } };
+    expect(await save('x'.repeat(5 * mib + 1), 1)).toMatchObject(tooLarge);
+    expect(await save('x'.repeat(5 * mib + 70_000), 1)).toMatchObject(tooLarge);
+    expect(await save('x'.repeat(6 * mib), 1)).toMatchObject(tooLarge);
     expect(s.row<{ revision: number }>('SELECT revision FROM notes WHERE id = ?', note.id)?.revision).toBe(1);
     const released = await call('lease:release', { noteId: note.id, viewId, leaseToken: lease.leaseToken });
     expect(released).toEqual({ ok: true, data: { released: true } });

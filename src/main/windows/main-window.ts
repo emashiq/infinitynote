@@ -10,6 +10,12 @@ export interface MainWindowOptions {
   logger: Logger;
   /** Dev server URL, used only when not packaged. */
   devUrl: string | null;
+  /** A close of the window by the user or the app; call event.preventDefault() to delay it (flush first). */
+  onCloseRequest?: (event: Electron.Event, win: BrowserWindow) => void;
+  /** The renderer process ended (crash, kill, out of memory or a clean exit). */
+  onRendererGone?: (webContentsId: number, reason: string, win: BrowserWindow) => void;
+  /** The main frame committed a new document (a reload or navigation), so the previous document is gone. */
+  onNavigated?: (webContentsId: number) => void;
 }
 
 /** Pure description of the main window; unit tested (INF-SHELL-06: native frame, no custom title bar). */
@@ -59,7 +65,10 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
     focus: () => win.focus(),
   });
   win.once('ready-to-show', () => win.show());
+  win.on('close', (event) => options.onCloseRequest?.(event, win));
   win.on('closed', () => options.registry.remove(id));
+  wc.on('render-process-gone', (_event, details) => options.onRendererGone?.(id, details.reason, win));
+  wc.on('did-navigate', () => options.onNavigated?.(id));
   wc.on('did-finish-load', () => {
     try {
       const u = new URL(wc.getURL());

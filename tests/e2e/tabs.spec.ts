@@ -3,6 +3,7 @@ import { setContentSize } from './fixtures';
 import { useApp } from './harness';
 import { COMMON, createFolder, createNote, favorite, reloadUi, saveText } from './seed';
 import { activate, activeTabLabel, openByPalette, openFromTree, railGo, tabItem, tabLabels, tabs, toasts, treeByKey } from './ui';
+import { editorText } from './editor-ui';
 
 const h = useApp();
 
@@ -123,7 +124,7 @@ test('close keeps note', async () => {
   expect(rows).toHaveLength(3);
   expect(rows.every((r) => r.deleted_at === null)).toBe(true);
   await openFromTree(page, ids[1]!);
-  await expect(page.getByLabel('Note text')).toHaveValue('text of Close B');
+  await expect.poll(() => editorText(page)).toBe('text of Close B');
 });
 
 test('overflow list', async () => {
@@ -192,7 +193,7 @@ test('restore after relaunch', async () => {
   const second = await h.restart();
   await expect.poll(() => tabLabels(second.page)).toEqual(['Home', 'Rest A', 'Rest B', 'Stickies', 'Rest C']);
   await expect.poll(() => activeTabLabel(second.page)).toBe('Rest B');
-  await expect(second.page.getByLabel('Note text')).toHaveValue('body of B');
+  await expect.poll(() => editorText(second.page)).toBe('body of B');
   await h.stop();
 
   h.writeWhileClosed((db) => {

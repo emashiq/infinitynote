@@ -178,8 +178,13 @@ export class TreeStore {
     return okOutcome({ id: res.data.folder.id });
   }
 
-  async createNote(location: LocationType, opts: { sticky: boolean; title?: string }): Promise<Outcome<{ note: NoteDtoType }>> {
-    const res = await this.deps.bridge.note.create({ location, sticky: opts.sticky, ...(opts.title !== undefined ? { title: opts.title } : {}) });
+  async createNote(location: LocationType, opts: { sticky: boolean; title?: string; format?: 'rich' | 'plain' }): Promise<Outcome<{ note: NoteDtoType }>> {
+    const res = await this.deps.bridge.note.create({
+      location,
+      sticky: opts.sticky,
+      ...(opts.title !== undefined ? { title: opts.title } : {}),
+      ...(opts.format !== undefined ? { format: opts.format } : {}),
+    });
     if (!res.ok) return this.fail(res);
     await this.afterChange(`note:${res.data.note.id}`);
     return okOutcome({ note: res.data.note });

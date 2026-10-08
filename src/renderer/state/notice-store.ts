@@ -41,3 +41,8 @@ export function closedTabsNotice(count: number, includesMissing: boolean): strin
   }
   return count === 1 ? '1 tab was closed because its note is in Trash' : `${count} tabs were closed because their notes are in Trash`;
 }
+
+/** Shown when the active note was trashed elsewhere while it had unsaved edits that main kept as a draft (F-02-1). */
+export function trashedDraftNotice(title: string): string {
+  return `Your unsaved edits to "${title}" were kept as a recovered draft. Restore the note from Trash to see them.`;
+}

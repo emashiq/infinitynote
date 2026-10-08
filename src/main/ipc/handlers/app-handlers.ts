@@ -1,4 +1,5 @@
 import type { AppInfoType, CapabilitiesType } from '../../../shared/contracts/app';
+import { parseExternalUrl } from '../../../shared/url-policy';
 import { AppError } from '../../services/app-error';
 import type { ShellAdapter } from '../../services/shell-adapter';
 import type { IpcRouter } from '../router';
@@ -9,9 +10,11 @@ export interface AppHandlerDeps {
   shell: ShellAdapter;
   dataDir: string;
   quit(): void;
+  /** Records a renderer's flush acknowledgment; false for an unknown flush or a different sender. */
+  flushed(webContentsId: number, flushId: string): boolean;
 }
 
-/** Phase 01 channels that work even when the database failed to open. */
+/** Channels that work even when the database failed to open. */
 export function registerAppHandlers(router: IpcRouter, deps: AppHandlerDeps): void {
   router.register('app:getInfo', () => deps.getInfo());
   router.register('app:showDataFolder', async () => {
@@ -24,4 +27,15 @@ export function registerAppHandlers(router: IpcRouter, deps: AppHandlerDeps): vo
     return {};
   });
   router.register('capabilities:get', () => deps.getCapabilities());
+  router.register('app:flushed', (req, ctx) => {
+    if (!deps.flushed(ctx.webContentsId, req.flushId)) throw new AppError('VALIDATION_FAILED', 'Unknown flush request');
+    return {};
+  });
+  // Links open only as http(s) in the default browser, never through a shell command line (INF-SEC-01).
+  router.register('shell:openExternal', async (req) => {
+    const url = parseExternalUrl(req.url);
+    if (!url.ok) throw new AppError('FORBIDDEN', 'This link cannot be opened');
+    await deps.shell.openExternal(url.href);
+    return { opened: true as const };
+  });
 }

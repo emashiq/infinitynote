@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { repoRoot, setContentSize } from './fixtures';
 import { useApp } from './harness';
-import { createNote, reloadUi, seedNotebook, type Notebook } from './seed';
-import { activate, railGo, tabItem, treeByKey, titleInput } from './ui';
+import { makePng } from '../support/png';
+import { createNote, importImage, reloadUi, saveDoc, saveText, seedNotebook, type Notebook } from './seed';
+import { activate, openByPalette, openFromTree, railGo, tabItem, treeByKey, titleInput } from './ui';
+import { editor, fakeView, findInput } from './editor-ui';
 
 const SHOTS = process.env.INFINITY_SCREENSHOT_DIR ?? path.join(repoRoot, 'test-results', 'screens');
 const h = useApp();
@@ -44,7 +46,7 @@ test('1100x720 light: home and note', async () => {
   await shot(page, '1100x720-light-home.png');
   await page.getByRole('button', { name: /Launch plan/ }).first().focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByLabel('Note text')).toHaveValue(/Ship the shell/);
+  await expect(editor(page)).toHaveText(/Ship the shell/);
   await expect(titleInput(page)).toHaveValue('Launch plan');
   await shot(page, '1100x720-light-note.png');
 });
@@ -114,4 +116,104 @@ test('focus ring', async () => {
   expect(outline.style).toBe('solid');
   expect(outline.width).toBe('2px');
   await shot(page, 'focus-ring.png');
+});
+
+/** A rich note with every block kind, used by the Phase 03 editor screenshots. */
+async function richNote(page: Page): Promise<string> {
+  const id = await createNote(page, { projectId: null, folderId: null }, 'Editor tour');
+  const image = await importImage(page, makePng(320, 140, [74, 144, 226, 255]), 'chart.png');
+  await saveDoc(page, id, {
+    type: 'doc',
+    content: [
+      { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Launch plan' }] },
+      {
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'Ship the ' },
+          { type: 'text', text: 'editor', marks: [{ type: 'bold' }] },
+          { type: 'text', text: ' with ' },
+          { type: 'text', text: 'links', marks: [{ type: 'link', attrs: { href: 'https://example.com/docs' } }] },
+          { type: 'text', text: ' and ' },
+          { type: 'text', text: 'inline code', marks: [{ type: 'code' }] },
+          { type: 'text', text: '.' },
+        ],
+      },
+      { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Paste images' }] }] }] },
+      {
+        type: 'taskList',
+        content: [
+          { type: 'taskItem', attrs: { checked: true }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Block IDs' }] }] },
+          { type: 'taskItem', attrs: { checked: false }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Find in note' }] }] },
+        ],
+      },
+      { type: 'codeBlock', content: [{ type: 'text', text: 'const saved = await flush();' }] },
+      { type: 'image', attrs: { attachmentId: image.id, width: 320, height: 140, alt: 'chart' } },
+    ],
+  });
+  return id;
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`1100x720 ${theme}: rich note`, async () => {
+    const { app, page } = await h.start();
+    const id = await richNote(page);
+    await reloadUi(page);
+    await setContentSize(app, page, 1100, 720);
+    if (theme === 'dark') {
+      await railGo(page, 'Settings');
+      await activate(page.getByRole('radio', { name: 'Dark' }));
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    }
+    await openFromTree(page, id);
+    await expect.poll(() => editor(page).locator('img').evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(320);
+    await editor(page).locator('a').click();
+    await expect(page.getByRole('group', { name: 'Link' })).toBeVisible();
+    await shot(page, `1100x720-${theme}-rich-note.png`);
+  });
+}
+
+test('1100x720 light: plain note', async () => {
+  const { app, page } = await h.start();
+  const id = await createNote(page, { projectId: null, folderId: null }, 'Plain list', { format: 'plain' });
+  await saveText(page, id, 'eggs\nmilk\nবাংলা রুটি');
+  await reloadUi(page);
+  await setContentSize(app, page, 1100, 720);
+  await openFromTree(page, id);
+  await expect(editor(page)).toContainText('বাংলা রুটি');
+  await shot(page, '1100x720-light-plain-note.png');
+});
+
+test('1100x720 light: conflict and read-only banners, find bar', async () => {
+  const { app, page } = await h.start();
+  const id = await richNote(page);
+  await reloadUi(page);
+  await setContentSize(app, page, 1100, 720);
+  await openFromTree(page, id);
+  await editor(page).click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText(' typed');
+  await fakeView.forceWrite(app, id, 'Changed in another window', false);
+  await expect(page.getByText('This note changed elsewhere. Your edits were kept as a recovered draft')).toBeVisible();
+  await shot(page, '1100x720-light-conflict-banner.png');
+
+  await page.keyboard.press('Control+F');
+  await findInput(page).fill('window');
+  await expect(page.locator('.find-count')).toHaveText('1 of 1');
+  await shot(page, '1100x720-light-find-bar.png');
+  await page.keyboard.press('Escape');
+
+  expect(await fakeView.take(app, id)).toBe(true);
+  await expect(page.getByText('This note is being edited in another window')).toBeVisible();
+  await shot(page, '1100x720-light-read-only-banner.png');
+});
+
+test('760x560 light: editor toolbar', async () => {
+  const { app, page } = await h.start();
+  await richNote(page);
+  await reloadUi(page);
+  await setContentSize(app, page, 760, 560);
+  await openByPalette(page, 'Editor tour');
+  await expect(page.getByRole('toolbar', { name: 'Formatting' })).toBeVisible();
+  await expect(editor(page)).toContainText('Launch plan');
+  await shot(page, '760x560-light-editor-toolbar.png');
 });

@@ -30,8 +30,11 @@ export async function createFolder(page: Page, parent: { projectId: string | nul
   return unwrap(r, 'folder.create').folder.id;
 }
 
-export async function createNote(page: Page, location: Loc, title: string, opts: { sticky?: boolean } = {}): Promise<string> {
-  const r = await page.evaluate(([l, t, s]) => window.infinity.note.create({ location: l as Loc, sticky: s as boolean, title: t as string }), [location, title, opts.sticky ?? false] as const);
+export async function createNote(page: Page, location: Loc, title: string, opts: { sticky?: boolean; format?: 'rich' | 'plain' } = {}): Promise<string> {
+  const r = await page.evaluate(
+    ([l, t, s, f]) => window.infinity.note.create({ location: l as Loc, sticky: s as boolean, title: t as string, format: f as 'rich' | 'plain' }),
+    [location, title, opts.sticky ?? false, opts.format ?? 'rich'] as const,
+  );
   return unwrap(r, 'note.create').note.id;
 }
 
@@ -54,36 +57,50 @@ export async function favorite(page: Page, kind: 'project' | 'folder' | 'note', 
 }
 
 /** note:open + lease:acquire + note:save + lease:release, as a separate view so the open UI never holds the lease. */
-export async function saveText(page: Page, noteId: string, text: string): Promise<number> {
+export async function saveDoc(page: Page, noteId: string, doc: { type: 'doc'; content?: unknown[] }, plainText?: string): Promise<number> {
   const viewId = randomUUID();
   const requestId = randomUUID();
   const r = await page.evaluate(
-    async ([id, view, req, body]) => {
+    async ([id, view, req, body, plain]) => {
       const bridge = window.infinity;
       const opened = await bridge.note.open({ noteId: id as string });
       if (!opened.ok) return opened;
       const lease = await bridge.lease.acquire({ noteId: id as string, viewId: view as string });
       if (!lease.ok) return lease;
       if (!lease.data.granted) return { ok: false as const, error: { code: 'LEASE_REQUIRED', message: 'lease held elsewhere' } };
-      const doc = {
-        type: 'doc' as const,
-        content: (body as string).split('\n').map((line) => (line === '' ? { type: 'paragraph' } : { type: 'paragraph', content: [{ type: 'text', text: line }] })),
-      };
       const saved = await bridge.note.save({
         noteId: id as string,
         viewId: view as string,
         leaseToken: lease.data.leaseToken,
         baseRevision: opened.data.revision,
         requestId: req as string,
-        format: 'rich',
-        content: doc,
+        // A plain-text note stores the text itself (saveText passes it).
+        ...(opened.data.format === 'plain' ? { format: 'plain' as const, content: plain as string } : { format: 'rich' as const, content: body as { type: 'doc' } }),
       });
       await bridge.lease.release({ noteId: id as string, viewId: view as string, leaseToken: lease.data.leaseToken });
       return saved;
     },
-    [noteId, viewId, requestId, text] as const,
+    [noteId, viewId, requestId, doc, plainText ?? ''] as const,
   );
-  return unwrap(r as Result<{ revision: number }>, 'saveText').revision;
+  return unwrap(r as Result<{ revision: number }>, 'saveDoc').revision;
+}
+
+/** Saves text as one paragraph per line (see saveDoc). */
+export function saveText(page: Page, noteId: string, text: string): Promise<number> {
+  const content = text.split('\n').map((line) => (line === '' ? { type: 'paragraph' } : { type: 'paragraph', content: [{ type: 'text', text: line }] }));
+  return saveDoc(page, noteId, { type: 'doc', content }, text);
+}
+
+/** Imports image bytes through the real bridge (attachment:importBytes) and returns the attachment. */
+export async function importImage(page: Page, png: Buffer, originalName = 'seed.png'): Promise<{ id: string; width: number | null; height: number | null }> {
+  const r = await page.evaluate(
+    async ([b64, name]) => {
+      const bytes = Uint8Array.from(atob(b64 as string), (c) => c.charCodeAt(0));
+      return window.infinity.attachment.importBytes({ kind: 'image', originalName: name as string, bytes });
+    },
+    [png.toString('base64'), originalName] as const,
+  );
+  return unwrap(r, 'attachment.importBytes').attachment;
 }
 
 /** Reloads the renderer and waits for the shell to be ready again (fresh listeners, fresh stores). */

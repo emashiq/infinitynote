@@ -8,13 +8,19 @@ const BLOCK_NODES = new Set([
   'bulletList',
   'orderedList',
   'taskList',
+  'horizontalRule',
+  'image',
+  'fileAttachment',
 ]);
+/** Blocks that hold text directly; each gives exactly one line, also when empty. */
+const TEXT_BLOCKS = new Set(['paragraph', 'heading', 'codeBlock']);
 const MAX_DEPTH = 200;
 
 interface PmNode {
   type?: unknown;
   text?: unknown;
   content?: unknown;
+  attrs?: { name?: unknown } | null;
 }
 
 function endsWithNewline(out: string[]): boolean {
@@ -35,12 +41,20 @@ function walk(node: unknown, depth: number, out: string[]): void {
   }
   const isBlock = typeof n.type === 'string' && BLOCK_NODES.has(n.type);
   if (isBlock && !endsWithNewline(out)) out.push('\n');
+  const start = out.length;
+  // A file chip contributes its name as its own line; images contribute no text.
+  if (n.type === 'fileAttachment' && typeof n.attrs?.name === 'string') out.push(n.attrs.name);
   if (Array.isArray(n.content)) {
     for (const child of n.content) walk(child, depth + 1, out);
   }
   if (isBlock && !endsWithNewline(out)) out.push('\n');
+  else if (TEXT_BLOCKS.has(n.type as string) && out.length === start) out.push('\n');
 }
 
+/**
+ * The text of a note, used for search, previews and rich-to-plain conversion: plain notes as stored (LF line
+ * ends), rich notes one line per text block (empty paragraphs give empty lines; trailing ones are dropped).
+ */
 export function extractPlainText(format: 'rich' | 'plain', content: unknown): string {
   if (format === 'plain') {
     return typeof content === 'string' ? content.replace(/\r\n/g, '\n') : '';

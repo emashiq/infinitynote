@@ -51,6 +51,29 @@ describe('extractPlainText', () => {
     expect(extractPlainText('rich', { type: 'doc', content: [node] })).toBe('');
   });
 
+  it('rich: file chips give their name as a line, images no text, rules a block break', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        p(text('before')),
+        { type: 'image', attrs: { attachmentId: 'a', alt: 'ignored alt' } },
+        p(text('between')),
+        { type: 'fileAttachment', attrs: { attachmentId: 'b', name: 'report final.pdf', sizeBytes: 1, mime: 'application/pdf' } },
+        { type: 'horizontalRule' },
+        p(text('after')),
+      ],
+    };
+    expect(extractPlainText('rich', doc)).toBe('before\nbetween\nreport final.pdf\nafter');
+  });
+
+  it('rich: empty paragraphs are empty lines, so plain text round-trips through paragraphs', () => {
+    const empty = { type: 'paragraph' };
+    expect(extractPlainText('rich', { type: 'doc', content: [p(text('one')), empty, p(text('two'))] })).toBe('one\n\ntwo');
+    expect(extractPlainText('rich', { type: 'doc', content: [empty, p(text('x'))] })).toBe('\nx');
+    expect(extractPlainText('rich', { type: 'doc', content: [p(text('x')), empty, empty] })).toBe('x');
+    expect(extractPlainText('rich', { type: 'doc', content: [empty] })).toBe('');
+  });
+
   it('empty doc gives an empty string', () => {
     expect(extractPlainText('rich', { type: 'doc' })).toBe('');
     expect(extractPlainText('rich', { type: 'doc', content: [] })).toBe('');

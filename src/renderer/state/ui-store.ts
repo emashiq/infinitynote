@@ -11,6 +11,7 @@ export type DialogState =
 
 export type FocusRequest =
   | { target: 'noteTitle'; noteId: string }
+  | { target: 'noteFind'; noteId: string }
   | { target: 'treeRename'; key: string }
   | { target: 'tree' };
 

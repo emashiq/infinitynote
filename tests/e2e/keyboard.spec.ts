@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { useApp } from './harness';
 import { createFolder, createNote, createProject, reloadUi } from './seed';
 import { activate, arrowToRow, expandRows, openFromTree, railGo, tabs, titleInput, treeByKey } from './ui';
+import { editor } from './editor-ui';
 
 const h = useApp();
 
@@ -43,9 +44,9 @@ test('ctrl+n', async () => {
   await expectNewNoteActive(page, 2);
   expect(newest()).toMatchObject({ project_id: null, folder_id: null, sticky_enabled: 0 });
 
-  // (b) An active note tab in L2 (the text area has focus, not the tree).
+  // (b) An active note tab in L2 (the editor has focus, not the tree).
   await openFromTree(page, s.n);
-  await page.getByLabel('Note text').focus();
+  await editor(page).focus();
   await page.keyboard.press('Control+N');
   await expectNewNoteActive(page, 3);
   expect(newest()).toMatchObject({ project_id: s.alpha, folder_id: s.l2, sticky_enabled: 0 });
