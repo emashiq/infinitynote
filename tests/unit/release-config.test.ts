@@ -65,6 +65,9 @@ describe('release workflow', () => {
     expect(release).toMatch(/^permissions:\s*\n\s*contents: read/m);
     expect(release.match(/contents: write/g)).toHaveLength(1);
     expect(release.indexOf('contents: write')).toBeGreaterThan(release.indexOf('publish:'));
+    // The publish job starts the Pages deploy itself, since its GITHUB_TOKEN release triggers no workflow.
+    expect(release.indexOf('actions: write')).toBeGreaterThan(release.indexOf('publish:'));
+    expect(release).toContain('gh workflow run pages.yml --ref main');
     for (const name of STABLE_ASSETS) expect(release).toContain(` ${name}\n`);
     expect(release).toContain('sha256sum -- * > ../SHA256SUMS.txt');
     expect(release).toContain('cp text/THIRD_PARTY_NOTICES.md assets/');

@@ -247,3 +247,9 @@ Website changes needed (website/ not edited):
 - Linked files: say that only files on this computer's drives can be linked. Files on a network location (shared folders, WebDAV) must be copied, and links to network locations in an imported export are not kept.
 - Tables: a table holds up to 10,000 cells, and a merged cell spans at most 50 columns or rows. Larger tables are refused, and larger tab-separated text is pasted as text.
 - Locked notes: the note title and reminder titles are not encrypted and stay visible (the Run C website notes still apply).
+
+## Release (coordinator, 2026-10-10)
+
+- Committed `98421cc`, pushed `master:main`, tagged `v0.2.0`. Release workflow 38001212451 succeeded: `Infinity-Notes-Setup-x64.exe`, `Infinity-Notes-x86_64.AppImage`, `infinity-notes_amd64.deb`, `SHA256SUMS.txt`, `THIRD_PARTY_NOTICES.md`. Pages 38001209893 and 38001532870 succeeded; `releases.json` names v0.2.0.
+- CI 38001209866: windows-2025 green (full E2E 238 passed; packaged 8 passed, so the packaged notification check that this host could not run passed on the runner). ubuntu-24.04: full E2E 237 passed, 2 skipped; packaged 7 passed, 1 failed: `packaged.spec:124` got `uncertain` with notification support `unknown` (no notification server on the runner never answered). The unknown-support branch now also accepts `uncertain`; the in-app banner fallback is still required for every outcome but dispatched, and Windows/supported still require `dispatched`.
+- A release made with GITHUB_TOKEN does not trigger the Pages workflow's `release` event, so the first Pages run kept v0.1.0 in `releases.json`. `release.yml`'s publish job now starts `pages.yml` itself (`actions: write`); `release-config.test` covers it.

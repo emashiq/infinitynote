@@ -76,6 +76,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+      # Starts the Pages deploy below: a release made with GITHUB_TOKEN does not trigger the release event there.
+      actions: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -122,3 +124,9 @@ jobs:
           else
             gh release create "$TAG" assets/* --verify-tag --title "$title" --notes-file text/release-notes.md --latest
           fi
+      # Refreshes the website's releases.json so its download cards name this release.
+      - name: Deploy the website
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run pages.yml --ref main

@@ -167,9 +167,10 @@ test('packaged reminder reaches the OS notification layer; reminder seams ignore
   const notifications = caps!.nativeNotifications;
   if (notifications.status === 'unsupported') expect(delivery).toEqual({ outcome: 'unsupported', detail: notifications.reason });
   else if (notifications.status === 'supported') expect(delivery!.outcome).toBe('dispatched');
-  // Unknown: the session bus could not be asked (a headless CI runner has none). The real adapter ran and the OS layer
-  // answered; without a notification server it refuses at once (D-076).
-  else expect(['dispatched', 'failed']).toContain(delivery!.outcome);
+  // Unknown: the session bus could not be asked (a headless CI runner has none). The real adapter ran; without a
+  // notification server the OS layer either refuses at once or never answers, which the scheduler records as uncertain
+  // (D-076). The GitHub Ubuntu runner gives the second.
+  else expect(['dispatched', 'failed', 'uncertain']).toContain(delivery!.outcome);
   // Every outcome but dispatched falls back to the in-app banner (D-076).
   if (delivery!.outcome !== 'dispatched') {
     await expect(page.getByRole('status', { name: 'Reminder alerts' })).toContainText('Reminder: Packaged reminder');
