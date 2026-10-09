@@ -7,19 +7,22 @@ const argv = process.argv.slice(2);
 const packaged = argv.includes('--packaged');
 const extra = argv.filter((a) => a !== '--packaged');
 
+// A missing packaged build is reported before any display setup: it needs no display, and xvfb-run does not
+// forward the wrapped command's stderr on every distribution.
+const packagedExe = packaged ? packagedExePath() : null;
+if (packagedExe && !fs.existsSync(packagedExe)) {
+  console.error(`No packaged build at ${packagedExe}; run npm run package:current first`);
+  process.exit(1);
+}
+
 ensureDisplay([process.argv[1], ...argv]);
 
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.ELECTRON_RENDERER_URL;
 
-if (packaged) {
-  const exe = packagedExePath();
-  if (!fs.existsSync(exe)) {
-    console.error(`No packaged build at ${exe}; run npm run package:current first`);
-    process.exit(1);
-  }
-  env.INFINITY_NOTES_PACKAGED_EXE = exe;
+if (packagedExe) {
+  env.INFINITY_NOTES_PACKAGED_EXE = packagedExe;
 } else {
   const code = await buildApp();
   if (code !== 0) process.exit(code);
