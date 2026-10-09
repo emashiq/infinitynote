@@ -6,17 +6,13 @@ import { makePng } from '../support/png';
 import { AppError } from '../../src/main/services/app-error';
 import { setupServices, thrown, type Services } from './hierarchy-helpers';
 
-const WC = 3;
-
 async function setup() {
   const s = await setupServices();
   const note = s.note(null, null, 'Start');
   const viewId = randomUUID();
-  const lease = s.leases.acquire(note.id, viewId, WC);
-  if (!lease.granted) throw new Error('lease');
   const req = (over: Partial<NoteSaveRequestType> = {}): NoteSaveRequestType =>
-    ({ noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision: 0, requestId: randomUUID(), format: 'rich', content: textToDoc('hello'), ...over }) as NoteSaveRequestType;
-  const save = (over: Partial<NoteSaveRequestType> = {}) => s.writer.save(req(over), { webContentsId: WC });
+    ({ noteId: note.id, viewId, baseRevision: 0, requestId: randomUUID(), format: 'rich', content: textToDoc('hello'), ...over }) as NoteSaveRequestType;
+  const save = (over: Partial<NoteSaveRequestType> = {}) => s.writer.save(req(over));
   const noteRow = () =>
     s.row<{ title: string; revision: number; content_json: string; plain_text: string; updated_at: number }>(
       'SELECT title, revision, content_json, plain_text, updated_at FROM notes WHERE id = ?',
@@ -25,7 +21,7 @@ async function setup() {
   const fts = (q: string) => s.rows<{ id: string }>('SELECT n.id FROM notes_fts f JOIN notes n ON n.doc_key = f.rowid WHERE notes_fts MATCH ?', q).map((r) => r.id);
   const links = () => s.rows<{ attachment_id: string; block_id: string | null }>('SELECT attachment_id, block_id FROM note_attachments WHERE note_id = ?', note.id);
   const versions = () => s.rows<{ reason: string; revision: number }>('SELECT reason, revision FROM note_versions WHERE note_id = ? ORDER BY created_at', note.id);
-  return { ...s, note, viewId, lease, req, save, noteRow, fts, links, versions };
+  return { ...s, note, viewId, req, save, noteRow, fts, links, versions };
 }
 
 async function imageDoc(s: Pick<Services, 'attachments'>, text: string) {
@@ -45,7 +41,7 @@ describe('note:save (INF-SAVE-01, INF-SAVE-02)', () => {
   it('ack: returns the new revision and emits one note:revision', async () => {
     const s = await setup();
     const request = s.req();
-    const ack = s.writer.save(request, { webContentsId: WC });
+    const ack = s.writer.save(request);
     expect(ack).toEqual({ noteId: s.note.id, revision: 1, requestId: request.requestId, updatedAt: s.clock.now() });
     expect(s.revisions).toEqual([{ noteId: s.note.id, revision: 1, sourceViewId: s.viewId }]);
     expect(s.noteRow()).toMatchObject({ revision: 1, plain_text: 'hello', updated_at: s.clock.now() });
@@ -164,10 +160,8 @@ describe('note:save (INF-SAVE-01, INF-SAVE-02)', () => {
     });
     const note = s.note(null, null, 'F');
     const viewId = randomUUID();
-    const lease = s.leases.acquire(note.id, viewId, WC);
-    if (!lease.granted) throw new Error('lease');
-    const req = { noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision: 0, requestId: randomUUID(), format: 'rich' as const, content: textToDoc('x') };
-    expect(() => s.writer.save(req, { webContentsId: WC })).toThrow('injected');
-    expect(s.writer.save(req, { webContentsId: WC }).revision).toBe(1);
+    const req = { noteId: note.id, viewId, baseRevision: 0, requestId: randomUUID(), format: 'rich' as const, content: textToDoc('x') };
+    expect(() => s.writer.save(req)).toThrow('injected');
+    expect(s.writer.save(req).revision).toBe(1);
   });
 });

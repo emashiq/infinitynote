@@ -24,13 +24,14 @@ export type NoteDialog =
 
 /**
  * The note dialogs shared by tabs and sticky windows: plain-text conversion, version history, version restore, the
- * recovered-draft comparison and (in stickies) the suggestion card. Failed actions go to `report`.
+ * recovered-draft comparison and (in stickies) the suggestion card. Failed actions go to `report`; restores wait while
+ * another content operation of the note runs (`busy`).
  */
 export function NoteDialogs({
   controller,
   dialog,
   onDialog,
-  readOnly,
+  busy,
   now,
   report,
   bridge,
@@ -39,7 +40,7 @@ export function NoteDialogs({
   controller: NoteController;
   dialog: NoteDialog | null;
   onDialog: (next: NoteDialog | null) => void;
-  readOnly: boolean;
+  busy: boolean;
   now: number;
   report: (result: Promise<ActionResult>) => void;
   bridge: Pick<InfinityBridge, 'zones' | 'settings' | 'reminder'>;
@@ -65,7 +66,7 @@ export function NoteDialogs({
         />
       ) : null}
       {dialog?.kind === 'versions' ? (
-        <VersionsDialog load={loadVersions} now={now} canRestore={!readOnly} onClose={close} onRestore={(version) => onDialog({ kind: 'restoreVersion', version })} />
+        <VersionsDialog load={loadVersions} now={now} canRestore={!busy} onClose={close} onRestore={(version) => onDialog({ kind: 'restoreVersion', version })} />
       ) : null}
       {dialog?.kind === 'restoreVersion' ? (
         <ConfirmDialog
@@ -94,7 +95,7 @@ export function NoteDialogs({
         <CompareDialog
           current={controller.currentText()}
           draft={compareDraft}
-          canRestore={!readOnly}
+          canRestore={!busy}
           onClose={close}
           onRestore={() => {
             close();

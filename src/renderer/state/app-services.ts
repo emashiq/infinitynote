@@ -139,7 +139,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
       windowSettings.hydrate(settings, caps.ok ? caps.data : null);
     }
     // Notes main was asked to open while this window loaded, for example a dock (D-071).
-    for (const open of deps.initialOpens ?? []) await tabs.openNote(open.noteId, { takeEdit: open.takeEdit, blockId: open.blockId });
+    for (const open of deps.initialOpens ?? []) await tabs.openNote(open.noteId, { blockId: open.blockId });
     await Promise.all([home.load(), reminders.init(deps.initialReminders ?? null), announceRestore()]);
   }
 
@@ -151,15 +151,10 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
   }
 
   core.track(bridge.subscribe('settings:changed', ({ key, value }) => windowSettings.applyChange(key, value)));
-  // Event wiring: tree changes, note events for the active note tab, flush requests and note opens from main.
-  core.track(bridge.subscribe('note:revision', (event) => tabs.activeController()?.onRevision(event)));
-  core.track(bridge.subscribe('note:lease', (event) => tabs.activeController()?.onLease(event)));
-  core.track(
-    bridge.subscribe('lease:release-request', ({ noteId }) => {
-      const controller = tabs.activeController();
-      if (controller?.noteId === noteId) void controller.onReleaseRequest();
-    }),
-  );
+  // Event wiring: tree changes, live sync of the active note tab (D-103), flush requests and note opens from main.
+  core.track(bridge.subscribe('collab:steps', (event) => tabs.activeController()?.onSteps(event)));
+  core.track(bridge.subscribe('collab:status', (event) => tabs.activeController()?.onStatus(event)));
+  core.track(bridge.subscribe('collab:reset', (event) => tabs.activeController()?.onReset(event)));
   core.track(
     bridge.subscribe('tree:changed', (event) => {
       void tree.handleChanged(event).then(() => home.refresh());
@@ -176,7 +171,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
       });
     }),
   );
-  core.track(bridge.subscribe('app:openNote', ({ noteId, takeEdit, blockId }) => void tabs.openNote(noteId, { takeEdit, blockId })));
+  core.track(bridge.subscribe('app:openNote', ({ noteId, blockId }) => void tabs.openNote(noteId, { blockId })));
   // Reminders (plan section 9.6): views re-read on every change; alerts, the widget state and Reminders opens from main.
   core.track(bridge.subscribe('reminder:changed', () => void reminders.refresh()));
   core.track(bridge.subscribe('reminder:alert', (event) => reminders.onAlert(event)));

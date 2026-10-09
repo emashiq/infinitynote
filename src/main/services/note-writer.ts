@@ -11,12 +11,10 @@ import { NotesRepo } from '../db/repositories/notes-repo';
 import { AppError, errorDetail } from './app-error';
 import type { Clock } from './clock';
 import type { IdGenerator } from './ids';
-import type { LeaseManager } from './lease-manager';
 import type { Logger } from './logger';
 import { MSG } from './messages';
 import { normalizeContent, type NoteContent, type NoteContentValue } from './note-content';
 import { RequestCache } from './request-cache';
-import { MAX_OPEN_LEASE_LOST_DRAFTS } from './retention-policy';
 import type { VersionService } from './version-service';
 
 /** Test-only fault injection (installed by the E2E test hooks, never in a packaged build). */
@@ -26,7 +24,6 @@ export interface SaveFaults {
 
 export interface NoteWriterDeps {
   db: Db;
-  leases: LeaseManager;
   clock: Clock;
   ids: IdGenerator;
   logger: Logger;
@@ -41,9 +38,10 @@ type SaveOutcome =
   | { kind: 'conflict'; currentRevision: number; draftId: string; reason: 'stale' | 'trashed' };
 
 /**
- * Applies `note:save` (ARCHITECTURE 6, plan section 8.1): verifies the lease and the base revision, validates
- * the document, writes the next revision with its index and automatic version, and keeps rejected content as a
- * draft. Outcomes are cached per requestId, so a retried request returns the same ack or the same rejection
+ * Applies `note:save`, a whole-content write at a base revision (ARCHITECTURE 6, plan section 8.1): verifies the base
+ * revision, validates the document, writes the next revision with its index and automatic version, and keeps
+ * rejected content as a draft. Views edit through live sync (D-103) and use it only to keep text that sync could no
+ * longer apply. Outcomes are cached per requestId, so a retried request returns the same ack or the same rejection
  * (and draft) without writing twice (F-01-3).
  */
 export class NoteWriter {
@@ -56,28 +54,14 @@ export class NoteWriter {
     this.drafts = new DraftsRepo(deps.db);
   }
 
-  save(req: NoteSaveRequestType, ctx: { webContentsId: number }): NoteSaveAckType {
+  save(req: NoteSaveRequestType): NoteSaveAckType {
     const serialized = typeof req.content === 'string' ? req.content : JSON.stringify(req.content);
     if (Buffer.byteLength(serialized, 'utf8') > MAX_CONTENT_BYTES) throw new AppError('LIMIT_EXCEEDED', NOTE_TOO_LARGE_MESSAGE);
     this.deps.faults?.beforeSave();
 
-    const lease = this.deps.leases.verify(req.noteId, req.viewId, req.leaseToken, ctx.webContentsId);
-    if (lease === 'forbidden') throw new AppError('FORBIDDEN', 'Not allowed');
-
     const cached = this.outcomes.get(req.noteId, req.requestId);
     if (cached instanceof AppError) throw cached;
     if (cached) return cached;
-
-    if (lease === 'lost') {
-      if (!this.notes.getContentRow(req.noteId)) throw new AppError('NOT_FOUND', MSG.missing);
-      const draftId = this.deps.db.transaction(() => {
-        const id = this.insertDraft(req, serialized, 'lease_lost');
-        // A renderer that keeps saving with a revoked token cannot pile up drafts (F-03-4).
-        this.drafts.capOpenLeaseLost(MAX_OPEN_LEASE_LOST_DRAFTS, this.deps.clock.now(), req.noteId);
-        return id;
-      }, 'immediate');
-      throw this.reject(req, new AppError('LEASE_REQUIRED', 'Edit control was lost', { draftId }));
-    }
 
     const content = normalizeContent(req.format, req.content);
     let outcome: SaveOutcome;
@@ -104,7 +88,7 @@ export class NoteWriter {
     if (!row) throw new AppError('NOT_FOUND', MSG.missing);
     if (row.deleted_at !== null || row.revision !== req.baseRevision) {
       const serialized = typeof content === 'string' ? content : JSON.stringify(content);
-      const draftId = this.insertDraft(req, serialized, 'conflict');
+      const draftId = this.insertDraft(req, serialized);
       return { kind: 'conflict', currentRevision: row.revision, draftId, reason: row.deleted_at !== null ? 'trashed' : 'stale' };
     }
     if (row.format !== req.format) throw new AppError('VALIDATION_FAILED', 'Format conversion is not part of a plain save');
@@ -127,7 +111,7 @@ export class NoteWriter {
     return error;
   }
 
-  private insertDraft(req: NoteSaveRequestType, serialized: string, reason: 'conflict' | 'lease_lost'): string {
+  private insertDraft(req: NoteSaveRequestType, serialized: string): string {
     const id = this.deps.ids.uuid();
     this.drafts.insert({
       id,
@@ -137,7 +121,7 @@ export class NoteWriter {
       format: req.format,
       title: req.title,
       content: serialized,
-      reason,
+      reason: 'conflict',
       now: this.deps.clock.now(),
     });
     return id;

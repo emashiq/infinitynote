@@ -17,7 +17,7 @@ export interface StickyActions {
   togglePinned(): Promise<void>;
   toggleCollapsed(): Promise<void>;
   hide(): Promise<void>;
-  /** "Open in app": flush, close this window and open the note in a tab with edit control. */
+  /** "Open in app": flush, close this window and open the note in a tab. */
   dock(): Promise<void>;
   /** "Remove from stickies": flush, then dock and clear the sticky flag. */
   remove(): Promise<void>;
@@ -36,7 +36,7 @@ export interface StickyServices {
   phase: Store<{ phase: StickyPhase }>;
   caps: Store<{ current: CapabilitiesType | null }>;
   actions: StickyActions;
-  /** Bumped when main asks this window to take edit control and focus its editor (a repeated Float). */
+  /** Bumped when main asks this window to focus its editor (a repeated Float). */
   focusEditor: Store<{ request: number }>;
   ready: Promise<void>;
   dispose(): Promise<void>;
@@ -77,13 +77,13 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
   };
   const current = () => sticky.getState().current;
 
-  /** A new state from main: follow activations (take control) and the trash transitions. */
+  /** A new state from main: follow activations (float again: focus the text) and the trash transitions. */
   const applyState = (next: StickyStateType): void => {
     const previous = current();
     sticky.setState({ current: next });
     if (next.activation > lastActivation) {
       lastActivation = next.activation;
-      void controller.ensureEditing().then(() => focusEditor.setState((s) => ({ request: s.request + 1 })));
+      focusEditor.setState((s) => ({ request: s.request + 1 }));
     }
     if (previous && !previous.trashed && next.trashed) {
       void controller.handleTrashed(next.trashed.batchId).then((flushed) => {
@@ -110,18 +110,14 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
       controller.store.setState({ status: 'trashed', trashBatchId: initial.trashed.batchId });
       return;
     }
-    // Float is an explicit request for edit control; a window restored at startup only asks for it (D-065).
-    await controller.open(initial.activation > 0 ? 'take' : 'acquire');
+    await controller.open();
     if (initial.activation > 0) focusEditor.setState((s) => ({ request: s.request + 1 }));
   }
 
-  core.track(bridge.subscribe('note:revision', (event) => controller.onRevision(event)));
-  core.track(bridge.subscribe('note:lease', (event) => controller.onLease(event)));
-  core.track(
-    bridge.subscribe('lease:release-request', (event) => {
-      if (event.noteId === noteId) void controller.onReleaseRequest();
-    }),
-  );
+  // Live sync with the note's other views (D-103).
+  core.track(bridge.subscribe('collab:steps', (event) => controller.onSteps(event)));
+  core.track(bridge.subscribe('collab:status', (event) => controller.onStatus(event)));
+  core.track(bridge.subscribe('collab:reset', (event) => controller.onReset(event)));
   // OS close and quit (INF-SAVE-01, D-072): flush, then tell main whether the text is safe; if not, say why the
   // window stays open (or the app did not quit).
   core.track(

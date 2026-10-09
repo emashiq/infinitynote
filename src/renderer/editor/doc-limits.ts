@@ -2,6 +2,7 @@ import { Extension, getChangedRanges } from '@tiptap/core';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state';
 import { MAX_DOC_DEPTH, MAX_DOC_NODES } from '../../shared/editor/doc-schema';
+import { isRemote } from './content';
 
 export const TOO_DEEP_MESSAGE = 'This would nest lists or quotes more deeply than a note can store. Use fewer levels.';
 export const TOO_MANY_PARTS_MESSAGE = 'This would make the note too large to store. Paste or add a smaller part.';
@@ -66,8 +67,9 @@ interface Delta {
 /**
  * Keeps every document within what `normalizeRichDoc` accepts (QA-3): a change that would nest deeper than 64
  * levels or grow the note past 100,000 parts is refused with a message, so a note never reaches a state it cannot
- * save. The work is proportional to the size of each change; the node count is tracked incrementally, and the change
- * of a transaction is measured once for both the filter and the state update (F-03-2).
+ * save; edits that arrive from another view (D-103) were checked where they were made. The work is proportional to
+ * the size of each change; the node count is tracked incrementally, and the change of a transaction is measured once
+ * for both the filter and the state update (F-03-2).
  */
 export function createDocLimits(notify: (message: string) => void, limits = { depth: MAX_DOC_DEPTH, nodes: MAX_DOC_NODES }) {
   const key = new PluginKey<number>('docLimits');
@@ -96,7 +98,8 @@ export function createDocLimits(notify: (message: string) => void, limits = { de
             apply: (tr, count) => (tr.docChanged ? count + delta(tr).added : count),
           },
           filterTransaction(tr, state) {
-            if (!tr.docChanged) return true;
+            // Another view's steps are already in main's document; refusing them here would split this view off it.
+            if (!tr.docChanged || isRemote(tr)) return true;
             const change = delta(tr);
             if (change.depth > limits.depth) {
               notify(TOO_DEEP_MESSAGE);

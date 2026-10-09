@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { NoteSummary } from './hierarchy';
 import { Uuid } from './ids';
 
-/** A save that fails with INTERNAL is retried this often, this far apart (the renderer), before it gives up. */
+/** A save that fails with INTERNAL is retried this often, this far apart, before it gives up (D-103: main saves). */
 export const SAVE_RETRIES = 3;
 export const SAVE_RETRY_DELAY_MS = 1000;
 
@@ -14,7 +14,6 @@ export const NoteSaveRequest = z
   .strictObject({
     noteId: Uuid,
     viewId: Uuid,
-    leaseToken: Uuid,
     baseRevision: z.number().int().min(0),
     requestId: Uuid,
     title: z.string().max(200).optional(),
@@ -50,30 +49,12 @@ export const ConflictDetails = z.strictObject({
 });
 export type ConflictDetailsType = z.infer<typeof ConflictDetails>;
 
-export const LeaseRequiredDetails = z.strictObject({ draftId: Uuid.optional() });
-
-export const LeaseAcquireRequest = z.strictObject({ noteId: Uuid, viewId: Uuid });
-export const LeaseAcquireResponse = z.discriminatedUnion('granted', [
-  z.strictObject({ granted: z.literal(true), leaseToken: Uuid }),
-  z.strictObject({ granted: z.literal(false), holderViewId: Uuid }),
-]);
-export const LeaseReleaseRequest = z.strictObject({ noteId: Uuid, viewId: Uuid, leaseToken: Uuid });
-export const LeaseReleaseResponse = z.strictObject({ released: z.boolean() });
-export const LeaseTakeRequest = z.strictObject({ noteId: Uuid, viewId: Uuid });
-export const LeaseTakeResponse = z.strictObject({ leaseToken: Uuid });
-
 export const NoteRevisionEvent = z.strictObject({
   noteId: Uuid,
   revision: z.number().int().min(0),
   sourceViewId: Uuid,
 });
 export type NoteRevisionEventType = z.infer<typeof NoteRevisionEvent>;
-
-export const NoteLeaseEvent = z.strictObject({ noteId: Uuid, holderViewId: Uuid.nullable() });
-export type NoteLeaseEventType = z.infer<typeof NoteLeaseEvent>;
-
-export const LeaseReleaseRequestEvent = z.strictObject({ noteId: Uuid });
-export type LeaseReleaseRequestEventType = z.infer<typeof LeaseReleaseRequestEvent>;
 
 // Phase 02: opening a note ----------------------------------------------------
 export const NoteOpenRequest = z.strictObject({ noteId: Uuid });
@@ -90,11 +71,10 @@ export type NoteNotFoundDetailsType = z.infer<typeof NoteNotFoundDetails>;
 // Phase 03: content operations, versions and drafts ---------------------------------
 const NoteFormat = z.enum(['rich', 'plain']);
 
-/** Fields every content-changing operation carries: the lease and the revision it is based on. */
+/** Fields every content-changing operation carries: the requesting view and the revision it is based on. */
 export const ContentOpBase = z.strictObject({
   noteId: Uuid,
   viewId: Uuid,
-  leaseToken: Uuid,
   baseRevision: z.number().int().min(0),
   requestId: Uuid,
 });

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { NoteRevisionEventType } from '../shared/contracts/notes';
 import { textToDoc } from '../shared/text/textarea-doc';
@@ -25,21 +24,14 @@ import type { NativeWindowInfo, WindowInspector } from './windows/electron-inspe
 import type { StickyLayoutEntry } from './windows/sticky-manager';
 import type { WindowRegistry } from './windows/window-registry';
 
-/** A second editing view living in main, so E2E can exercise leases and conflicts without a second window. */
-export const FAKE_VIEW_ID = 'fa4e0000-0000-4000-8000-000000000001';
-export const FAKE_WEB_CONTENTS_ID = -1000;
+/** The writer E2E uses to change a note behind the app's back (stale conflicts, D-103). */
+export const EXTERNAL_WRITER_ID = 'fa4e0000-0000-4000-8000-000000000001';
 
-export type FakeSaveResult = { ok: true; revision: number } | { ok: false; code: string; draftId?: string };
-
-export interface FakeView {
-  releaseBehavior: 'release' | 'ignore';
-  acquire(noteId: string): boolean;
-  release(noteId: string): boolean;
-  take(noteId: string): Promise<boolean>;
-  save(noteId: string, text: string): FakeSaveResult;
-  /** Bumps the revision like an external writer would, without a lease (stale-conflict E2E only). */
-  forceWrite(noteId: string, text: string, opts: { emit: boolean }): number;
-}
+/**
+ * Writes a note's content as another writer would; with `emit`, the revision is announced (live sync starts over
+ * at once), without it the app only finds out when it saves (stale-conflict E2E only).
+ */
+export type ExternalWrite = (noteId: string, text: string, opts: { emit: boolean }) => number;
 
 /** What E2E specs read and set through `globalThis.__infinityTest` (app.evaluate). */
 export interface TestState {
@@ -64,7 +56,7 @@ export interface TestState {
   /** Delay before each attachment import starts. */
   importDelayMs: number;
   flushLog: FlushOutcome[];
-  fakeView: FakeView | null;
+  externalWrite: ExternalWrite | null;
   /** Each main-window close question takes the next answer; an empty queue means Cancel. No real dialog is shown. */
   closeChoices: CloseChoice[];
   /** The close questions that would have been shown. */
@@ -132,11 +124,8 @@ export interface TestHooks {
   shell: ShellAdapter;
   dialog: DialogAdapter;
   faults: { save: SaveFaults; beforeImport: () => Promise<void> };
-  /** Installs the fake view once the services exist. */
+  /** Installs the external writer once the services exist. */
   attachServices(deps: { services: MainServices; db: Db; clock: Clock; emitRevision: (e: NoteRevisionEventType) => void }): void;
-  /** True when a lease holder is the fake view; it answers release requests itself. */
-  ownsWebContents(webContentsId: number): boolean;
-  onReleaseRequest(noteId: string): void;
   /** The fake display set from INFINITY_NOTES_TEST_DISPLAYS, or null to use the real screen. */
   displays: (DisplayProvider & { set(displays: DisplayInfo[], primaryId: number): void }) | null;
   /** Exposes the windows side once it exists. */
@@ -220,7 +209,7 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     failSaves: 0,
     importDelayMs: 0,
     flushLog: [],
-    fakeView: null,
+    externalWrite: null,
     closeChoices: [],
     closeDialogs: [],
     titleBarOverlay: null,
@@ -286,13 +275,9 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
       beforeImport: () => new Promise((resolve) => setTimeout(resolve, state.importDelayMs)),
     },
     attachServices(deps) {
-      state.fakeView = createFakeView(deps);
+      state.externalWrite = createExternalWrite(deps);
       state.maintenance = () => onFreshTask(() => deps.services.maintenance.run());
       state.autoBackup = () => onFreshTask(() => deps.services.portability.runAutoBackup());
-    },
-    ownsWebContents: (webContentsId) => webContentsId === FAKE_WEB_CONTENTS_ID,
-    onReleaseRequest(noteId) {
-      if (state.fakeView?.releaseBehavior === 'release') state.fakeView.release(noteId);
     },
     displays,
     attachDesktop({ desktop, registry, services, inspector }) {
@@ -410,74 +395,29 @@ function reminderTestState(seams: ReminderSeams, scheduler: ReminderScheduler, d
   };
 }
 
-function createFakeView(deps: { services: MainServices; db: Db; clock: Clock; emitRevision: (e: NoteRevisionEventType) => void }): FakeView {
-  const { leases, writer, content } = deps.services;
+function createExternalWrite(deps: { services: MainServices; db: Db; clock: Clock; emitRevision: (e: NoteRevisionEventType) => void }): ExternalWrite {
+  const { content, collab } = deps.services;
   const notes = new NotesRepo(deps.db);
-  const tokens = new Map<string, string>();
-  const row = (noteId: string) => {
-    const r = notes.getContentRow(noteId);
-    if (!r) throw new Error(`fake view: no note ${noteId}`);
-    return r;
-  };
-  const body = (noteId: string, text: string) => (row(noteId).format === 'rich' ? textToDoc(text) : text);
-  return {
-    releaseBehavior: 'release',
-    acquire(noteId) {
-      const r = leases.acquire(noteId, FAKE_VIEW_ID, FAKE_WEB_CONTENTS_ID);
-      if (r.granted) tokens.set(noteId, r.leaseToken);
-      return r.granted;
-    },
-    release(noteId) {
-      const token = tokens.get(noteId);
-      tokens.delete(noteId);
-      return token ? leases.release(noteId, FAKE_VIEW_ID, token, FAKE_WEB_CONTENTS_ID).released : false;
-    },
-    async take(noteId) {
-      try {
-        tokens.set(noteId, (await leases.take(noteId, FAKE_VIEW_ID, FAKE_WEB_CONTENTS_ID)).leaseToken);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    save(noteId, text) {
-      const current = row(noteId);
-      try {
-        const ack = writer.save(
-          {
-            noteId,
-            viewId: FAKE_VIEW_ID,
-            leaseToken: tokens.get(noteId) ?? FAKE_VIEW_ID,
-            baseRevision: current.revision,
-            requestId: randomUUID(),
-            format: current.format,
-            content: body(noteId, text),
-          },
-          { webContentsId: FAKE_WEB_CONTENTS_ID },
-        );
-        return { ok: true, revision: ack.revision };
-      } catch (err) {
-        if (!(err instanceof AppError)) throw err;
-        const details = err.details as { draftId?: string } | undefined;
-        return { ok: false, code: err.code, draftId: details?.draftId };
-      }
-    },
-    forceWrite(noteId, text, opts) {
-      const current = row(noteId);
-      const { revision } = deps.db.transaction(
-        () =>
-          content.write({
-            noteId,
-            format: current.format,
-            content: body(noteId, text),
-            title: null,
-            expectedRevision: current.revision,
-            now: deps.clock.now(),
-          }),
-        'immediate',
-      );
-      if (opts.emit) deps.emitRevision({ noteId, revision, sourceViewId: FAKE_VIEW_ID });
-      return revision;
-    },
+  return (noteId, text, opts) => {
+    const current = notes.getContentRow(noteId);
+    if (!current) throw new Error(`external write: no note ${noteId}`);
+    const { revision } = deps.db.transaction(
+      () =>
+        content.write({
+          noteId,
+          format: current.format,
+          content: current.format === 'rich' ? textToDoc(text) : text,
+          title: null,
+          expectedRevision: current.revision,
+          now: deps.clock.now(),
+        }),
+      'immediate',
+    );
+    if (opts.emit) {
+      const event = { noteId, revision, sourceViewId: EXTERNAL_WRITER_ID };
+      collab.onRevision(event);
+      deps.emitRevision(event);
+    }
+    return revision;
   };
 }

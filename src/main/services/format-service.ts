@@ -14,8 +14,8 @@ import type { VersionService } from './version-service';
 export class FormatService {
   constructor(private readonly deps: { ids: IdGenerator; ops: ContentOps; versions: VersionService }) {}
 
-  convert(req: NoteConvertRequestType, ctx: { webContentsId: number }): NoteContentResponseType {
-    return this.deps.ops.run(req, ctx, (row, now) => {
+  convert(req: NoteConvertRequestType): NoteContentResponseType {
+    return this.deps.ops.run(req, (row, now) => {
       if (row.format === req.targetFormat) throw new AppError('VALIDATION_FAILED', `This note is already ${row.format === 'rich' ? 'rich text' : 'plain text'}`);
       const versionId = this.deps.versions.snapshot(row, 'conversion', now);
       const content =

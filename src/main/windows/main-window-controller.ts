@@ -135,10 +135,10 @@ export class MainWindowController {
    * Opens a note in a tab, revealing `blockId` when given (a reminder's anchor); queued (one entry per note, the latest
    * block kept, at most 50) until the renderer is ready.
    */
-  openNote(noteId: string, takeEdit: boolean, blockId: string | null = null): void {
+  openNote(noteId: string, blockId: string | null = null): void {
     this.show();
     const live = this.live();
-    const event = { noteId, takeEdit, blockId };
+    const event = { noteId, blockId };
     if (live?.ready) {
       this.deps.sendOpenNote(live.handle.webContentsId, event);
       return;

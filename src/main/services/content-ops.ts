@@ -3,7 +3,6 @@ import type { Db } from '../db/driver';
 import { NotesRepo, type ContentRow } from '../db/repositories/notes-repo';
 import { AppError } from './app-error';
 import type { Clock } from './clock';
-import type { LeaseManager } from './lease-manager';
 import type { Logger } from './logger';
 import { MSG } from './messages';
 import type { NoteContent, NoteContentValue } from './note-content';
@@ -22,7 +21,8 @@ export interface ContentChange {
 
 export interface ContentOpsDeps {
   db: Db;
-  leases: LeaseManager;
+  /** Saves the live-sync session's edits first, so the operation starts from them (D-103). */
+  settle: (noteId: string) => void;
   clock: Clock;
   logger: Logger;
   content: NoteContent;
@@ -30,10 +30,10 @@ export interface ContentOpsDeps {
 }
 
 /**
- * The guard shared by format conversion, version restore and draft restore (plan section 8.6): the caller must
- * hold the lease, the note must be live and at the base revision, and the change commits in one transaction.
- * No user content is submitted, so a lost lease or a stale base stores no draft. Successful results are cached
- * per requestId so a retry is idempotent.
+ * The guard shared by format conversion, version restore and draft restore (plan section 8.6): open views' edits are
+ * saved first, the note must be live and at the base revision, and the change commits in one transaction. No user
+ * content is submitted, so a stale base stores no draft. Successful results are cached per requestId so a retry is
+ * idempotent; the revision event starts the note's live-sync session over (D-103).
  */
 export class ContentOps {
   private readonly results = new RequestCache<NoteContentResponseType>();
@@ -43,13 +43,10 @@ export class ContentOps {
     this.notes = new NotesRepo(deps.db);
   }
 
-  run(req: ContentOpBaseType, ctx: { webContentsId: number }, change: (row: ContentRow, now: number) => ContentChange): NoteContentResponseType {
+  run(req: ContentOpBaseType, change: (row: ContentRow, now: number) => ContentChange): NoteContentResponseType {
     const cached = this.results.get(req.noteId, req.requestId);
     if (cached) return cached;
-
-    const lease = this.deps.leases.verify(req.noteId, req.viewId, req.leaseToken, ctx.webContentsId);
-    if (lease === 'forbidden') throw new AppError('FORBIDDEN', 'Not allowed');
-    if (lease === 'lost') throw new AppError('LEASE_REQUIRED', 'Edit control was lost');
+    this.deps.settle(req.noteId);
 
     const response = runTx(this.deps.db, this.deps.logger, () => {
       const row = this.notes.getContentRow(req.noteId);

@@ -15,8 +15,6 @@ export const HOUR = 60 * MINUTE;
 export const DAY = 24 * HOUR;
 export const at = (iso: string): number => Date.parse(iso);
 
-const WC = 7;
-
 export const para = (id: string, text: string) => ({ type: 'paragraph', attrs: { id }, content: text ? [{ type: 'text', text }] : undefined });
 export const doc = (...blocks: unknown[]) => ({ type: 'doc' as const, content: blocks });
 
@@ -49,24 +47,22 @@ export async function setupReminders(opts: { now?: number; zone?: string | null;
   /** Takes the lease of a stored note (after a restart, for example) to edit it like editable() does. */
   function edit<N extends { id: string }>(note: N) {
     const viewId = randomUUID();
-    const lease = s.leases.acquire(note.id, viewId, WC);
-    if (!lease.granted) throw new Error('lease');
     let revision = s.row<{ revision: number }>('SELECT revision FROM notes WHERE id = ?', note.id)!.revision;
-    const op = () => ({ noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision: revision, requestId: randomUUID() });
+    const op = () => ({ noteId: note.id, viewId, baseRevision: revision, requestId: randomUUID() });
     return {
       note,
       save(content: unknown) {
         const f = typeof content === 'string' ? 'plain' : 'rich';
-        revision = s.writer.save({ ...op(), format: f, content } as never, { webContentsId: WC }).revision;
+        revision = s.writer.save({ ...op(), format: f, content } as never).revision;
         return revision;
       },
       convert(targetFormat: 'rich' | 'plain') {
-        const res = s.formats.convert({ ...op(), targetFormat, ...(targetFormat === 'plain' ? { confirmLossy: true as const } : {}) } as never, { webContentsId: WC });
+        const res = s.formats.convert({ ...op(), targetFormat, ...(targetFormat === 'plain' ? { confirmLossy: true as const } : {}) } as never);
         revision = res.revision;
         return res;
       },
       restore(versionId: string) {
-        revision = s.versions.restore({ ...op(), versionId }, { webContentsId: WC }).revision;
+        revision = s.versions.restore({ ...op(), versionId }).revision;
       },
       revision: () => revision,
     };

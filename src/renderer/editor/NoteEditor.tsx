@@ -4,9 +4,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as Rea
 import { ATTACHMENT_MESSAGES } from '../../shared/attachments/limits';
 import type { AttachmentKindType } from '../../shared/contracts/attachments';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
-import { docToText, textToDoc } from '../../shared/text/textarea-doc';
+import { docToText } from '../../shared/text/textarea-doc';
 import type { RichDocLike } from '../../shared/editor/doc-schema';
-import { isUserEdit, toSavable, type ContentSource, type EditorHost } from './content';
+import { toSavable } from '../../shared/editor/savable';
+import { collabSync, receiveSteps, sendableOf, syncVersion } from './collab-sync';
+import { isRemote, type ContentSource, type EditorHost } from './content';
 import type { EditorHandle } from './editor-handle';
 import { registerEditor } from './editor-registry';
 import { plainExtensions, richExtensions } from './extensions';
@@ -50,7 +52,9 @@ export interface SuggestionHost {
 export interface NoteEditorProps {
   host: EditorHost;
   format: 'rich' | 'plain';
-  content: RichDocLike | string;
+  /** The editor document for both formats, at live-sync `sync.version` (D-103). */
+  content: RichDocLike;
+  sync: { version: number; clientID: string };
   editable: boolean;
   variant: 'tab' | 'sticky';
   scrollTop: number;
@@ -116,9 +120,11 @@ export function NoteEditor(props: NoteEditorProps) {
 
   const editor = useEditor(
     {
-      extensions:
-        format === 'rich' ? richExtensions({ uploader, notify: services.notify, files, references: services.references ?? null }) : plainExtensions(),
-      content: (format === 'rich' ? content : textToDoc(content as string)) as JSONContent,
+      extensions: [
+        ...(format === 'rich' ? richExtensions({ uploader, notify: services.notify, files, references: services.references ?? null }) : plainExtensions()),
+        collabSync(props.sync.version, props.sync.clientID),
+      ],
+      content: content as JSONContent,
       editable,
       immediatelyRender: true,
       shouldRerenderOnTransaction: false,
@@ -138,7 +144,8 @@ export function NoteEditor(props: NoteEditorProps) {
         },
       },
       onUpdate: ({ transaction }) => {
-        if (isUserEdit(transaction)) host.markDirty();
+        // setEditable reports an update too; only a change of this view's document is sent (D-103).
+        if (transaction.docChanged && !isRemote(transaction)) host.markDirty();
       },
       onBlur: () => void host.flush(),
       onSelectionUpdate: ({ editor: e }) => host.setCursorBlock(blockIdAtSelection(e.state.selection)),
@@ -162,6 +169,9 @@ export function NoteEditor(props: NoteEditorProps) {
       },
       hasPendingUploads: () => uploader.pending() > 0,
       waitForUploads: (ms) => uploader.waitIdle(ms),
+      version: () => syncVersion(editor),
+      sendable: () => sendableOf(editor),
+      receive: (version, steps, clientIDs) => receiveSteps(editor, version, steps, clientIDs),
     };
     host.attachSource(source);
     const unregister = registerEditor(editor);

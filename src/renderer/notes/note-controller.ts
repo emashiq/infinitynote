@@ -1,36 +1,37 @@
 import { IMPORT_WAIT_ON_FLUSH_MS } from '../../shared/attachments/limits';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
+import type { CollabResetEventType, CollabSnapshotType, CollabStatusEventType, CollabStepsEventType } from '../../shared/contracts/collab';
 import type { ErrorEnvelope, Result } from '../../shared/contracts/envelope';
 import type { NoteSummaryType } from '../../shared/contracts/hierarchy';
-import { SAVE_RETRIES, SAVE_RETRY_DELAY_MS, type DraftSummaryType, type NoteContentResponseType, type VersionSummaryType } from '../../shared/contracts/notes';
+import type { DraftSummaryType, VersionSummaryType } from '../../shared/contracts/notes';
 import type { RichDocLike } from '../../shared/editor/doc-schema';
 import { validateTitle, normalizeTitle } from '../../shared/names';
 import type { ContentSource, EditorHost } from '../editor/content';
 import { createDebouncer, createStore, type Store, type Timers } from '../state/store';
 
-export type NoteStatus = 'loading' | 'ready' | 'readOnly' | 'trashed' | 'missing' | 'error';
+export type NoteStatus = 'loading' | 'ready' | 'trashed' | 'missing' | 'error';
 export type SaveStatus = 'saved' | 'pending' | 'saving' | 'retrying' | 'error';
-export type Busy = 'take' | 'convert' | 'restore' | 'draft' | null;
+export type Busy = 'convert' | 'restore' | 'draft' | null;
 
 export interface NoteControllerState {
   status: NoteStatus;
   note: NoteSummaryType | null;
   title: string;
   format: 'rich' | 'plain';
+  /** The stored revision this view's text is based on. */
   revision: number;
-  /** The content the editor is created from; replaced (with a new contentKey) on reloads and restores. */
-  content: RichDocLike | string | null;
+  /** The editor document the editor is created from (both formats), at live-sync version `syncVersion`. */
+  content: RichDocLike | null;
+  syncVersion: number;
+  /** Changes when the editor must be created again (the document was replaced from outside). */
   contentKey: number;
   save: SaveStatus;
   message?: string;
   titleError?: string;
   trashBatchId?: string | null;
-  /** Why the note is read-only: another view holds the lease, or this view lost it to another window. */
-  readOnlyReason: 'lease' | 'leaseLost' | null;
-  holderElsewhere: boolean;
   drafts: DraftSummaryType[];
-  /** The draft main stored when a save of this view was refused. */
-  conflict: { draftId: string; reason: 'stale' | 'lease_lost' } | null;
+  /** The draft that keeps edits main could not save on top of a change made elsewhere. */
+  conflict: { draftId: string; reason: 'stale' } | null;
   /** Set after a rich-to-plain conversion: the version to restore the formatting from. */
   converted: { versionId: string } | null;
   busy: Busy;
@@ -43,7 +44,7 @@ export interface NoteControllerState {
 export type FlushResult = { ok: true } | { ok: false; code: string; message: string; details?: unknown };
 
 /** Failures after which main still has the text (as a recovered draft) or the note is gone (D-055). */
-const KEPT_AFTER_FAILURE = new Set(['CONFLICT', 'LEASE_REQUIRED', 'NOT_FOUND']);
+const KEPT_AFTER_FAILURE = new Set(['CONFLICT', 'NOT_FOUND']);
 
 /** True when nothing typed would be lost by closing the view now: saved, or kept by main as a draft (D-055, D-072). */
 export function textIsSafe(result: FlushResult): boolean {
@@ -52,11 +53,10 @@ export function textIsSafe(result: FlushResult): boolean {
 export type ActionResult = { ok: true } | { ok: false; message: string };
 
 export const SAVE_DEBOUNCE_MS = 400;
-export const RETRY_DELAY_MS = SAVE_RETRY_DELAY_MS;
-export const MAX_RETRIES = SAVE_RETRIES;
 export const SAVE_FAILED = 'Could not save this note.';
 export const CONTENT_ERROR = 'This note could not be displayed.';
-export const TAKE_CONTROL_FIRST = 'Take edit control first';
+/** Pushes in a row before a view waits for the next edit (others keep pushing ahead of it). */
+const MAX_PUSH_ROUNDS = 20;
 
 export interface NoteControllerDeps {
   bridge: InfinityBridge;
@@ -72,23 +72,23 @@ const draftIdOf = (error: ErrorEnvelope): string | null => {
 };
 
 /**
- * One open note in one view (plan section 10.1): opening, the editing lease, debounced acknowledged saves,
- * conflict and lease recovery, format conversion and version and draft restores. The editor supplies content
- * through a ContentSource; nothing typed is ever dropped without main keeping it (D-055).
+ * One open note in one view (plan section 10.1, D-103): opening, live sync with every other view of the note through
+ * main, acknowledged saves, conflict recovery, format conversion and version and draft restores. Every view edits at
+ * once: this view sends its editing steps to main, which orders them, saves the document and sends every confirmed
+ * step back to all views. Nothing typed is ever dropped without main keeping it (D-055).
  */
 export class NoteController implements EditorHost {
   readonly noteId: string;
   readonly store: Store<NoteControllerState>;
-  private leaseToken: string | null = null;
   private source: ContentSource | null = null;
-  private dirty = false;
-  private saving: Promise<void> | null = null;
+  /** The live-sync session this view joined; empty until it joined. */
+  private epoch = '';
+  private pushing: Promise<void> | null = null;
+  private pushAgain = false;
   private renaming: Promise<void> | null = null;
   private pendingTitle: string | null = null;
   private failure: { code: string; message: string; details?: unknown } | null = null;
-  private opening: Promise<void> | null = null;
   private disposed = false;
-  private readonly saveTimer;
   private readonly renameTimer;
 
   constructor(private readonly deps: NoteControllerDeps) {
@@ -100,10 +100,9 @@ export class NoteController implements EditorHost {
       format: 'rich',
       revision: 0,
       content: null,
+      syncVersion: 0,
       contentKey: 0,
       save: 'saved',
-      readOnlyReason: null,
-      holderElsewhere: false,
       drafts: [],
       conflict: null,
       converted: null,
@@ -111,94 +110,74 @@ export class NoteController implements EditorHost {
       cursorBlockId: null,
       reveal: null,
     });
-    this.saveTimer = createDebouncer(deps.timers, SAVE_DEBOUNCE_MS, () => void this.drain());
     this.renameTimer = createDebouncer(deps.timers, SAVE_DEBOUNCE_MS, () => void this.runRename());
+  }
+
+  /** The id this view's steps carry (prosemirror-collab client id). */
+  get viewId(): string {
+    return this.deps.viewId;
   }
 
   private get state(): NoteControllerState {
     return this.store.getState();
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => this.deps.timers.setTimeout(resolve, ms));
-  }
-
-  /** The fields of every content-changing request (plan section 10.1). */
-  private op(leaseToken: string) {
-    return { noteId: this.noteId, viewId: this.deps.viewId, leaseToken, baseRevision: this.state.revision, requestId: this.deps.uuid() };
+  private get view() {
+    return { noteId: this.noteId, viewId: this.deps.viewId };
   }
 
   // Opening ----------------------------------------------------------------------------
-  /**
-   * Opens the note and asks for the lease. With `take`, a lease held elsewhere is taken (Float and Dock are explicit
-   * requests for edit control, D-065).
-   */
-  open(mode: 'acquire' | 'take' = 'acquire'): Promise<void> {
-    this.opening = (async () => {
-      await this.load();
-      if (mode === 'take' && this.state.status === 'readOnly') await this.takeEditControl();
-    })();
-    return this.opening;
-  }
-
-  private async load(): Promise<void> {
+  /** Opens the note and joins its live-sync session. */
+  async open(): Promise<void> {
     const res = await this.deps.bridge.note.open({ noteId: this.noteId });
     if (this.disposed) return;
     if (!res.ok) {
       this.applyOpenFailure(res.error);
       return;
     }
-    const d = res.data;
     const drafts = await this.deps.bridge.drafts.list({ noteId: this.noteId });
-    const lease = await this.deps.bridge.lease.acquire({ noteId: this.noteId, viewId: this.deps.viewId });
+    this.store.setState({ note: res.data.note, title: res.data.note.title, drafts: drafts.ok ? drafts.data.drafts : [] });
+    await this.join();
+  }
+
+  private async join(): Promise<boolean> {
+    const res = await this.deps.bridge.collab.join(this.view);
     if (this.disposed) {
-      if (lease.ok && lease.data.granted) void this.deps.bridge.lease.release({ noteId: this.noteId, viewId: this.deps.viewId, leaseToken: lease.data.leaseToken });
-      return;
+      if (res.ok) void this.deps.bridge.collab.leave(this.view);
+      return false;
     }
-    const base = {
-      note: d.note,
-      title: d.note.title,
-      format: d.format,
-      revision: d.revision,
-      content: d.content as RichDocLike | string,
-      contentKey: this.state.contentKey + 1,
-      save: 'saved' as const,
-      drafts: drafts.ok ? drafts.data.drafts : [],
-    };
-    if (!lease.ok) {
-      this.store.setState({ ...base, status: 'error', message: lease.error.message });
-    } else if (lease.data.granted) {
-      this.leaseToken = lease.data.leaseToken;
-      this.store.setState({ ...base, status: 'ready', readOnlyReason: null, holderElsewhere: false });
-    } else {
-      this.store.setState({ ...base, status: 'readOnly', readOnlyReason: 'lease', holderElsewhere: true });
+    if (!res.ok) {
+      this.applyOpenFailure(res.error);
+      return false;
     }
+    this.applySnapshot(res.data);
+    return true;
+  }
+
+  /** The editor starts over from a snapshot of a new session; a snapshot of the session it is in changes nothing. */
+  private applySnapshot(snap: CollabSnapshotType): void {
+    if (snap.epoch === this.epoch && this.state.status === 'ready') return;
+    this.epoch = snap.epoch;
+    this.failure = null;
+    this.store.setState((s) => ({
+      ...s,
+      status: 'ready',
+      message: undefined,
+      format: snap.format,
+      revision: snap.revision,
+      content: snap.doc,
+      syncVersion: snap.version,
+      contentKey: s.contentKey + 1,
+      save: 'saved',
+    }));
   }
 
   private applyOpenFailure(error: ErrorEnvelope): void {
+    this.epoch = '';
     const details = error.details as { trashed?: boolean; trashBatchId?: string | null } | undefined;
     if (error.code === 'NOT_FOUND' && details?.trashed) this.store.setState({ status: 'trashed', trashBatchId: details.trashBatchId ?? null, message: error.message });
     else if (error.code === 'NOT_FOUND') this.store.setState({ status: 'missing', message: error.message });
     else this.store.setState({ status: 'error', message: error.message });
-  }
-
-  /** Replaces the content with the stored one (new editor instance, clean undo history). */
-  async reload(): Promise<void> {
-    const res = await this.deps.bridge.note.open({ noteId: this.noteId });
-    if (this.disposed) return;
-    if (!res.ok) {
-      this.applyOpenFailure(res.error);
-      return;
-    }
-    this.dirty = false;
-    this.store.setState((s) => ({
-      ...s,
-      note: res.data.note,
-      format: res.data.format,
-      revision: res.data.revision,
-      content: res.data.content as RichDocLike | string,
-      contentKey: s.contentKey + 1,
-    }));
   }
 
   private async refreshDrafts(): Promise<void> {
@@ -216,11 +195,10 @@ export class NoteController implements EditorHost {
   }
 
   markDirty(): void {
-    if (this.state.status !== 'ready' || this.leaseToken === null) return;
-    this.dirty = true;
+    if (this.state.status !== 'ready') return;
     this.failure = null;
     this.store.setState({ save: this.state.save === 'retrying' ? 'retrying' : 'pending' });
-    this.saveTimer.schedule();
+    this.schedulePush();
   }
 
   setCursorBlock(blockId: string | null): void {
@@ -247,108 +225,168 @@ export class NoteController implements EditorHost {
   }
 
   /**
-   * Saves the editor's content as it is, so block IDs assigned when the note opened are stored and a reminder can
-   * anchor to them (D-080). False when this view cannot save (read-only) or the save failed.
+   * Saves the document as it is, block IDs main gave it when the note opened included, so a reminder can anchor to
+   * them (D-080). False when the note is not open or the save failed.
    */
   async persistBlockIds(): Promise<boolean> {
-    if (this.state.status !== 'ready' || this.leaseToken === null || !this.source) return false;
-    this.markDirty();
-    return (await this.flush()).ok;
+    if (this.state.status !== 'ready' || !this.source) return false;
+    return (await this.flush({ force: true })).ok;
   }
 
   contentError(): void {
-    this.dirty = false;
     this.store.setState({ status: 'error', message: CONTENT_ERROR });
-    void this.releaseLease();
+    void this.leave();
   }
 
-  // Saving ----------------------------------------------------------------------------
-  /** Sends the current content, one request at a time; edits made during a save cause one follow-up save. */
-  private drain(): Promise<void> {
-    if (this.saving) return this.saving;
-    this.saving = (async () => {
+  // Live sync ----------------------------------------------------------------------------
+  /** Sends this view's steps, one request at a time; edits made meanwhile are sent right after. */
+  private schedulePush(): Promise<void> {
+    if (this.pushing) {
+      this.pushAgain = true;
+      return this.pushing;
+    }
+    this.pushing = (async () => {
       try {
-        while (this.dirty && !this.disposed && this.source && this.state.status === 'ready' && this.leaseToken !== null) {
-          this.dirty = false;
-          if (!(await this.saveOnce(this.leaseToken, this.source.getContent()))) return;
-        }
+        do {
+          this.pushAgain = false;
+          await this.pushRounds();
+        } while (this.pushAgain && !this.disposed);
       } finally {
-        this.saving = null;
+        this.pushing = null;
       }
     })();
-    return this.saving;
+    return this.pushing;
   }
 
-  /** One save with INTERNAL retries (same requestId). Returns false when the loop must stop. */
-  private async saveOnce(leaseToken: string, content: RichDocLike | string): Promise<boolean> {
-    const req = { ...this.op(leaseToken), format: this.state.format, content };
-    this.store.setState({ save: 'saving' });
-    for (let attempt = 0; ; attempt += 1) {
-      const res = await this.deps.bridge.note.save(req);
-      if (res.ok) {
-        this.failure = null;
-        this.store.setState({ revision: res.data.revision, save: this.dirty ? 'saving' : 'saved' });
-        return true;
-      }
-      if (res.error.code === 'INTERNAL' && attempt < MAX_RETRIES) {
-        this.store.setState({ save: 'retrying' });
-        await this.sleep(RETRY_DELAY_MS);
-        continue;
-      }
-      await this.handleSaveFailure(res.error, req);
-      return false;
-    }
-  }
-
-  private async handleSaveFailure(error: ErrorEnvelope, refused: { leaseToken: string; baseRevision: number }): Promise<void> {
-    this.failure = { code: error.code, message: error.message, details: error.details };
-    if (error.code === 'CONFLICT' || error.code === 'LEASE_REQUIRED') {
-      let draftId = draftIdOf(error);
-      // Text typed while the refused save was in flight is submitted once more, so main keeps it as a draft too.
-      if (this.dirty && this.source) {
-        this.dirty = false;
-        const again = await this.deps.bridge.note.save({ ...this.op(refused.leaseToken), baseRevision: refused.baseRevision, format: this.state.format, content: this.source.getContent() });
-        if (!again.ok) draftId = draftIdOf(again.error) ?? draftId;
-      }
-      const trashed = (error.details as { reason?: string } | undefined)?.reason === 'trashed';
-      if (trashed) {
-        this.store.setState({ status: 'trashed', save: 'saved', message: error.message });
+  private async pushRounds(): Promise<void> {
+    for (let round = 0; round < MAX_PUSH_ROUNDS; round += 1) {
+      const sendable = this.source?.sendable();
+      if (!sendable || this.disposed || this.state.status !== 'ready' || this.failure) return;
+      const res = await this.deps.bridge.collab.push({ ...this.view, epoch: this.epoch, ...sendable });
+      if (!res.ok) {
+        // The steps stay unconfirmed and go with the next edit or flush (a note too large, for example).
+        this.failure = { code: res.error.code, message: res.error.message };
+        this.store.setState({ save: 'error', message: res.error.code === 'VALIDATION_FAILED' ? SAVE_FAILED : res.error.message });
         return;
       }
-      await this.reload();
-      if (error.code === 'LEASE_REQUIRED') {
-        this.leaseToken = null;
-        this.store.setState({ status: 'readOnly', readOnlyReason: 'leaseLost', save: 'saved', conflict: draftId ? { draftId, reason: 'lease_lost' } : null });
-      } else {
-        this.store.setState({ save: 'saved', conflict: draftId ? { draftId, reason: 'stale' } : null });
+      if (res.data.status === 'reset') {
+        await this.restart(null);
+        return;
       }
-      await this.refreshDrafts();
-      return;
-    }
-    if (error.code === 'NOT_FOUND') {
-      this.store.setState({ status: 'missing', save: 'error', message: error.message });
-      return;
-    }
-    // The content stays dirty: the next edit (or flush) tries again; nothing is dropped.
-    this.dirty = true;
-    if (error.code === 'VALIDATION_FAILED') {
-      console.error(`note ${this.noteId}: save refused: ${error.message}`);
-      this.store.setState({ save: 'error', message: SAVE_FAILED });
-    } else {
-      this.store.setState({ save: 'error', message: error.message });
+      // Behind: other views' steps came first. Accepted: this view's own come back and confirm them.
+      if (this.source && this.source.version() < res.data.version && !(await this.pull())) return;
+      if (res.data.status === 'accepted' && !this.source?.sendable()) this.markConfirmed();
     }
   }
 
-  /** Sends everything pending (waiting up to 10 s for image imports) and resolves after the ack or failure. */
-  async flush(): Promise<FlushResult> {
+  /** Fetches the confirmed steps this view has not received; false when the session started over instead. */
+  private async pull(): Promise<boolean> {
+    if (!this.source) return false;
+    const res = await this.deps.bridge.collab.pull({ ...this.view, epoch: this.epoch, version: this.source.version() });
+    if (!res.ok || this.disposed || !this.source) return false;
+    if (res.data.status === 'reset') {
+      await this.restart(null);
+      return false;
+    }
+    this.source.receive(res.data.version, res.data.steps, res.data.clientIDs);
+    return true;
+  }
+
+  private markConfirmed(): void {
+    if (this.state.save === 'pending') this.store.setState({ save: 'saving' });
+  }
+
+  /** Confirmed steps of the note's views: this view applies them and sends its own again on top. */
+  onSteps(event: CollabStepsEventType): void {
+    if (event.noteId !== this.noteId || event.epoch !== this.epoch || this.disposed || !this.source) return;
+    if (this.source.receive(event.version, event.steps, event.clientIDs) === 'gap') {
+      void this.pull();
+      return;
+    }
+    if (this.source.sendable()) void this.schedulePush();
+    else this.markConfirmed();
+  }
+
+  /** Main saved (or could not save) the note: the indicator shows whether this view's text is stored. */
+  onStatus(event: CollabStatusEventType): void {
+    if (event.noteId !== this.noteId || event.epoch !== this.epoch || this.disposed) return;
+    if (event.state === 'saved') {
+      const mine = this.source?.sendable() ? Number.POSITIVE_INFINITY : (this.source?.version() ?? 0);
+      this.store.setState({ revision: event.revision, ...(mine <= event.savedVersion ? { save: 'saved' as const, message: undefined } : {}) });
+      if (mine <= event.savedVersion) this.failure = null;
+    } else {
+      this.store.setState({ save: event.state, message: event.message ?? SAVE_FAILED });
+    }
+  }
+
+  /** The note was replaced from outside the session: join it again, keeping a draft of anything not synced. */
+  onReset(event: CollabResetEventType): void {
+    // A content operation of this view joins the new session itself when it is done.
+    if (event.noteId !== this.noteId || this.disposed || this.state.status !== 'ready' || this.state.busy !== null) return;
+    void this.restart(event.conflict?.reason === 'stale' ? { draftId: event.conflict.draftId, reason: 'stale' } : null);
+  }
+
+  /**
+   * Joins the session again. Steps of this view main never confirmed were made on the old text: they are kept as a
+   * recovered draft (a whole-content save on the old revision, which main stores as a conflict draft).
+   */
+  private async restart(conflict: { draftId: string; reason: 'stale' } | null): Promise<void> {
+    let kept = conflict;
+    if (this.source?.sendable()) {
+      const res = await this.deps.bridge.note.save({
+        ...this.view,
+        baseRevision: this.state.revision,
+        requestId: this.deps.uuid(),
+        format: this.state.format,
+        content: this.source.getContent(),
+      });
+      const draftId = res.ok ? null : draftIdOf(res.error);
+      if (draftId) kept = { draftId, reason: 'stale' };
+    }
+    if (!(await this.join())) return;
+    if (kept) this.store.setState({ conflict: kept });
+    await this.refreshDrafts();
+  }
+
+  /** Sends every unconfirmed step and waits for main to confirm them (or to refuse them). */
+  private async pushAll(): Promise<void> {
+    for (let i = 0; i < MAX_PUSH_ROUNDS && this.source?.sendable() && !this.failure && this.state.status === 'ready'; i += 1) {
+      await this.schedulePush();
+    }
+  }
+
+  /**
+   * Sends everything pending (waiting up to 10 s for image imports), has main save the note and resolves with the
+   * outcome. `force` also saves block IDs main gave the note when it opened.
+   */
+  async flush(opts: { force?: boolean } = {}): Promise<FlushResult> {
     if (this.source?.hasPendingUploads()) await this.source.waitForUploads(IMPORT_WAIT_ON_FLUSH_MS);
-    this.saveTimer.cancel();
     this.renameTimer.cancel();
-    if (this.dirty) await this.drain();
-    else if (this.saving) await this.saving;
+    if (this.state.status === 'ready' && this.epoch) {
+      this.failure = null;
+      await this.pushAll();
+      if (!this.failure) await this.saveInMain(opts.force === true);
+    }
     if (this.pendingTitle !== null || this.renaming) await this.runRename();
     if (this.failure) return { ok: false, ...this.failure };
     return { ok: true };
+  }
+
+  private async saveInMain(force: boolean): Promise<void> {
+    const res = await this.deps.bridge.collab.flush({ ...this.view, ...(force ? { force } : {}) });
+    if (this.disposed) return;
+    if (!res.ok) {
+      this.failure = { code: res.error.code, message: res.error.message, details: res.error.details };
+      if (res.error.code !== 'CONFLICT') this.store.setState({ save: 'error', message: res.error.message });
+      return;
+    }
+    this.store.setState({ revision: res.data.revision, ...(this.source?.sendable() ? {} : { save: 'saved' as const, message: undefined }) });
+  }
+
+  private async leave(): Promise<void> {
+    if (!this.epoch) return;
+    this.epoch = '';
+    await this.deps.bridge.collab.leave(this.view);
   }
 
   // Title ----------------------------------------------------------------------------
@@ -389,55 +427,6 @@ export class NoteController implements EditorHost {
     if (this.pendingTitle !== null) await this.runRename();
   }
 
-  // Events from main ----------------------------------------------------------------------------
-  /** Another view saved: read-only mirrors and idle editors show the new content. */
-  onRevision(event: { noteId: string; revision: number; sourceViewId: string }): void {
-    if (event.noteId !== this.noteId || event.sourceViewId === this.deps.viewId || this.disposed) return;
-    const { status } = this.state;
-    if (status === 'readOnly' || (status === 'ready' && !this.dirty && !this.saving && this.state.save === 'saved')) void this.reload();
-  }
-
-  /**
-   * Tracks the holder. A mirror that is read-only only because another view held the lease acquires it as soon as
-   * the note is free (D-065); a mirror that lost its lease keeps the recovered-draft banner, and a take in flight
-   * (busy) never races its own acquire.
-   */
-  onLease(event: { noteId: string; holderViewId: string | null }): void {
-    if (event.noteId !== this.noteId || this.disposed) return;
-    if (event.holderViewId === this.deps.viewId) return;
-    this.store.setState({ holderElsewhere: event.holderViewId !== null });
-    const { status, readOnlyReason, busy } = this.state;
-    if (event.holderViewId === null && status === 'readOnly' && readOnlyReason === 'lease' && busy === null) void this.autoAcquire();
-  }
-
-  private autoAcquire(): Promise<void> {
-    return this.busyWith('take', async () => {
-      const res = await this.deps.bridge.lease.acquire({ noteId: this.noteId, viewId: this.deps.viewId });
-      if (!res.ok || !res.data.granted || this.disposed) return;
-      this.leaseToken = res.data.leaseToken;
-      if (this.state.status !== 'readOnly' || this.state.readOnlyReason !== 'lease') {
-        await this.releaseLease();
-        return;
-      }
-      await this.reload();
-      this.store.setState({ status: 'ready', readOnlyReason: null, holderElsewhere: false });
-    });
-  }
-
-  /** Another window takes edit control: flush, release, and become a read-only mirror. */
-  async onReleaseRequest(): Promise<void> {
-    if (this.disposed) return;
-    await this.flush();
-    await this.releaseLease();
-    this.store.setState({ status: this.state.status === 'ready' ? 'readOnly' : this.state.status, readOnlyReason: 'lease', holderElsewhere: true });
-  }
-
-  private async releaseLease(): Promise<void> {
-    const token = this.leaseToken;
-    this.leaseToken = null;
-    if (token) await this.deps.bridge.lease.release({ noteId: this.noteId, viewId: this.deps.viewId, leaseToken: token });
-  }
-
   // User actions ----------------------------------------------------------------------------
   private async busyWith<T>(busy: Busy, fn: () => Promise<T>): Promise<T> {
     this.store.setState({ busy });
@@ -448,66 +437,36 @@ export class NoteController implements EditorHost {
     }
   }
 
-  /** Takes the lease from the holder (which flushes first) or a free note, then shows the stored content. */
-  takeEditControl(): Promise<ActionResult> {
-    return this.busyWith('take', async () => {
-      const res = await this.deps.bridge.lease.take({ noteId: this.noteId, viewId: this.deps.viewId });
-      if (!res.ok) return { ok: false, message: res.error.message };
-      this.leaseToken = res.data.leaseToken;
-      await this.reload();
-      this.store.setState((s) => ({
-        ...s,
-        status: 'ready',
-        readOnlyReason: null,
-        holderElsewhere: false,
-        conflict: s.conflict?.reason === 'lease_lost' ? null : s.conflict,
-      }));
-      return { ok: true };
-    });
-  }
-
-  /** Takes edit control unless this view already has it or is busy (Float or Dock of an open note). */
-  async ensureEditing(): Promise<ActionResult> {
-    await this.opening;
-    if (this.disposed || this.state.status !== 'readOnly' || this.state.busy !== null) return { ok: true };
-    return this.takeEditControl();
-  }
-
   /**
    * The note went to Trash elsewhere: pending edits are flushed (main keeps them as a trashed-conflict draft), the
-   * lease is released and the view shows the trash state. The flush result tells whether a draft was kept.
+   * view leaves the session and shows the trash state. The flush result tells whether a draft was kept.
    */
   async handleTrashed(batchId: string | null): Promise<FlushResult> {
     const flushed = await this.flush();
-    await this.releaseLease();
+    await this.leave();
     if (!this.disposed) this.store.setState({ status: 'trashed', trashBatchId: batchId, save: 'saved' });
     return flushed;
   }
 
   /** The note is back from Trash: open it again from the stored content. */
   async reopen(): Promise<void> {
-    this.dirty = false;
     this.failure = null;
-    this.store.setState({ status: 'loading', message: undefined, trashBatchId: undefined, readOnlyReason: null, holderElsewhere: false, conflict: null });
-    await this.open('acquire');
-  }
-
-  private applyContent(res: NoteContentResponseType): void {
-    this.dirty = false;
-    this.store.setState((s) => ({ ...s, format: res.format, content: res.content as RichDocLike | string, revision: res.revision, contentKey: s.contentKey + 1, save: 'saved' }));
+    this.store.setState({ status: 'loading', message: undefined, trashBatchId: undefined, conflict: null });
+    await this.open();
   }
 
   /**
-   * Runs a content operation that needs edit control: flushes first, then calls main with the lease and base
-   * revision. Read-only views get "Take edit control first".
+   * Runs a content operation (conversion, restores): the editor stays read-only while it runs, the edits of every view
+   * are saved first, and afterwards the view joins the session the new content started.
    */
-  private contentOp(busy: Busy, call: (op: ReturnType<NoteController['op']>) => Promise<ActionResult>): Promise<ActionResult> {
+  private contentOp(busy: Busy, call: (op: { noteId: string; viewId: string; baseRevision: number; requestId: string }) => Promise<ActionResult>): Promise<ActionResult> {
     return this.busyWith(busy, async () => {
       const flushed = await this.flush();
-      // A failure blocks only while edits are still unsaved; edits main refused were kept as a draft.
-      if (!flushed.ok && this.dirty) return { ok: false, message: flushed.message };
-      if (this.leaseToken === null) return { ok: false, message: TAKE_CONTROL_FIRST };
-      return call(this.op(this.leaseToken));
+      // A failure blocks only while edits are still unsynced; edits main refused were kept as a draft.
+      if (!flushed.ok && this.source?.sendable()) return { ok: false, message: flushed.message };
+      const result = await call({ ...this.view, baseRevision: this.state.revision, requestId: this.deps.uuid() });
+      if (result.ok) await this.join();
+      return result;
     });
   }
 
@@ -516,7 +475,6 @@ export class NoteController implements EditorHost {
     return this.contentOp('convert', async (op) => {
       const res = await this.deps.bridge.note.convertFormat({ ...op, targetFormat: target, ...(target === 'plain' ? { confirmLossy: true as const } : {}) });
       if (!res.ok) return { ok: false, message: res.error.message };
-      this.applyContent(res.data);
       this.store.setState({ converted: target === 'plain' && res.data.versionId ? { versionId: res.data.versionId } : null });
       return { ok: true };
     });
@@ -530,7 +488,6 @@ export class NoteController implements EditorHost {
     return this.contentOp('restore', async (op) => {
       const res = await this.deps.bridge.versions.restore({ ...op, versionId });
       if (!res.ok) return { ok: false, message: res.error.message };
-      this.applyContent(res.data);
       this.store.setState({ converted: null });
       return { ok: true };
     });
@@ -540,7 +497,6 @@ export class NoteController implements EditorHost {
     return this.contentOp('draft', async (op) => {
       const res = await this.deps.bridge.drafts.resolve({ action: 'restore', ...op, draftId });
       if (!res.ok) return { ok: false, message: res.error.message };
-      if (res.data.content) this.applyContent(res.data.content);
       this.store.setState({ conflict: null });
       await this.refreshDrafts();
       return { ok: true };
@@ -570,8 +526,7 @@ export class NoteController implements EditorHost {
     if (this.disposed) return;
     if (opts.flush !== false) await this.flush();
     this.disposed = true;
-    this.saveTimer.cancel();
     this.renameTimer.cancel();
-    await this.releaseLease();
+    await this.leave();
   }
 }

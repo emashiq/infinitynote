@@ -42,7 +42,7 @@ describe('TabsStore', () => {
     expect(fake.data.getSession().activeTabId).toBe(`note:${a.id}`);
   });
 
-  it('only the active note tab has a controller; switching releases the lease after a flush', async () => {
+  it('only the active note tab has a controller; switching leaves its live-sync session after a flush', async () => {
     const { services, fake } = await setupServices();
     const a = await makeNote(fake, undefined, 'A');
     const b = await makeNote(fake, undefined, 'B');
@@ -55,11 +55,11 @@ describe('TabsStore', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(services.tabs.activeController()?.noteId).toBe(b.id);
     expect(JSON.stringify(fake.data.notes.find((n) => n.id === a.id)!.content)).toContain('typed in A');
-    expect(fake.data.leases.has(a.id)).toBe(false);
-    expect(fake.data.leases.has(b.id)).toBe(true);
+    expect(fake.data.sessions.has(a.id)).toBe(false);
+    expect(fake.data.sessions.has(b.id)).toBe(true);
     await services.tabs.activate('home');
     expect(services.tabs.activeController()).toBeNull();
-    expect(fake.data.leases.size).toBe(0);
+    expect(fake.data.sessions.size).toBe(0);
   });
 
   it('a failed flush keeps the tab, shows the error notice and does not change the session', async () => {
@@ -68,7 +68,7 @@ describe('TabsStore', () => {
     await services.tabs.openNote(a.id);
     await vi.advanceTimersByTimeAsync(0);
     typeInto(services.tabs.activeController()!, 'unsaved');
-    fake.failNext('note:save', { code: 'INTERNAL' }, 4);
+    fake.failNext('collab:flush', { code: 'INTERNAL' });
     const attempt = services.tabs.activate('home');
     await vi.advanceTimersByTimeAsync(3500);
     expect(await attempt).toBe(false);
@@ -76,7 +76,7 @@ describe('TabsStore', () => {
     expect(noticeTexts(services)).toEqual([SAVE_FAILED_NOTICE]);
     expect(services.notices.store.getState().notices[0]?.tone).toBe('error');
     // closing is refused the same way
-    fake.failNext('note:save', { code: 'INTERNAL' }, 4);
+    fake.failNext('collab:flush', { code: 'INTERNAL' });
     const close = services.tabs.close(`note:${a.id}`);
     await vi.advanceTimersByTimeAsync(3500);
     expect(await close).toBe(false);
@@ -89,7 +89,7 @@ describe('TabsStore', () => {
     await services.tabs.openNote(a.id);
     await vi.advanceTimersByTimeAsync(0);
     typeInto(services.tabs.activeController()!, 'x');
-    fake.failNext('note:save', { code: 'CONFLICT' });
+    fake.failNext('collab:flush', { code: 'CONFLICT' });
     expect(await services.tabs.activate('home')).toBe(true);
     expect(services.tabs.store.getState().session.activeTabId).toBe('home');
     expect(noticeTexts(services)).toEqual([]);
@@ -133,7 +133,7 @@ describe('TabsStore', () => {
     expect(ids(services)).toEqual(['home']);
     expect(services.tabs.store.getState().session.activeTabId).toBe('home');
     expect(noticeTexts(services).at(-1)).toMatch(/^(2 tabs were closed because their notes are in Trash|1 tab was closed because its note is in Trash)$/);
-    expect(fake.data.leases.size).toBe(0);
+    expect(fake.data.sessions.size).toBe(0);
   });
 
   it('trashing the active note while edits are pending flushes them into a draft and says so (F-02-1)', async () => {
@@ -153,7 +153,7 @@ describe('TabsStore', () => {
       'Your unsaved edits to "Shopping" were kept as a recovered draft. Restore the note from Trash to see them.',
       '1 tab was closed because its note is in Trash',
     ]);
-    expect(fake.data.leases.size).toBe(0);
+    expect(fake.data.sessions.size).toBe(0);
   });
 
   it('trashing the active note without pending edits stores no draft and shows only the closed notice', async () => {
@@ -167,22 +167,22 @@ describe('TabsStore', () => {
     expect(noticeTexts(services)).toEqual(['1 tab was closed because its note is in Trash']);
   });
 
-  it('keeps the tab open for every failed flush except CONFLICT, LEASE_REQUIRED and NOT_FOUND', async () => {
+  it('keeps the tab open for every failed flush except CONFLICT and NOT_FOUND', async () => {
     const { services, fake } = await setupServices();
     const a = await makeNote(fake, undefined, 'A');
     await services.tabs.openNote(a.id);
     await vi.advanceTimersByTimeAsync(0);
     typeInto(services.tabs.activeController()!, 'too big');
-    fake.failNext('note:save', { code: 'LIMIT_EXCEEDED' });
+    fake.failNext('collab:flush', { code: 'LIMIT_EXCEEDED' });
     expect(await services.tabs.activate('home')).toBe(false);
     expect(services.tabs.store.getState().session.activeTabId).toBe(`note:${a.id}`);
     expect(noticeTexts(services)).toEqual([SAVE_FAILED_NOTICE]);
 
-    for (const code of ['LEASE_REQUIRED', 'NOT_FOUND'] as const) {
+    for (const code of ['CONFLICT', 'NOT_FOUND'] as const) {
       await services.tabs.openNote(a.id);
       await vi.advanceTimersByTimeAsync(0);
       typeInto(services.tabs.activeController()!, `after ${code}`);
-      fake.failNext('note:save', { code });
+      fake.failNext('collab:flush', { code });
       expect(await services.tabs.activate('home')).toBe(true);
     }
   });
@@ -254,25 +254,5 @@ describe('TabsStore', () => {
     expect(fake.callsTo('session:set')).toHaveLength(before + 1);
     const tab = services.tabs.store.getState().session.tabs.find((t) => t.id === `note:${a.id}`);
     expect(tab).toMatchObject({ scrollTop: 240 });
-  });
-
-  it('openNote with takeEdit takes edit control: a new tab takes on open, an active mirror takes in place (D-065)', async () => {
-    const { services, fake } = await setupServices();
-    const a = await makeNote(fake, undefined, 'A');
-    const b = await makeNote(fake, undefined, 'B');
-    fake.data.heldElsewhere.add(a.id);
-    await services.tabs.openNote(a.id);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(services.tabs.activeController()!.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'lease' });
-    expect(await services.tabs.openNote(a.id, { takeEdit: true })).toBe(true);
-    expect(fake.callsTo('lease:take').map((c) => (c.req as { noteId: string }).noteId)).toEqual([a.id]);
-    expect(services.tabs.activeController()!.store.getState().status).toBe('ready');
-
-    fake.data.heldElsewhere.add(b.id);
-    expect(await services.tabs.openNote(b.id, { takeEdit: true })).toBe(true);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(services.tabs.activeController()).toMatchObject({ noteId: b.id });
-    expect(services.tabs.activeController()!.store.getState().status).toBe('ready');
-    expect(fake.callsTo('lease:take')).toHaveLength(2);
   });
 });

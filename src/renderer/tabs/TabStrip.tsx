@@ -1,7 +1,7 @@
 import { Bell, ChevronLeft, ChevronRight, FileText, House, Settings, StickyNote, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { displayTitle } from '../../shared/names';
-import { TitleRenameInput, type RenameEnd } from '../notes/TitleRenameInput';
+import { NoteTitleField, type TitleEditEnd } from '../notes/NoteTitleField';
 import type { TabType } from '../../shared/contracts/session';
 import type { AppServices } from '../state/app-services';
 import { useServices, useStore } from '../state/use-store';
@@ -94,7 +94,7 @@ export function TabStrip() {
     if (tab.kind !== 'note') return;
     void tabsStore.activate(tab.id).then(() => ui.requestFocus({ target: 'noteTitle', noteId: tab.noteId }));
   };
-  const endRename = (tabId: string, how: RenameEnd) => {
+  const endRename = (tabId: string, how: TitleEditEnd) => {
     ui.endTabRename();
     if (how === 'escape') focusTab(tabId);
   };
@@ -103,11 +103,12 @@ export function TabStrip() {
     if (tab.kind !== 'note' || tab.id !== renamingTab || tab.id !== session.activeTabId || controllerNoteId !== tab.noteId || !controller) return null;
     const live = services.tree.store.getState().snapshot.notes.find((n) => n.id === tab.noteId);
     return (
-      <TitleRenameInput
+      <NoteTitleField
         controller={controller}
-        initial={live?.title ?? controller.store.getState().title}
+        title={live?.title ?? controller.store.getState().title}
         className="tab-rename"
         editor={services.noteEditor}
+        autoFocus
         onDone={(how) => endRename(tab.id, how)}
       />
     );

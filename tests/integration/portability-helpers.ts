@@ -8,16 +8,11 @@ import { makePng } from '../support/png';
 import { setupServices, type Services } from './hierarchy-helpers';
 import { mkTmp, trackDb, type TestDb } from './helpers';
 
-const WC = 1;
-
 /** Saves rich content through the real writer (lease, revision, indexing), like an editor does. */
 export function saveDoc(s: Services, noteId: string, doc: RichDocLike): void {
   const viewId = randomUUID();
-  const lease = s.leases.acquire(noteId, viewId, WC);
-  if (!lease.granted) throw new Error('lease');
   const revision = s.row<{ revision: number }>('SELECT revision FROM notes WHERE id = ?', noteId)!.revision;
-  s.writer.save({ noteId, viewId, leaseToken: lease.leaseToken, baseRevision: revision, requestId: randomUUID(), format: 'rich', content: doc }, { webContentsId: WC });
-  s.leases.release(noteId, viewId, lease.leaseToken, WC);
+  s.writer.save({ noteId, viewId, baseRevision: revision, requestId: randomUUID(), format: 'rich', content: doc });
 }
 
 export const paragraph = (id: string, text: string) => ({ type: 'paragraph', attrs: { id }, content: [{ type: 'text', text }] });
@@ -51,9 +46,7 @@ export async function seedNotebook(s: Services) {
     ],
   });
   const viewId = randomUUID();
-  const lease = s.leases.acquire(plain.id, viewId, WC);
-  if (!lease.granted) throw new Error('lease');
-  s.writer.save({ noteId: plain.id, viewId, leaseToken: lease.leaseToken, baseRevision: 0, requestId: randomUUID(), format: 'plain', content: 'plain body' }, { webContentsId: WC });
+  s.writer.save({ noteId: plain.id, viewId, baseRevision: 0, requestId: randomUUID(), format: 'plain', content: 'plain body' });
   s.hierarchy.setFavorite('note', design.id, true);
   s.hierarchy.setPinned(index.id, true);
   s.tags.set(design.id, ['work', 'q4']);

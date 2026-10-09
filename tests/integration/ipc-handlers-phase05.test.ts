@@ -33,7 +33,7 @@ async function setup() {
   const opened: Array<{ noteId: string; blockId: string | null }> = [];
   const r = catalogueRouter(s.services, app, {
     stickyNoteId: own.note.id,
-    desktop: { ...NO_DESKTOP, mainWindow: { ...NO_DESKTOP.mainWindow, openNote: (noteId, _take, blockId) => opened.push({ noteId, blockId: blockId ?? null }) } },
+    desktop: { ...NO_DESKTOP, mainWindow: { ...NO_DESKTOP.mainWindow, openNote: (noteId, blockId) => void opened.push({ noteId, blockId: blockId ?? null }) } },
   });
   return { s, own: own.note, other, opened, call: r.call };
 }
@@ -175,7 +175,7 @@ describe('Phase 05 widget and autostart channels (D-074, D-081, D-082)', () => {
     const dto = (await t.call('reminder:create', reminderInput(t.note.id), MAIN)).data;
     const forbidden: Array<[string, unknown]> = [
       ['note:open', { noteId: t.note.id }],
-      ['lease:acquire', { noteId: t.note.id, viewId: t.note.id }],
+      ['collab:join', { noteId: t.note.id, viewId: t.note.id }],
       ['session:set', { session: { version: 1, tabs: [{ id: 'home', kind: 'home' }], activeTabId: 'home' } }],
       ['tree:list', {}],
       ['trash:list', {}],

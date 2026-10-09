@@ -63,7 +63,7 @@ const settle = () => new Promise((r) => setImmediate(r));
 function setup(opts: { behavior?: CloseBehaviorType; answers?: CloseChoice[]; askClose?: () => Promise<CloseChoice>; onFirstLoad?: () => void } = {}) {
   const windows: FakeMainWindow[] = [];
   const log: string[] = [];
-  const sent: Array<{ webContentsId: number; noteId: string; takeEdit: boolean; blockId: string | null }> = [];
+  const sent: Array<{ webContentsId: number; noteId: string; blockId: string | null }> = [];
   const views: Array<{ webContentsId: number; view: string }> = [];
   const dialogs: Array<{ parent: number; options: CloseDialogOptions }> = [];
   const answers = [...(opts.answers ?? [])];
@@ -106,15 +106,15 @@ describe('MainWindowController reminder opens and attention (D-074, D-076)', () 
 
   it('a note open carries the block to reveal; the queue keeps the latest block per note', () => {
     const t = setup();
-    t.controller.openNote(NOTE_A, false, BLOCK);
-    t.controller.openNote(NOTE_A, false, null);
-    t.controller.openNote(NOTE_B, false, BLOCK);
+    t.controller.openNote(NOTE_A, BLOCK);
+    t.controller.openNote(NOTE_A, null);
+    t.controller.openNote(NOTE_B, BLOCK);
     expect(t.controller.rendererReady(1).openNotes).toEqual([
-      { noteId: NOTE_A, takeEdit: false, blockId: null },
-      { noteId: NOTE_B, takeEdit: false, blockId: BLOCK },
+      { noteId: NOTE_A, blockId: null },
+      { noteId: NOTE_B, blockId: BLOCK },
     ]);
-    t.controller.openNote(NOTE_A, false, BLOCK);
-    expect(t.sent).toEqual([{ webContentsId: 1, noteId: NOTE_A, takeEdit: false, blockId: BLOCK }]);
+    t.controller.openNote(NOTE_A, BLOCK);
+    expect(t.sent).toEqual([{ webContentsId: 1, noteId: NOTE_A, blockId: BLOCK }]);
   });
 
   it('a Reminders view waits for the renderer (one pending view), then goes as an event; the window is shown', () => {
@@ -154,26 +154,26 @@ describe('MainWindowController windows and note opens (D-071)', () => {
   it('queues note opens until the renderer asks for its state, de-duplicated by note, then sends events', () => {
     const t = setup();
     t.controller.ensure();
-    t.controller.openNote(NOTE_A, false);
-    t.controller.openNote(NOTE_B, true);
-    t.controller.openNote(NOTE_A, true);
+    t.controller.openNote(NOTE_A);
+    t.controller.openNote(NOTE_B);
+    t.controller.openNote(NOTE_A);
     expect(t.sent).toEqual([]);
     expect(t.controller.rendererReady(99)).toEqual({ openNotes: [], openReminders: null });
     expect(t.controller.rendererReady(1)).toEqual({
       openNotes: [
-        { noteId: NOTE_B, takeEdit: true, blockId: null },
-        { noteId: NOTE_A, takeEdit: true, blockId: null },
+        { noteId: NOTE_B, blockId: null },
+        { noteId: NOTE_A, blockId: null },
       ],
       openReminders: null,
     });
-    t.controller.openNote(NOTE_B, false);
-    expect(t.sent).toEqual([{ webContentsId: 1, noteId: NOTE_B, takeEdit: false, blockId: null }]);
+    t.controller.openNote(NOTE_B);
+    expect(t.sent).toEqual([{ webContentsId: 1, noteId: NOTE_B, blockId: null }]);
     expect(t.windows).toHaveLength(1);
   });
 
   it('keeps at most 50 queued opens', () => {
     const t = setup();
-    for (let i = 0; i < 60; i += 1) t.controller.openNote(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, false);
+    for (let i = 0; i < 60; i += 1) t.controller.openNote(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
     const drained = t.controller.rendererReady(1).openNotes;
     expect(drained).toHaveLength(50);
     expect(drained[0]!.noteId).toBe('00000000-0000-4000-8000-000000000010');
@@ -184,9 +184,9 @@ describe('MainWindowController windows and note opens (D-071)', () => {
     t.controller.ensure();
     t.controller.rendererReady(1);
     t.last().events.onLoadStarted();
-    t.controller.openNote(NOTE_A, true);
+    t.controller.openNote(NOTE_A);
     expect(t.sent).toEqual([]);
-    expect(t.controller.rendererReady(1).openNotes).toEqual([{ noteId: NOTE_A, takeEdit: true, blockId: null }]);
+    expect(t.controller.rendererReady(1).openNotes).toEqual([{ noteId: NOTE_A, blockId: null }]);
   });
 
   it('the first-load callback runs once per run, not for reloads or recreated windows', async () => {
@@ -215,10 +215,10 @@ describe('MainWindowController windows and note opens (D-071)', () => {
     await settle();
     expect(first.destroyed).toBe(true);
     expect(t.controller.webContentsId()).toBeNull();
-    t.controller.openNote(NOTE_A, true);
+    t.controller.openNote(NOTE_A);
     expect(t.windows).toHaveLength(2);
     expect(t.controller.isReady()).toBe(false);
-    expect(t.controller.rendererReady(2).openNotes).toEqual([{ noteId: NOTE_A, takeEdit: true, blockId: null }]);
+    expect(t.controller.rendererReady(2).openNotes).toEqual([{ noteId: NOTE_A, blockId: null }]);
     expect(t.logger.lines.some((l) => l.includes('window: main recreated'))).toBe(true);
   });
 });

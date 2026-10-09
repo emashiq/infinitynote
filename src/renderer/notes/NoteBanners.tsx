@@ -2,11 +2,8 @@ import type { DraftSummaryType } from '../../shared/contracts/notes';
 import { formatRelative } from '../../shared/time/relative-time';
 import type { NoteControllerState } from './note-controller';
 
-export const LEASE_BANNER = 'This note is being edited in another window';
-export const LEASE_LOST_BANNER = 'Another window took edit control. Your last edits were kept as a recovered draft.';
 export const CONFLICT_BANNER = 'This note changed elsewhere. Your edits were kept as a recovered draft';
 export const CONVERTED_BANNER = 'Converted to plain text. A version with formatting and images was saved.';
-export const TAKE_CONTROL_FIRST_TIP = 'Take edit control first';
 
 export function recoveredDraftsText(drafts: readonly DraftSummaryType[], now: number): string {
   const when = formatRelative(drafts[0]!.createdAt, now);
@@ -14,7 +11,6 @@ export function recoveredDraftsText(drafts: readonly DraftSummaryType[], now: nu
 }
 
 export interface BannerActions {
-  takeEditControl(): void;
   compare(draftId: string): void;
   restoreDraft(draftId: string): void;
   dismissDraft(draftId: string): void;
@@ -22,19 +18,13 @@ export interface BannerActions {
   dismissConverted(): void;
 }
 
-function DraftActions({ draftId, readOnly, busy, actions }: { draftId: string; readOnly: boolean; busy: boolean; actions: BannerActions }) {
+function DraftActions({ draftId, busy, actions }: { draftId: string; busy: boolean; actions: BannerActions }) {
   return (
     <>
       <button type="button" className="btn btn-small" onClick={() => actions.compare(draftId)}>
         Compare
       </button>
-      <button
-        type="button"
-        className="btn btn-small"
-        disabled={readOnly || busy}
-        title={readOnly ? TAKE_CONTROL_FIRST_TIP : undefined}
-        onClick={() => actions.restoreDraft(draftId)}
-      >
+      <button type="button" className="btn btn-small" disabled={busy} onClick={() => actions.restoreDraft(draftId)}>
         Restore draft
       </button>
       <button type="button" className="btn btn-small" disabled={busy} onClick={() => actions.dismissDraft(draftId)}>
@@ -45,39 +35,19 @@ function DraftActions({ draftId, readOnly, busy, actions }: { draftId: string; r
 }
 
 /**
- * Note banners (plan section 10.4), at most two stacked: the lease state first, then a conflict, a conversion or
- * the recovered drafts of the note.
+ * Note banners (plan section 10.4): a conflict, a conversion or the recovered drafts of the note. Every view of a note
+ * edits at once (D-103), so there is no read-only state to explain.
  */
 export function NoteBanners({ state, now, actions }: { state: NoteControllerState; now: number; actions: BannerActions }) {
-  const readOnly = state.status !== 'ready';
   const busy = state.busy !== null;
   const banners = [];
 
-  if (state.readOnlyReason) {
-    const lost = state.readOnlyReason === 'leaseLost';
-    banners.push(
-      <div key="lease" className="banner" role="status">
-        <span>{lost ? LEASE_LOST_BANNER : LEASE_BANNER}</span>
-        <span className="banner-actions">
-          <button type="button" className="btn btn-small" disabled={busy} onClick={actions.takeEditControl}>
-            {state.busy === 'take' ? 'Taking edit control…' : 'Take edit control'}
-          </button>
-          {lost && state.conflict ? (
-            <button type="button" className="btn btn-small" onClick={() => actions.compare(state.conflict!.draftId)}>
-              Compare
-            </button>
-          ) : null}
-        </span>
-      </div>,
-    );
-  }
-
-  if (state.conflict?.reason === 'stale') {
+  if (state.conflict) {
     banners.push(
       <div key="conflict" className="banner" role="status">
         <span>{CONFLICT_BANNER}</span>
         <span className="banner-actions">
-          <DraftActions draftId={state.conflict.draftId} readOnly={readOnly} busy={busy} actions={actions} />
+          <DraftActions draftId={state.conflict.draftId} busy={busy} actions={actions} />
         </span>
       </div>,
     );
@@ -87,7 +57,7 @@ export function NoteBanners({ state, now, actions }: { state: NoteControllerStat
       <div key="converted" className="banner" role="status">
         <span>{CONVERTED_BANNER}</span>
         <span className="banner-actions">
-          <button type="button" className="btn btn-small" disabled={readOnly || busy} onClick={() => actions.restoreFormatted(versionId)}>
+          <button type="button" className="btn btn-small" disabled={busy} onClick={() => actions.restoreFormatted(versionId)}>
             Restore formatted version
           </button>
           <button type="button" className="btn btn-small" onClick={actions.dismissConverted}>
@@ -96,12 +66,12 @@ export function NoteBanners({ state, now, actions }: { state: NoteControllerStat
         </span>
       </div>,
     );
-  } else if (state.drafts.length > 0 && state.readOnlyReason !== 'leaseLost') {
+  } else if (state.drafts.length > 0) {
     banners.push(
       <div key="drafts" className="banner" role="status">
         <span>{recoveredDraftsText(state.drafts, now)}</span>
         <span className="banner-actions">
-          <DraftActions draftId={state.drafts[0]!.id} readOnly={readOnly} busy={busy} actions={actions} />
+          <DraftActions draftId={state.drafts[0]!.id} busy={busy} actions={actions} />
         </span>
       </div>,
     );

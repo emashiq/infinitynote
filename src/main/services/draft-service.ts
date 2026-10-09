@@ -33,7 +33,7 @@ export class DraftService {
     return { drafts: this.drafts.listOpen(noteId, MAX_LISTED_DRAFTS).map(summarize) };
   }
 
-  resolve(req: DraftsResolveRequestType, ctx: { webContentsId: number }): DraftsResolveResponseType {
+  resolve(req: DraftsResolveRequestType): DraftsResolveResponseType {
     if (req.action === 'dismiss') {
       if (!this.drafts.getOpen(req.noteId, req.draftId)) throw new AppError('NOT_FOUND', DRAFT_GONE);
       this.drafts.resolve(req.draftId, this.deps.clock.now());
@@ -41,7 +41,7 @@ export class DraftService {
     }
     // Restore: the current content becomes a `conflict` version, then the draft is written as the next revision.
     // A draft that no longer passes the schema fails with VALIDATION_FAILED and stays unresolved.
-    const content = this.deps.ops.run(req, ctx, (row, now) => {
+    const content = this.deps.ops.run(req, (row, now) => {
       const draft = this.drafts.getOpen(req.noteId, req.draftId);
       if (!draft) throw new AppError('NOT_FOUND', DRAFT_GONE);
       const value = normalizeContent(draft.format, parseDraft(draft));

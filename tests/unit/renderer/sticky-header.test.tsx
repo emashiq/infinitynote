@@ -17,7 +17,7 @@ afterEach(() => {
   root = null;
 });
 
-async function renderHeader(over: Partial<{ state: StickyStateType; pinSupported: boolean; trashed: boolean; renaming: boolean }> = {}) {
+async function renderHeader(over: Partial<{ state: StickyStateType; pinSupported: boolean; trashed: boolean }> = {}) {
   const actions: { [K in keyof StickyHeaderActions]: ReturnType<typeof vi.fn> } = {
     setColor: vi.fn(),
     togglePinned: vi.fn(),
@@ -39,7 +39,7 @@ async function renderHeader(over: Partial<{ state: StickyStateType; pinSupported
         pinSupported={over.pinSupported ?? true}
         trashed={over.trashed ?? false}
         canRename={!(over.trashed ?? false)}
-        renameField={over.renaming ? <input aria-label="Title" defaultValue="Groceries" /> : null}
+        titleField={<input aria-label="Title" className="sticky-title-input" defaultValue="Groceries" />}
         actions={actions as unknown as StickyHeaderActions}
       />,
     ),
@@ -51,19 +51,18 @@ async function renderHeader(over: Partial<{ state: StickyStateType; pinSupported
 const menuItems = (role = 'menuitem') => [...document.querySelectorAll(`[role="menu"] [role="${role}"]`)].map((b) => b.textContent);
 
 describe('sticky header (INF-STKY-04, D-070)', () => {
-  it('is a toolbar with the color, title text, source badge, pin, collapse, actions and close controls', async () => {
+  it('is a toolbar with the color, title field, source badge, pin, collapse, actions and close controls', async () => {
     const { host, button } = await renderHeader();
     const toolbar = host.querySelector('[role="toolbar"]')!;
     expect(toolbar.getAttribute('aria-label')).toBe('Sticky');
-    // The title is text (part of the drag region, D-102); only the small controls are buttons.
     expect([...toolbar.querySelectorAll('button, input')].map((b) => b.getAttribute('aria-label'))).toEqual([
       'Sticky color',
+      'Title',
       'Keep on top',
       'Collapse sticky',
       'Sticky actions',
       'Close sticky',
     ]);
-    expect(host.querySelector('.sticky-title')?.textContent).toBe('Groceries');
     const badge = host.querySelector('.sticky-badge')!;
     expect(badge.textContent).toBe('Alpha › Plans');
     expect(badge.getAttribute('title')).toBe('Alpha › Plans');
@@ -72,16 +71,11 @@ describe('sticky header (INF-STKY-04, D-070)', () => {
     expect(button('Collapse sticky')!.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('renaming shows the title field in place of the title text (D-102)', async () => {
+  it('Rename in the actions menu asks to edit the title (D-102)', async () => {
     const { button, actions } = await renderHeader();
     await dom.click(button('Sticky actions'));
     await dom.click([...document.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent === 'Rename')!);
     expect(actions.rename).toHaveBeenCalledTimes(1);
-    act(() => root?.unmount());
-
-    const renaming = await renderHeader({ renaming: true });
-    expect(renaming.host.querySelector('.sticky-title')).toBeNull();
-    expect(renaming.host.querySelector('input[aria-label="Title"]')).not.toBeNull();
   });
 
   it('Close hides the sticky, as closing its frameless window does (D-097)', async () => {
@@ -193,7 +187,7 @@ describe('window routes in the renderer (plan section 9.1)', () => {
     const fake = createFakeBridge();
     const r = await fake.bridge.note.create({ location: { projectId: null, folderId: null }, sticky: false, title: 'Docked note' });
     if (!r.ok) throw new Error('note');
-    fake.data.setWindowState({ role: 'main', openNotes: [{ noteId: r.data.note.id, takeEdit: true, blockId: null }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } });
+    fake.data.setWindowState({ role: 'main', openNotes: [{ noteId: r.data.note.id, blockId: null }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } });
     window.location.hash = '#/';
     const { el } = await dom.mount(fake);
     expect(el.querySelector('#app-shell')).not.toBeNull();

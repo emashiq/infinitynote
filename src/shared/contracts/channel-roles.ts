@@ -2,7 +2,7 @@ import type { InvokeChannel } from './channel-names';
 import type { WindowRoleType } from './windows';
 
 /**
- * The channels a sticky window may call (plan section 6.4, D-064): its note's content, lease, versions, drafts and
+ * The channels a sticky window may call (plan section 6.4, D-064): its note's content, live sync (D-103), versions, drafts and
  * attachments, links, settings reads, capabilities, the flush acknowledgment, quit, its window state and its own
  * sticky actions, and its note's reminders (listed, or opened in the main window; D-074). From Phase 06 (D-089) it may
  * also confirm suggestions and add reminders by hand for its note: the zone list, `reminder:create`,
@@ -22,9 +22,11 @@ export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<Invok
   'note:rename',
   'note:trash',
   'note:convertFormat',
-  'lease:acquire',
-  'lease:release',
-  'lease:take',
+  'collab:join',
+  'collab:push',
+  'collab:pull',
+  'collab:flush',
+  'collab:leave',
   'versions:list',
   'versions:restore',
   'drafts:list',

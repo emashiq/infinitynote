@@ -211,17 +211,7 @@ export function blockedRequests(app: ElectronApplication): Promise<string[]> {
   return app.evaluate(() => [...globalThis.__infinityTest!.blockedRequests]);
 }
 
-/** The second editing view that lives in main (test hooks): leases and saves without a second window. */
-export const fakeView = {
-  acquire: (app: ElectronApplication, noteId: string) => app.evaluate((_e, id) => globalThis.__infinityTest!.fakeView!.acquire(id), noteId),
-  release: (app: ElectronApplication, noteId: string) => app.evaluate((_e, id) => globalThis.__infinityTest!.fakeView!.release(id), noteId),
-  take: (app: ElectronApplication, noteId: string) => app.evaluate((_e, id) => globalThis.__infinityTest!.fakeView!.take(id), noteId),
-  save: (app: ElectronApplication, noteId: string, text: string) =>
-    app.evaluate((_e, [id, t]) => globalThis.__infinityTest!.fakeView!.save(id!, t!), [noteId, text] as const),
-  forceWrite: (app: ElectronApplication, noteId: string, text: string, emit: boolean) =>
-    app.evaluate((_e, [id, t, e]) => globalThis.__infinityTest!.fakeView!.forceWrite(id as string, t as string, { emit: e as boolean }), [noteId, text, emit] as const),
-  setReleaseBehavior: (app: ElectronApplication, behavior: 'release' | 'ignore') =>
-    app.evaluate((_e, b) => {
-      globalThis.__infinityTest!.fakeView!.releaseBehavior = b;
-    }, behavior),
-};
+/** Changes a note behind the app's back, as another writer would (test hooks; `emit` announces the revision). */
+export function externalWrite(app: ElectronApplication, noteId: string, text: string, emit: boolean): Promise<number> {
+  return app.evaluate((_e, [id, t, e]) => globalThis.__infinityTest!.externalWrite!(id as string, t as string, { emit: e as boolean }), [noteId, text, emit] as const);
+}

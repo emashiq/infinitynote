@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NoteController, CONTENT_ERROR, SAVE_FAILED, TAKE_CONTROL_FIRST } from '../../../../src/renderer/notes/note-controller';
+import { NoteController, CONTENT_ERROR, SAVE_FAILED } from '../../../../src/renderer/notes/note-controller';
 import { realTimers } from '../../../../src/renderer/state/store';
 import type { InfinityBridge } from '../../../../src/shared/contracts/bridge';
+import { NOTE_TOO_LARGE_MESSAGE } from '../../../../src/shared/contracts/notes';
 import { createFakeBridge, type FakeBridge } from '../support/fake-bridge';
 import { TestSource } from '../support/editor-source';
 
@@ -15,18 +16,26 @@ async function setup(opts: { format?: 'rich' | 'plain' } = {}) {
   const created = await fake.bridge.note.create({ location: { projectId: null, folderId: null }, sticky: false, title: 'T', ...(opts.format ? { format: opts.format } : {}) });
   if (!created.ok) throw new Error('create');
   const note = created.data.note;
-  const make = (bridge: InfinityBridge = fake.bridge) => new NoteController({ bridge, noteId: note.id, viewId: VIEW, timers: realTimers, uuid });
-  /** An opened controller with a test editor attached. */
-  const opened = async (bridge?: InfinityBridge) => {
-    const c = make(bridge);
+  const make = (bridge: InfinityBridge = fake.bridge, viewId = VIEW) => new NoteController({ bridge, noteId: note.id, viewId, timers: realTimers, uuid });
+  /** An opened controller with a test editor attached, receiving the live-sync events main sends. */
+  const opened = async (bridge?: InfinityBridge, viewId?: string) => {
+    const c = make(bridge, viewId);
+    connect(fake, c);
     await c.open();
     return { c, editor: new TestSource(c) };
   };
   return { fake, note, make, opened, stored: () => fake.data.notes.find((x) => x.id === note.id)! };
 }
 
-const saves = (fake: FakeBridge) => fake.callsTo('note:save');
-const savedText = (fake: FakeBridge, i: number) => JSON.stringify((saves(fake)[i]!.req as { content: unknown }).content);
+/** Routes main's live-sync events to a controller, as the window's event wiring does. */
+function connect(fake: FakeBridge, c: NoteController): void {
+  fake.bridge.subscribe('collab:steps', (e) => c.onSteps(e));
+  fake.bridge.subscribe('collab:status', (e) => c.onStatus(e));
+  fake.bridge.subscribe('collab:reset', (e) => c.onReset(e));
+}
+
+const pushes = (fake: FakeBridge) => fake.callsTo('collab:push');
+const storedText = (fake: FakeBridge, noteId: string) => JSON.stringify(fake.data.notes.find((x) => x.id === noteId)!.content);
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -35,92 +44,92 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('NoteController: open and save (INF-SAVE-01)', () => {
-  it('opens a note: content, format, revision and drafts, then takes the lease', async () => {
+describe('NoteController: open and save through live sync (INF-SAVE-01, D-103)', () => {
+  it('opens a note: summary and drafts, then joins its session with the document main holds', async () => {
     const { fake, make, note } = await setup();
     const c = make();
     await c.open();
-    expect(c.store.getState()).toMatchObject({ status: 'ready', format: 'rich', revision: 0, save: 'saved', title: 'T', contentKey: 1, drafts: [] });
-    expect(c.store.getState().content).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
-    expect(fake.calls.map((x) => x.channel).filter((ch) => ['note:open', 'drafts:list', 'lease:acquire'].includes(ch))).toEqual(['note:open', 'drafts:list', 'lease:acquire']);
+    expect(c.store.getState()).toMatchObject({ status: 'ready', format: 'rich', revision: 0, save: 'saved', title: 'T', contentKey: 1, syncVersion: 0, drafts: [] });
+    // Main gives the blocks their IDs when the session starts, so no editor has to.
+    expect(c.store.getState().content).toEqual({ type: 'doc', content: [{ type: 'paragraph', attrs: { id: expect.stringMatching(/^[0-9a-f-]{36}$/) } }] });
+    expect(fake.calls.map((x) => x.channel).filter((ch) => ['note:open', 'drafts:list', 'collab:join'].includes(ch))).toEqual(['note:open', 'drafts:list', 'collab:join']);
     expect(c.store.getState().note?.id).toBe(note.id);
   });
 
-  it('a plain note opens with its text', async () => {
+  it('a plain note opens as a document of its lines', async () => {
     const { make, stored } = await setup({ format: 'plain' });
     stored().content = 'line one\nline two';
     const c = make();
     await c.open();
-    expect(c.store.getState()).toMatchObject({ format: 'plain', content: 'line one\nline two' });
+    expect(c.store.getState()).toMatchObject({ format: 'plain' });
+    expect(new TestSource(c).text).toBe('line one\nline two');
   });
 
   it('opening a note never saves: no edit, no request', async () => {
     const { fake, opened } = await setup();
     await opened();
     await vi.advanceTimersByTimeAsync(2000);
-    expect(saves(fake)).toHaveLength(0);
+    expect(pushes(fake)).toHaveLength(0);
+    expect(fake.callsTo('collab:flush')).toHaveLength(0);
   });
 
-  it('debounces edits by 400 ms into one save of the current content', async () => {
-    const { fake, opened } = await setup();
+  it('an edit goes to main at once; main saves it a moment later and the indicator follows', async () => {
+    const { fake, opened, note } = await setup();
     const { c, editor } = await opened();
-    editor.type('h');
-    await vi.advanceTimersByTimeAsync(200);
     editor.type('he');
-    expect(c.store.getState().save).toBe('pending');
-    await vi.advanceTimersByTimeAsync(399);
-    expect(saves(fake)).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(saves(fake)).toHaveLength(1);
-    expect(savedText(fake, 0)).toContain('"he"');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(pushes(fake)).toHaveLength(1);
+    expect(editor.sendable()).toBeNull();
+    expect(c.store.getState().save).toBe('saving');
+    await vi.advanceTimersByTimeAsync(400);
     expect(c.store.getState()).toMatchObject({ revision: 1, save: 'saved' });
+    expect(storedText(fake, note.id)).toContain('"he"');
   });
 
-  it('edits during a save cause exactly one follow-up save with one request in flight', async () => {
+  it('one push at a time: edits made while one is in flight go together in the next', async () => {
     const { fake, opened } = await setup();
     let release: () => void = () => {};
     let inFlight = 0;
     let maxInFlight = 0;
     const slow: InfinityBridge = {
       ...fake.bridge,
-      note: {
-        ...fake.bridge.note,
-        save: async (req) => {
+      collab: {
+        ...fake.bridge.collab,
+        push: async (req) => {
           inFlight += 1;
           maxInFlight = Math.max(maxInFlight, inFlight);
-          if (saves(fake).length === 0) await new Promise<void>((r) => (release = r));
-          const res = await fake.bridge.note.save(req);
+          if (pushes(fake).length === 0) await new Promise<void>((r) => (release = r));
+          const res = await fake.bridge.collab.push(req);
           inFlight -= 1;
           return res;
         },
       },
     };
     const { c, editor } = await opened(slow);
-    editor.type('one');
-    await vi.advanceTimersByTimeAsync(400);
-    expect(c.store.getState().save).toBe('saving');
-    editor.type('one two');
-    editor.type('one two three');
-    await vi.advanceTimersByTimeAsync(400);
+    editor.append('one');
+    await vi.advanceTimersByTimeAsync(0);
+    editor.append(' two');
+    editor.append(' three');
     release();
     expect(await c.flush()).toEqual({ ok: true });
-    expect(saves(fake)).toHaveLength(2);
     expect(maxInFlight).toBe(1);
-    expect(savedText(fake, 1)).toContain('one two three');
-    expect(c.store.getState().revision).toBe(2);
+    expect(pushes(fake)).toHaveLength(2);
+    expect((pushes(fake)[1]!.req as { steps: unknown[] }).steps).toHaveLength(2);
+    expect(c.store.getState()).toMatchObject({ revision: 1, save: 'saved' });
   });
 
-  it('flush sends at once (the editor calls it on blur) and resolves after the ack', async () => {
-    const { fake, opened } = await setup();
+  it('flush sends at once (the editor calls it on blur), has main save, and resolves after', async () => {
+    const { fake, opened, note } = await setup();
     const { c, editor } = await opened();
     editor.type('flush me');
     expect(await c.flush()).toEqual({ ok: true });
-    expect(saves(fake)).toHaveLength(1);
+    expect(fake.callsTo('collab:flush')).toHaveLength(1);
+    expect(storedText(fake, note.id)).toContain('flush me');
     expect(c.store.getState()).toMatchObject({ revision: 1, save: 'saved' });
   });
 
   it('flush waits for image imports, then saves the finished content', async () => {
-    const { fake, opened } = await setup();
+    const { fake, opened, note } = await setup();
     const { c, editor } = await opened();
     editor.type('with image uploading');
     editor.uploads = 1;
@@ -129,60 +138,62 @@ describe('NoteController: open and save (INF-SAVE-01)', () => {
       done = true;
       return r;
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(300);
     expect(done).toBe(false);
     editor.finishUploads('with image done');
     expect(await flushed).toEqual({ ok: true });
-    expect(savedText(fake, saves(fake).length - 1)).toContain('with image done');
+    expect(storedText(fake, note.id)).toContain('with image done');
     expect(c.store.getState().save).toBe('saved');
   });
 
-  it('INTERNAL is retried 3 times at 1 s with one request id, then the save fails and stays dirty', async () => {
-    const { fake, opened } = await setup();
+  it('a push main refuses keeps the edits unconfirmed with the message; the next flush sends them again', async () => {
+    const { fake, opened, note } = await setup();
     const { c, editor } = await opened();
-    fake.failNext('note:save', { code: 'INTERNAL', message: 'Something went wrong' }, 4);
-    editor.type('x');
-    const flushed = c.flush();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(c.store.getState().save).toBe('retrying');
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(await flushed).toMatchObject({ ok: false, code: 'INTERNAL' });
-    expect(saves(fake)).toHaveLength(4);
-    expect(new Set(saves(fake).map((s) => (s.req as { requestId: string }).requestId)).size).toBe(1);
-    expect(c.store.getState().save).toBe('error');
-    // Still dirty: the next flush sends the same text again.
-    expect(await c.flush()).toEqual({ ok: true });
-    expect(savedText(fake, 4)).toContain('"x"');
-  });
-
-  it('LIMIT_EXCEEDED and VALIDATION_FAILED keep the content dirty with the message', async () => {
-    const { fake, opened } = await setup();
-    const { c, editor } = await opened();
-    fake.failNext('note:save', { code: 'LIMIT_EXCEEDED', message: 'This note is too large to save (over 5 MB). Remove some content to keep editing safely.' });
+    fake.failNext('collab:push', { code: 'LIMIT_EXCEEDED', message: NOTE_TOO_LARGE_MESSAGE });
     editor.type('big');
     expect(await c.flush()).toMatchObject({ ok: false, code: 'LIMIT_EXCEEDED' });
-    expect(c.store.getState()).toMatchObject({ save: 'error', message: 'This note is too large to save (over 5 MB). Remove some content to keep editing safely.' });
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    fake.failNext('note:save', { code: 'VALIDATION_FAILED', message: 'This note contains content that cannot be saved' });
+    expect(c.store.getState()).toMatchObject({ save: 'error', message: NOTE_TOO_LARGE_MESSAGE });
+    expect(editor.sendable()).not.toBeNull();
+    fake.failNext('collab:push', { code: 'VALIDATION_FAILED', message: 'These edits could not be applied' });
     expect(await c.flush()).toMatchObject({ ok: false, code: 'VALIDATION_FAILED' });
     expect(c.store.getState()).toMatchObject({ save: 'error', message: SAVE_FAILED });
-    expect(error).toHaveBeenCalled();
     expect(await c.flush()).toEqual({ ok: true });
-    expect(saves(fake)).toHaveLength(3);
+    expect(storedText(fake, note.id)).toContain('big');
+    expect(c.store.getState().save).toBe('saved');
   });
 
-  it('dispose flushes, then releases the lease, once', async () => {
+  it("main's save status shows in every view: retrying and failed saves, and saved only once its text is in", async () => {
+    const { opened } = await setup();
+    const { c, editor } = await opened();
+    editor.type('x');
+    await vi.advanceTimersByTimeAsync(0);
+    const epoch = (c as unknown as { epoch: string }).epoch;
+    const status = (state: 'saved' | 'retrying' | 'error', savedVersion: number, message: string | null = null) =>
+      c.onStatus({ noteId: c.noteId, epoch, savedVersion, revision: 1, state, message });
+    status('retrying', 0, 'Could not save the note');
+    expect(c.store.getState()).toMatchObject({ save: 'retrying' });
+    status('error', 0, 'Could not save the note');
+    expect(c.store.getState()).toMatchObject({ save: 'error', message: 'Could not save the note' });
+    status('saved', 0);
+    expect(c.store.getState().save).toBe('error');
+    status('saved', 1);
+    expect(c.store.getState()).toMatchObject({ save: 'saved', revision: 1 });
+    c.onStatus({ noteId: c.noteId, epoch: 'another-session', savedVersion: 9, revision: 9, state: 'error', message: 'x' });
+    expect(c.store.getState().save).toBe('saved');
+  });
+
+  it('dispose flushes, then leaves the session, once', async () => {
     const { fake, opened } = await setup();
     const { c, editor } = await opened();
     editor.type('bye');
     await c.dispose();
-    const order = fake.calls.map((x) => x.channel).filter((ch) => ch === 'note:save' || ch === 'lease:release');
-    expect(order).toEqual(['note:save', 'lease:release']);
+    const order = fake.calls.map((x) => x.channel).filter((ch) => ch === 'collab:flush' || ch === 'collab:leave');
+    expect(order).toEqual(['collab:flush', 'collab:leave']);
     await c.dispose();
-    expect(fake.callsTo('lease:release')).toHaveLength(1);
+    expect(fake.callsTo('collab:leave')).toHaveLength(1);
   });
 
-  it('rename is debounced, validated and does not use a save', async () => {
+  it('rename is debounced, validated and does not change the text', async () => {
     const { fake, opened } = await setup();
     const { c } = await opened();
     c.rename('N');
@@ -198,17 +209,17 @@ describe('NoteController: open and save (INF-SAVE-01)', () => {
     c.rename('Flushed');
     expect(await c.flush()).toEqual({ ok: true });
     expect(fake.callsTo('note:rename')).toHaveLength(2);
-    expect(saves(fake)).toHaveLength(0);
+    expect(pushes(fake)).toHaveLength(0);
   });
 
-  it('a content error shows the message and releases the lease without saving', async () => {
+  it('a content error shows the message and leaves the session without sending anything', async () => {
     const { fake, opened } = await setup();
     const { c } = await opened();
     c.contentError();
     expect(c.store.getState()).toMatchObject({ status: 'error', message: CONTENT_ERROR });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fake.callsTo('lease:release')).toHaveLength(1);
-    expect(saves(fake)).toHaveLength(0);
+    expect(fake.callsTo('collab:leave')).toHaveLength(1);
+    expect(pushes(fake)).toHaveLength(0);
   });
 
   it('a trashed note opens as trashed, a missing one as missing', async () => {
@@ -218,7 +229,7 @@ describe('NoteController: open and save (INF-SAVE-01)', () => {
     const c = make();
     await c.open();
     expect(c.store.getState()).toMatchObject({ status: 'trashed', trashBatchId: trashed.data.trashBatchId });
-    expect(fake.callsTo('lease:acquire')).toHaveLength(0);
+    expect(fake.callsTo('collab:join')).toHaveLength(0);
     fake.data.notes.length = 0;
     const gone = make();
     await gone.open();
@@ -226,139 +237,80 @@ describe('NoteController: open and save (INF-SAVE-01)', () => {
   });
 });
 
-describe('NoteController: conflicts and leases (INF-SAVE-03, INF-SAVE-04)', () => {
-  it('a stale save reloads the stored content and shows the conflict with its draft', async () => {
-    const { fake, opened, stored } = await setup();
-    const { c, editor } = await opened();
-    // Another writer saved in the meantime.
-    Object.assign(stored(), { revision: 3, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'theirs' }] }] } });
-    editor.type('mine');
-    const result = await c.flush();
-    expect(result).toMatchObject({ ok: false, code: 'CONFLICT' });
-    const draftId = fake.data.drafts[0]!.id;
-    expect(c.store.getState()).toMatchObject({ status: 'ready', revision: 3, contentKey: 2, save: 'saved', conflict: { draftId, reason: 'stale' } });
-    expect(JSON.stringify(c.store.getState().content)).toContain('theirs');
-    expect(c.store.getState().drafts.map((d) => d.id)).toEqual([draftId]);
-  });
-
-  it('typing during a refused save is submitted once more before the reload, so it becomes a draft too', async () => {
-    const { fake, opened, stored } = await setup();
-    let release: () => void = () => {};
-    const slow: InfinityBridge = {
-      ...fake.bridge,
-      note: {
-        ...fake.bridge.note,
-        save: async (req) => {
-          if (saves(fake).length === 0) await new Promise<void>((r) => (release = r));
-          return fake.bridge.note.save(req);
-        },
-      },
-    };
-    const { c, editor } = await opened(slow);
-    stored().revision = 5;
-    editor.type('first');
-    const flushed = c.flush();
-    await vi.advanceTimersByTimeAsync(0);
-    editor.type('first and more');
-    release();
-    await flushed;
-    await vi.advanceTimersByTimeAsync(0);
-    expect(fake.data.drafts.map((d) => JSON.stringify(d.content))).toEqual([expect.stringContaining('"first"'), expect.stringContaining('first and more')]);
-    const secondRequest = saves(fake)[1]!.req as { baseRevision: number; requestId: string };
-    expect(secondRequest.baseRevision).toBe(0);
-    expect(c.store.getState().conflict).toEqual({ draftId: fake.data.drafts[1]!.id, reason: 'stale' });
-  });
-
-  it('a lost lease makes the note read-only with the lease-lost draft; edits are not sent', async () => {
-    const { fake, opened } = await setup();
-    const { c, editor } = await opened();
-    fake.data.leases.set(c.noteId, 'someone-else');
-    editor.type('late words');
-    expect(await c.flush()).toMatchObject({ ok: false, code: 'LEASE_REQUIRED' });
-    const draftId = fake.data.drafts[0]!.id;
-    expect(c.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'leaseLost', conflict: { draftId, reason: 'lease_lost' } });
-    editor.type('ignored');
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(saves(fake)).toHaveLength(1);
-  });
-
-  it('a save to a note trashed meanwhile reports the trashed conflict and keeps the draft', async () => {
+describe('NoteController: two views of one note (D-103)', () => {
+  it('both edit at once: each sees the other, concurrent edits rebase and both converge with the stored note', async () => {
     const { fake, opened, note } = await setup();
-    const { c, editor } = await opened();
-    editor.type('pending');
-    await fake.bridge.note.trash({ noteId: note.id });
-    expect(await c.flush()).toMatchObject({ ok: false, code: 'CONFLICT', details: { reason: 'trashed' } });
-    expect(c.store.getState().status).toBe('trashed');
-    expect(fake.data.drafts).toHaveLength(1);
+    const a = await opened(undefined, VIEW);
+    const b = await opened(undefined, OTHER_VIEW);
+    a.editor.append('tab ');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(b.editor.text).toBe('tab ');
+    // Typed at the same time: the second push is behind, rebases on the first and goes through.
+    a.editor.append('one ');
+    b.editor.append('two ');
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(a.editor.sendable()).toBeNull();
+    expect(b.editor.sendable()).toBeNull();
+    expect(a.editor.text).toBe(b.editor.text);
+    expect(a.editor.text).toMatch(/^tab (one two |two one )$/);
+    expect(fake.callsTo('collab:push').some((call, i) => i > 0 && (call.req as { viewId: string }).viewId === OTHER_VIEW)).toBe(true);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(storedText(fake, note.id)).toContain(a.editor.text.trim());
+    expect(a.c.store.getState().save).toBe('saved');
+    expect(b.c.store.getState().save).toBe('saved');
   });
 
-  it('a lease held elsewhere opens read-only; take edit control flushes the holder and reloads', async () => {
-    const { fake, make } = await setup();
-    const held: InfinityBridge = {
-      ...fake.bridge,
-      lease: { ...fake.bridge.lease, acquire: async () => ({ ok: true, data: { granted: false, holderViewId: OTHER_VIEW } }) },
-    };
-    const c = make(held);
-    await c.open();
-    expect(c.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'lease', holderElsewhere: true });
-    const editor = new TestSource(c);
-    editor.type('not allowed');
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(saves(fake)).toHaveLength(0);
-    expect(await c.restoreDraft(OTHER_VIEW)).toEqual({ ok: false, message: TAKE_CONTROL_FIRST });
-
-    const taking = c.takeEditControl();
-    expect(c.store.getState().busy).toBe('take');
-    expect(await taking).toEqual({ ok: true });
-    expect(c.store.getState()).toMatchObject({ status: 'ready', readOnlyReason: null, holderElsewhere: false, busy: null, contentKey: 2 });
-    editor.type('mine now');
-    expect(await c.flush()).toEqual({ ok: true });
-    expect(saves(fake)).toHaveLength(1);
-  });
-
-  it('a release request flushes pending edits, releases and turns read-only', async () => {
+  it('a conversion in one view starts the session over: the other joins again and keeps unsynced edits as a draft', async () => {
     const { fake, opened } = await setup();
-    const { c, editor } = await opened();
-    editor.type('handing over');
-    await c.onReleaseRequest();
-    expect(fake.calls.map((x) => x.channel).filter((ch) => ch === 'note:save' || ch === 'lease:release')).toEqual(['note:save', 'lease:release']);
-    expect(c.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'lease', holderElsewhere: true });
+    const a = await opened(undefined, VIEW);
+    const b = await opened(undefined, OTHER_VIEW);
+    a.editor.type('Plan');
+    expect(await a.c.flush()).toEqual({ ok: true });
+    // B has an edit main never got: its push is still to come when the note is replaced.
+    const held: Array<() => void> = [];
+    const slowB: InfinityBridge = { ...fake.bridge, collab: { ...fake.bridge.collab, push: (req) => new Promise((r) => held.push(() => r(fake.bridge.collab.push(req)))) } };
+    (b.c as unknown as { deps: { bridge: InfinityBridge } }).deps.bridge = slowB;
+    b.editor.append(' unsynced');
+    expect(await a.c.convert('plain')).toEqual({ ok: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(a.c.store.getState()).toMatchObject({ format: 'plain', contentKey: 2 });
+    expect(b.c.store.getState()).toMatchObject({ format: 'plain', contentKey: 2, conflict: { reason: 'stale' } });
+    const draft = fake.data.drafts.find((d) => d.id === b.c.store.getState().conflict!.draftId)!;
+    expect(JSON.stringify(draft.content)).toContain('Plan unsynced');
+    for (const go of held) go();
   });
 
-  it('revision events from another view reload read-only and idle editors; own and busy ones are ignored', async () => {
-    const { fake, opened, stored } = await setup();
-    const { c, editor } = await opened();
-    c.onRevision({ noteId: c.noteId, revision: 1, sourceViewId: VIEW });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(c.store.getState().contentKey).toBe(1);
-    Object.assign(stored(), { revision: 1, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'from other' }] }] } });
-    c.onRevision({ noteId: c.noteId, revision: 1, sourceViewId: OTHER_VIEW });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(c.store.getState()).toMatchObject({ contentKey: 2, revision: 1 });
-    expect(JSON.stringify(c.store.getState().content)).toContain('from other');
-    // While edits are pending the event is ignored: the next save conflicts and keeps a draft instead.
-    editor.type('typing');
-    c.onRevision({ noteId: c.noteId, revision: 2, sourceViewId: OTHER_VIEW });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(c.store.getState().contentKey).toBe(2);
-    c.onRevision({ noteId: 'another-note', revision: 9, sourceViewId: OTHER_VIEW });
-    expect(fake.callsTo('note:open')).toHaveLength(2);
-  });
-
-  it('lease events track whether another view holds the note', async () => {
+  it('a reset that names a draft shows the conflict banner with it', async () => {
     const { opened } = await setup();
     const { c } = await opened();
-    c.onLease({ noteId: c.noteId, holderViewId: OTHER_VIEW });
-    expect(c.store.getState().holderElsewhere).toBe(true);
-    c.onLease({ noteId: c.noteId, holderViewId: null });
-    expect(c.store.getState().holderElsewhere).toBe(false);
-    c.onLease({ noteId: c.noteId, holderViewId: VIEW });
-    expect(c.store.getState().holderElsewhere).toBe(false);
+    const draftId = '44444444-4444-4444-8444-444444444444';
+    c.onReset({ noteId: c.noteId, conflict: { draftId, reason: 'stale' } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(c.store.getState().conflict).toEqual({ draftId, reason: 'stale' });
+  });
+
+  it('handleTrashed flushes pending edits into a trashed draft, leaves and shows the trash state; reopen brings it back', async () => {
+    const { fake, opened, stored } = await setup();
+    const { c, editor } = await opened();
+    editor.type('pending words');
+    Object.assign(stored(), { deletedAt: 5, batch: OTHER_VIEW });
+    const flushed = await c.handleTrashed(OTHER_VIEW);
+    expect(flushed).toMatchObject({ ok: false, code: 'CONFLICT', details: { reason: 'trashed' } });
+    expect(fake.data.drafts).toHaveLength(1);
+    expect(JSON.stringify(fake.data.drafts[0]!.content)).toContain('pending words');
+    expect(fake.callsTo('collab:leave')).toHaveLength(1);
+    expect(c.store.getState()).toMatchObject({ status: 'trashed', trashBatchId: OTHER_VIEW, save: 'saved' });
+
+    Object.assign(stored(), { deletedAt: null, batch: null });
+    await c.reopen();
+    expect(c.store.getState()).toMatchObject({ status: 'ready', trashBatchId: undefined, conflict: null });
+    expect(c.store.getState().drafts).toHaveLength(1);
   });
 });
 
 describe('NoteController: conversion, versions and drafts (INF-EDIT-05, INF-SAVE-06)', () => {
-  it('convert to plain text flushes first, applies the result and offers the formatted version back', async () => {
+  it('convert to plain text saves first, joins the new session and offers the formatted version back', async () => {
     const { fake, opened } = await setup();
     const { c, editor } = await opened();
     editor.type('Plan');
@@ -366,7 +318,8 @@ describe('NoteController: conversion, versions and drafts (INF-EDIT-05, INF-SAVE
     const convertReq = fake.callsTo('note:convertFormat')[0]!.req as { confirmLossy?: boolean; baseRevision: number };
     expect(convertReq).toMatchObject({ confirmLossy: true, baseRevision: 1 });
     const versionId = fake.data.versions[0]!.id;
-    expect(c.store.getState()).toMatchObject({ format: 'plain', content: 'Plan', revision: 2, contentKey: 2, converted: { versionId } });
+    expect(c.store.getState()).toMatchObject({ format: 'plain', revision: 2, contentKey: 2, converted: { versionId } });
+    expect(new TestSource(c).text).toBe('Plan');
     expect(await c.restoreVersion(versionId)).toEqual({ ok: true });
     expect(c.store.getState()).toMatchObject({ format: 'rich', revision: 3, converted: null });
     expect(JSON.stringify(c.store.getState().content)).toContain('Plan');
@@ -380,134 +333,30 @@ describe('NoteController: conversion, versions and drafts (INF-EDIT-05, INF-SAVE
     expect(c.store.getState()).toMatchObject({ format: 'rich', converted: null });
   });
 
-  it('a failed flush stops the conversion', async () => {
+  it('edits main refused stop the conversion', async () => {
     const { fake, opened } = await setup();
     const { c, editor } = await opened();
-    fake.failNext('note:save', { code: 'LIMIT_EXCEEDED', message: 'too big' });
+    fake.failNext('collab:push', { code: 'LIMIT_EXCEEDED', message: 'too big' });
     editor.type('x');
     expect(await c.convert('plain')).toEqual({ ok: false, message: 'too big' });
     expect(fake.callsTo('note:convertFormat')).toHaveLength(0);
   });
 
   it('restore draft applies it and refreshes; dismiss resolves it', async () => {
-    const { fake, opened, stored } = await setup();
-    const { c, editor } = await opened();
-    stored().revision = 1;
-    editor.type('my lost words');
-    await c.flush();
-    const draftId = c.store.getState().conflict!.draftId;
+    const { fake, opened } = await setup();
+    const { c } = await opened();
+    const draftId = '55555555-5555-4555-8555-555555555555';
+    fake.data.drafts.push({ id: draftId, noteId: c.noteId, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'my lost words' }] }] }, format: 'rich', baseRevision: 0, reason: 'conflict', createdAt: 1, resolved: false });
+    c.store.setState({ conflict: { draftId, reason: 'stale' } });
     expect(await c.restoreDraft(draftId)).toEqual({ ok: true });
-    expect(c.store.getState()).toMatchObject({ conflict: null, drafts: [], revision: 2 });
+    expect(c.store.getState()).toMatchObject({ conflict: null, drafts: [], revision: 1, contentKey: 2 });
     expect(JSON.stringify(c.store.getState().content)).toContain('my lost words');
     expect(fake.data.versions.map((v) => v.reason)).toEqual(['conflict']);
 
-    stored().revision = 7;
-    editor.type('another');
-    await c.flush();
-    const second = c.store.getState().conflict!.draftId;
+    const second = '66666666-6666-4666-8666-666666666666';
+    fake.data.drafts.push({ id: second, noteId: c.noteId, content: 'x', format: 'rich', baseRevision: 0, reason: 'conflict', createdAt: 2, resolved: false });
+    c.store.setState({ conflict: { draftId: second, reason: 'stale' } });
     expect(await c.dismissDraft(second)).toEqual({ ok: true });
     expect(c.store.getState()).toMatchObject({ conflict: null, drafts: [] });
-  });
-});
-
-describe('NoteController: edit control between tab and sticky (INF-STKY-07, D-065)', () => {
-  /** A bridge where another view holds the lease until `holder.free = true`; every acquire is counted. */
-  const heldElsewhere = (fake: FakeBridge, holder = { free: false, acquires: 0 }): InfinityBridge & { holder: typeof holder } => ({
-    ...fake.bridge,
-    holder,
-    lease: {
-      ...fake.bridge.lease,
-      acquire: async (req) => {
-        holder.acquires += 1;
-        return holder.free ? fake.bridge.lease.acquire(req) : { ok: true, data: { granted: false, holderViewId: OTHER_VIEW } };
-      },
-    },
-  });
-
-  it("open('take') takes a lease held elsewhere; open('acquire') stays a read-only mirror", async () => {
-    const { fake, make } = await setup();
-    const mirror = make(heldElsewhere(fake));
-    await mirror.open('acquire');
-    expect(mirror.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'lease' });
-    expect(fake.callsTo('lease:take')).toHaveLength(0);
-    const taker = make(heldElsewhere(fake));
-    await taker.open('take');
-    expect(taker.store.getState()).toMatchObject({ status: 'ready', readOnlyReason: null, holderElsewhere: false });
-    expect(fake.callsTo('lease:take')).toHaveLength(1);
-  });
-
-  it('ensureEditing waits for the open, takes control of a read-only view and does nothing for an editable one', async () => {
-    const { fake, make } = await setup();
-    const c = make(heldElsewhere(fake));
-    const opening = c.open();
-    const ensured = c.ensureEditing();
-    await opening;
-    expect(await ensured).toEqual({ ok: true });
-    expect(c.store.getState().status).toBe('ready');
-    expect(fake.callsTo('lease:take')).toHaveLength(1);
-    expect(await c.ensureEditing()).toEqual({ ok: true });
-    expect(fake.callsTo('lease:take')).toHaveLength(1);
-  });
-
-  it('a lease mirror acquires the lease when the holder goes away; a lost-lease view keeps its banner', async () => {
-    const { fake, make } = await setup();
-    const bridge = heldElsewhere(fake);
-    const c = make(bridge);
-    await c.open();
-    expect(bridge.holder.acquires).toBe(1);
-    bridge.holder.free = true;
-    c.onLease({ noteId: c.noteId, holderViewId: null });
-    expect(c.store.getState().busy).toBe('take');
-    // A second event while the acquire is in flight does not start another one.
-    c.onLease({ noteId: c.noteId, holderViewId: null });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(bridge.holder.acquires).toBe(2);
-    expect(c.store.getState()).toMatchObject({ status: 'ready', readOnlyReason: null, holderElsewhere: false, busy: null });
-    const editor = new TestSource(c);
-    editor.type('typing after the sticky closed');
-    expect(await c.flush()).toEqual({ ok: true });
-    expect(saves(fake)).toHaveLength(1);
-
-    const lostBridge = heldElsewhere(fake);
-    const lost = make(lostBridge);
-    await lost.open();
-    lost.store.setState({ readOnlyReason: 'leaseLost' });
-    lostBridge.holder.free = true;
-    lost.onLease({ noteId: lost.noteId, holderViewId: null });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(lost.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'leaseLost' });
-    expect(lostBridge.holder.acquires).toBe(1);
-  });
-
-  it('no auto-acquire while a take is in flight', async () => {
-    const { fake, make } = await setup();
-    const bridge = heldElsewhere(fake);
-    const c = make(bridge);
-    await c.open();
-    bridge.holder.free = true;
-    const taking = c.takeEditControl();
-    c.onLease({ noteId: c.noteId, holderViewId: null });
-    await taking;
-    expect(bridge.holder.acquires).toBe(1);
-    expect(fake.callsTo('lease:take')).toHaveLength(1);
-    expect(c.store.getState().status).toBe('ready');
-  });
-
-  it('handleTrashed flushes pending edits into a trashed draft, releases and shows the trash state; reopen brings it back', async () => {
-    const { fake, opened, stored } = await setup();
-    const { c, editor } = await opened();
-    editor.type('pending words');
-    Object.assign(stored(), { deletedAt: 5, batch: OTHER_VIEW });
-    const flushed = await c.handleTrashed(OTHER_VIEW);
-    expect(flushed).toMatchObject({ ok: false, code: 'CONFLICT', details: { reason: 'trashed' } });
-    expect(fake.data.drafts).toHaveLength(1);
-    expect(JSON.stringify(fake.data.drafts[0]!.content)).toContain('pending words');
-    expect(fake.callsTo('lease:release')).toHaveLength(1);
-    expect(c.store.getState()).toMatchObject({ status: 'trashed', trashBatchId: OTHER_VIEW, save: 'saved' });
-
-    Object.assign(stored(), { deletedAt: null, batch: null });
-    await c.reopen();
-    expect(c.store.getState()).toMatchObject({ status: 'ready', trashBatchId: undefined, conflict: null });
-    expect(c.store.getState().drafts).toHaveLength(1);
   });
 });

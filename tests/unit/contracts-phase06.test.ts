@@ -22,8 +22,8 @@ const input = { title: 'Have to submit this', zoneId: 'Asia/Dhaka', date: '2026-
 
 describe('Phase 06 catalogue (D-089)', () => {
   it('the four channels are appended after autostart:set in order, no new event', () => {
-    expect(INVOKE_CHANNELS.slice(66, 71)).toEqual(['autostart:set', 'reminder:createFromSuggestion', 'reminder:updateFromSource', 'suggestion:dismiss', 'suggestion:listDismissed']);
-    expect(EVENT_CHANNELS).toHaveLength(12);
+    expect(INVOKE_CHANNELS.slice(63, 68)).toEqual(['autostart:set', 'reminder:createFromSuggestion', 'reminder:updateFromSource', 'suggestion:dismiss', 'suggestion:listDismissed']);
+    expect(EVENT_CHANNELS).toHaveLength(13);
   });
 
   it('stickies may add reminders and confirm or dismiss suggestions, never edit reminders; the widget gets nothing new', () => {
@@ -36,7 +36,8 @@ describe('Phase 06 catalogue (D-089)', () => {
       expect(isChannelAllowed('main', channel), channel).toBe(true);
     }
     // 35 after Phase 06; Phase 07 adds attachment:open and attachment:showInFolder (D-098).
-    expect(STICKY_ALLOWED_CHANNELS.size).toBe(37);
+    // The three lease channels gave way to the five live-sync channels (D-103).
+    expect(STICKY_ALLOWED_CHANNELS.size).toBe(39);
     expect([...WIDGET_ALLOWED_CHANNELS]).toEqual([
       'app:getInfo',
       'app:quit',

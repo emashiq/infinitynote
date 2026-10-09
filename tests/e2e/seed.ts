@@ -56,7 +56,7 @@ export async function favorite(page: Page, kind: 'project' | 'folder' | 'note', 
   unwrap(await page.evaluate(([k, i, f]) => window.infinity.item.setFavorite({ kind: k as 'note', id: i as string, favorite: f as boolean }), [kind, id, on] as const), 'item.setFavorite');
 }
 
-/** note:open + lease:acquire + note:save + lease:release, as a separate view so the open UI never holds the lease. */
+/** note:open + note:save at the stored revision: a whole-content write, as another writer would make (D-103). */
 export async function saveDoc(page: Page, noteId: string, doc: { type: 'doc'; content?: unknown[] }, plainText?: string): Promise<number> {
   const viewId = randomUUID();
   const requestId = randomUUID();
@@ -65,20 +65,14 @@ export async function saveDoc(page: Page, noteId: string, doc: { type: 'doc'; co
       const bridge = window.infinity;
       const opened = await bridge.note.open({ noteId: id as string });
       if (!opened.ok) return opened;
-      const lease = await bridge.lease.acquire({ noteId: id as string, viewId: view as string });
-      if (!lease.ok) return lease;
-      if (!lease.data.granted) return { ok: false as const, error: { code: 'LEASE_REQUIRED', message: 'lease held elsewhere' } };
-      const saved = await bridge.note.save({
+      return bridge.note.save({
         noteId: id as string,
         viewId: view as string,
-        leaseToken: lease.data.leaseToken,
         baseRevision: opened.data.revision,
         requestId: req as string,
         // A plain-text note stores the text itself (saveText passes it).
         ...(opened.data.format === 'plain' ? { format: 'plain' as const, content: plain as string } : { format: 'rich' as const, content: body as { type: 'doc' } }),
       });
-      await bridge.lease.release({ noteId: id as string, viewId: view as string, leaseToken: lease.data.leaseToken });
-      return saved;
     },
     [noteId, viewId, requestId, doc, plainText ?? ''] as const,
   );

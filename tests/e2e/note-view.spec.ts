@@ -155,47 +155,61 @@ test('the note view is only the text, its tab is the title, with formatting, ins
   await expect.poll(() => h.setting('layout.panelOpen')).toEqual({ v: 1, value: false });
 });
 
-test('the whole sticky header drags; only its small controls do not, and F2 or Rename edit the title (N-O2, D-102)', async () => {
+test('the sticky title is edited in place; the rest of the header drags and only its controls do not (N-O2, D-102)', async () => {
   const { app, page } = await h.start();
   const id = await createNote(page, COMMON, 'Groceries', { sticky: true });
   await saveText(page, id, 'milk');
+  await reloadUi(page);
+  await openFromTree(page, id);
   await page.evaluate((noteId) => window.infinity.sticky.float({ noteId }), id);
   const sp = await stickyPage(app, id);
   await expect(editor(sp)).toHaveText('milk');
 
-  // The title is text inside the drag region; the controls are no-drag islands.
+  // The title is a field as wide as its text; the header around it drags, the controls do not.
   const header = stickyHeader(sp);
-  await expect(header.locator('.sticky-title')).toHaveText('Groceries');
-  await expect(titleInput(sp)).toHaveCount(0);
-  for (const selector of ['.sticky-header', '.sticky-title', '.sticky-badge']) expect(await appRegion(sp, selector), selector).toBe('drag');
+  const title = titleInput(sp);
+  await expect(title).toHaveValue('Groceries');
+  for (const selector of ['.sticky-header', '.sticky-badge']) expect(await appRegion(sp, selector), selector).toBe('drag');
+  expect(await appRegion(sp, '.sticky-title-input')).toBe('no-drag');
   const controls = header.getByRole('button');
   await expect(controls).toHaveCount(5);
   for (const control of await controls.all()) expect(await control.evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-app-region').trim())).toBe('no-drag');
-  // The controls are small: most of the header is drag area.
-  const headerWidth = (await header.boundingBox())!.width;
-  const controlsWidth = (await Promise.all((await controls.all()).map(async (c) => (await c.boundingBox())!.width))).reduce((a, b) => a + b, 0);
-  expect(controlsWidth).toBeLessThan(headerWidth / 2);
+  const headerBox = (await header.boundingBox())!;
+  const titleBox = (await title.boundingBox())!;
+  expect(titleBox.width).toBeLessThan(headerBox.width / 3);
+  // The empty header space between the controls is the drag region.
+  const actionsBox = (await header.getByRole('button', { name: 'Sticky actions', exact: true }).boundingBox())!;
+  const closeBox = (await header.getByRole('button', { name: 'Close sticky', exact: true }).boundingBox())!;
+  expect(closeBox.x - (actionsBox.x + actionsBox.width)).toBeGreaterThan(20);
+  const gapRegion = await sp.evaluate(
+    ([x, y]) => getComputedStyle(document.elementFromPoint(x!, y!)!).getPropertyValue('-webkit-app-region').trim(),
+    [(actionsBox.x + actionsBox.width + closeBox.x) / 2, headerBox.y + headerBox.height / 2],
+  );
+  expect(gapRegion).toBe('drag');
 
-  // F2 shows the title as a no-drag field; Enter saves and moves into the text.
-  await editor(sp).click();
-  await sp.keyboard.press('F2');
-  await expect(titleInput(sp)).toBeFocused();
-  await expect(titleInput(sp)).toHaveValue('Groceries');
-  expect(await appRegion(sp, '.sticky-title-input')).toBe('no-drag');
+  // A click edits the title; typing and Enter rename the note (stored, and in the main window's tab) and move into the text.
+  await title.click();
+  await expect(title).toBeFocused();
+  await sp.keyboard.press('Control+A');
   await sp.keyboard.type('Shopping');
   await sp.keyboard.press('Enter');
   await expect(editor(sp)).toBeFocused();
-  await expect(header.locator('.sticky-title')).toHaveText('Shopping');
   await expect.poll(() => titleOf(id)).toBe('Shopping');
+  await expect(title).toHaveValue('Shopping');
+  await expect(activeTab(page)).toHaveText('Shopping');
 
-  // Rename in the actions menu; Escape keeps the title.
-  await activate(header.getByRole('button', { name: 'Sticky actions', exact: true }));
-  await activate(sp.getByRole('menu', { name: 'Sticky actions' }).getByRole('menuitem', { name: 'Rename', exact: true }));
-  await expect(titleInput(sp)).toBeFocused();
+  // F2 selects the title; Escape keeps it.
+  await sp.keyboard.press('F2');
+  await expect(title).toBeFocused();
   await sp.keyboard.type('Not this');
   await sp.keyboard.press('Escape');
-  await expect(titleInput(sp)).toHaveCount(0);
   await expect(editor(sp)).toBeFocused();
-  await expect(header.locator('.sticky-title')).toHaveText('Shopping');
+  await expect(title).toHaveValue('Shopping');
   await expect.poll(() => titleOf(id)).toBe('Shopping');
+
+  // Rename in the actions menu selects it too.
+  await activate(header.getByRole('button', { name: 'Sticky actions', exact: true }));
+  await activate(sp.getByRole('menu', { name: 'Sticky actions' }).getByRole('menuitem', { name: 'Rename', exact: true }));
+  await expect(title).toBeFocused();
+  expect(await title.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 'Shopping'.length]);
 });

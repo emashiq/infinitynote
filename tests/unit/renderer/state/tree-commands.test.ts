@@ -73,8 +73,10 @@ describe('TreeStore', () => {
     typeInto(services.tabs.activeController()!, 'last words');
     const r = await services.tree.trashNote(a.id);
     expect(r.ok).toBe(true);
-    const order = fake.calls.map((c) => c.channel).filter((c) => c === 'note:save' || c === 'note:trash');
-    expect(order).toEqual(['note:save', 'note:trash']);
+    // Saved before the trash; the trashed note's view then flushes once more (nothing left, no draft).
+    const order = fake.calls.map((c) => c.channel).filter((c) => c === 'collab:flush' || c === 'note:trash');
+    expect(order.slice(0, 2)).toEqual(['collab:flush', 'note:trash']);
+    expect(fake.data.drafts).toEqual([]);
   });
 
   it('restore pushes the notice with and without relocation', async () => {
@@ -259,7 +261,7 @@ describe('app services', () => {
     expect(services.layout.store.getState()).toMatchObject({ treeMode: 'docked', panelMode: 'docked', viewportWidth: 1280 });
   });
 
-  it('dispose flushes the active note and releases its lease', async () => {
+  it('dispose flushes the active note and leaves its live-sync session', async () => {
     const { services, fake } = await setupServices();
     const note = await makeNote(fake, undefined, 'A');
     await services.tabs.openNote(note.id);
@@ -267,6 +269,6 @@ describe('app services', () => {
     typeInto(services.tabs.activeController()!, 'kept');
     await services.dispose();
     expect(JSON.stringify(fake.data.notes[0]!.content)).toContain('kept');
-    expect(fake.data.leases.size).toBe(0);
+    expect(fake.data.sessions.size).toBe(0);
   });
 });

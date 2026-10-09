@@ -4,13 +4,6 @@ import { CHANNEL_SCHEMAS, EVENT_SCHEMAS } from '../../src/shared/contracts/chann
 import { EVENT_CHANNELS, INVOKE_CHANNELS } from '../../src/shared/contracts/channel-names';
 import { ERROR_CODES, fail, ok } from '../../src/shared/contracts/envelope';
 import {
-  LeaseAcquireRequest,
-  LeaseAcquireResponse,
-  LeaseReleaseRequest,
-  LeaseReleaseResponse,
-  LeaseTakeRequest,
-  LeaseTakeResponse,
-  NoteLeaseEvent,
   NoteRevisionEvent,
   NoteSaveAck,
   NoteSaveRequest,
@@ -20,7 +13,6 @@ import { SETTINGS, SettingsGetRequest, SettingsSetRequest } from '../../src/shar
 const base = () => ({
   noteId: randomUUID(),
   viewId: randomUUID(),
-  leaseToken: randomUUID(),
   baseRevision: 0,
   requestId: randomUUID(),
 });
@@ -48,27 +40,17 @@ describe('note:save schema (INF-FND-13)', () => {
     expect(NoteSaveRequest.safeParse({ ...base(), format: 'rich', content: { type: 'not-doc' } }).success).toBe(false);
   });
 
-  it('defines ack, lease and event shapes', () => {
+  it('defines ack and event shapes; a lease token is no longer part of a save (D-103)', () => {
     const id = randomUUID();
     expect(NoteSaveAck.safeParse({ noteId: id, revision: 1, requestId: id, updatedAt: 5 }).success).toBe(true);
-    expect(LeaseAcquireRequest.safeParse({ noteId: id, viewId: id }).success).toBe(true);
-    expect(LeaseAcquireResponse.safeParse({ granted: true, leaseToken: id }).success).toBe(true);
-    expect(LeaseAcquireResponse.safeParse({ granted: false, holderViewId: id }).success).toBe(true);
-    expect(LeaseAcquireResponse.safeParse({ granted: true }).success).toBe(false);
-    expect(LeaseReleaseRequest.safeParse({ noteId: id, viewId: id, leaseToken: id }).success).toBe(true);
-    expect(LeaseReleaseResponse.safeParse({ released: true }).success).toBe(true);
-    expect(LeaseTakeRequest.safeParse({ noteId: id, viewId: id }).success).toBe(true);
-    expect(LeaseTakeResponse.safeParse({ leaseToken: id }).success).toBe(true);
     expect(NoteRevisionEvent.safeParse({ noteId: id, revision: 2, sourceViewId: id }).success).toBe(true);
-    expect(NoteLeaseEvent.safeParse({ noteId: id, holderViewId: null }).success).toBe(true);
+    expect(NoteSaveRequest.safeParse({ ...base(), leaseToken: id, format: 'plain', content: 'x' }).success).toBe(false);
   });
 });
 
 describe('IPC contract catalogue (INF-FND-04)', () => {
-  it('ERROR_CODES are exactly the nine codes', () => {
-    expect([...ERROR_CODES]).toEqual([
-      'VALIDATION_FAILED', 'NOT_FOUND', 'CONFLICT', 'LEASE_REQUIRED', 'CYCLE', 'LIMIT_EXCEEDED', 'UNSUPPORTED', 'FORBIDDEN', 'INTERNAL',
-    ]);
+  it('ERROR_CODES are exactly the eight codes (LEASE_REQUIRED went with the lease, D-103)', () => {
+    expect([...ERROR_CODES]).toEqual(['VALIDATION_FAILED', 'NOT_FOUND', 'CONFLICT', 'CYCLE', 'LIMIT_EXCEEDED', 'UNSUPPORTED', 'FORBIDDEN', 'INTERNAL']);
   });
 
   it('envelope helpers build the documented shape', () => {
@@ -85,13 +67,11 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
     }
   });
 
-  it('event channels are the Phase 01-05 events (D-052, D-063, D-074)', () => {
+  it('event channels are the Phase 01-05 events without the lease events, then live sync (D-052, D-063, D-074, D-103)', () => {
     const events = [
       'settings:changed',
       'tree:changed',
       'note:revision',
-      'note:lease',
-      'lease:release-request',
       'app:flush-request',
       'sticky:state',
       'app:openNote',
@@ -99,14 +79,18 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
       'reminder:alert',
       'widget:state',
       'app:openReminders',
+      'collab:steps',
+      'collab:reset',
+      'collab:status',
     ];
     expect([...EVENT_CHANNELS]).toEqual(events);
     expect(Object.keys(EVENT_SCHEMAS)).toEqual(events);
   });
 
-  it('the Phase 03 channels are in the catalogue in order (D-052)', () => {
-    expect(INVOKE_CHANNELS.slice(31, 41)).toEqual([
-      'lease:take',
+  it('the Phase 03 channels are in the catalogue in order, the lease channels removed (D-052, D-103)', () => {
+    expect(INVOKE_CHANNELS.slice(27, 38)).toEqual([
+      'note:open',
+      'note:save',
       'note:convertFormat',
       'versions:list',
       'versions:restore',
@@ -120,7 +104,7 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
   });
 
   it('the Phase 04 channels are appended in order (D-063)', () => {
-    expect(INVOKE_CHANNELS.slice(41, 50)).toEqual([
+    expect(INVOKE_CHANNELS.slice(38, 47)).toEqual([
       'sticky:float',
       'sticky:dock',
       'sticky:hide',
@@ -134,8 +118,8 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
   });
 
   it('the Phase 07 and Phase 08 channels are appended in order, and note:trashed was not added (D-063, D-098, D-099)', () => {
-    expect(INVOKE_CHANNELS.slice(71, 78)).toEqual(['refs:list', 'notes:pick', 'search:query', 'tags:list', 'tags:set', 'attachment:open', 'attachment:showInFolder']);
-    expect(INVOKE_CHANNELS.slice(78)).toEqual([
+    expect(INVOKE_CHANNELS.slice(68, 75)).toEqual(['refs:list', 'notes:pick', 'search:query', 'tags:list', 'tags:set', 'attachment:open', 'attachment:showInFolder']);
+    expect(INVOKE_CHANNELS.slice(75, 87)).toEqual([
       'backup:create',
       'backup:prepareRestore',
       'backup:restore',
@@ -149,14 +133,15 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
       'shortcut:getGlobal',
       'shortcut:setGlobal',
     ]);
-    expect(INVOKE_CHANNELS).toHaveLength(90);
-    expect(EVENT_CHANNELS).toHaveLength(12);
+    expect(INVOKE_CHANNELS.slice(87)).toEqual(['collab:join', 'collab:push', 'collab:pull', 'collab:flush', 'collab:leave']);
+    expect(INVOKE_CHANNELS).toHaveLength(92);
+    expect(EVENT_CHANNELS).toHaveLength(13);
     const all: string[] = [...INVOKE_CHANNELS, ...EVENT_CHANNELS];
     for (const name of ['note:trashed', 'sticky:removeSticky', 'attachment:importImageBytes']) {
       expect(all, name).not.toContain(name);
     }
     expect(all).toContain('note:save');
-    expect(all).toContain('lease:take');
+    for (const name of ['lease:acquire', 'lease:release', 'lease:take', 'note:lease', 'lease:release-request']) expect(all, name).not.toContain(name);
   });
 
   it('empty-request channels are strict objects', () => {

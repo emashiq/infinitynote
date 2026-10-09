@@ -4,7 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { describe, expect, it } from 'vitest';
 import { createDocLimits, TOO_DEEP_MESSAGE, TOO_MANY_PARTS_MESSAGE } from '../../../../src/renderer/editor/doc-limits';
 import { LARGE_PASTE_CHARS, MAX_PASTE_CHARS, PASTE_TOO_LARGE } from '../../../../src/renderer/editor/paste';
-import { toSavable } from '../../../../src/renderer/editor/content';
+import { toSavable } from '../../../../src/shared/editor/savable';
 import { MAX_DOC_DEPTH, normalizeRichDoc } from '../../../../src/shared/editor/doc-schema';
 import { makeEditor, pasteEvent, tick } from './support';
 

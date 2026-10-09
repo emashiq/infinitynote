@@ -205,11 +205,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
         onTreeChangedForReminders(event, reminderChanged, wakeReminders);
       },
       onNoteRevision: emitRevision,
-      onLeaseChanged: (event) => eventBus.broadcast('note:lease', event),
-      requestLeaseRelease: (holder, noteId) => {
-        if (hooks?.ownsWebContents(holder.webContentsId)) hooks.onReleaseRequest(noteId);
-        else eventBus.sendTo(holder.webContentsId, 'lease:release-request', { noteId });
-      },
+      sendCollab: (webContentsId, channel, payload) => void eventBus.sendTo(webContentsId, channel, payload),
       reminderClock,
       zones,
       onReminderChanged: reminderChanged,
@@ -218,8 +214,8 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     });
     hooks?.attachServices({ services, db, clock: systemClock, emitRevision });
     applyNativeTheme(services.settings.getInternal('appearance.theme'));
-    const { leases } = services;
-    app.on('web-contents-created', (_e, wc) => wc.on('destroyed', () => leases.webContentsReset(wc.id)));
+    const { collab } = services;
+    app.on('web-contents-created', (_e, wc) => wc.on('destroyed', () => collab.webContentsReset(wc.id)));
     void services.attachments.sweepTmp(systemClock.now()).then((removed) => {
       if (removed > 0) log.info(`attachments: removed ${removed} stale temporary file(s)`);
     });
@@ -302,7 +298,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       emitChanged: reminderChanged,
       emitAlert: sendAlert,
       requestAttention: () => mainWindow.requestAttention(),
-      openNote: (noteId, blockId) => mainWindow.openNote(noteId, false, blockId),
+      openNote: (noteId, blockId) => mainWindow.openNote(noteId, blockId),
       openReminders: (view) => mainWindow.openReminders(view),
     });
     hooks?.attachReminders({ scheduler, db });
@@ -346,6 +342,8 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   app.on('will-quit', () => {
     scheduler?.stop();
     shortcut?.stop();
+    // The windows flushed before quitting; whatever main still holds of their edits is saved now (D-072, D-103).
+    services?.collab.closeAll();
     try {
       db?.close();
     } catch {

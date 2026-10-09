@@ -2,7 +2,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { appArgs, appEnv, appExecutable, readMainLog, spawnAndWait } from './fixtures';
 import { useApp } from './harness';
 import { COMMON, createFolder, createNote, createProject, reloadUi, saveText } from './seed';
-import { activate, chooseMenu, confirmDialog, dialogByName, openByPalette, openFromTree, railGo, tabs, treeByKey } from './ui';
+import { activate, chooseMenu, confirmDialog, dialogByName, openByPalette, openFromTree, railGo, tabs, titleInput, treeByKey } from './ui';
 import { editor, editorText, paletteAction } from './editor-ui';
 import {
   closeWindowByUrl,
@@ -24,7 +24,6 @@ const h = useApp({ failOnMainErrors: true });
 const WIN = process.platform === 'win32';
 /** Hosts that report programmatic window geometry as set (probe): Windows and Xvfb. WSLg shifts windows by its frame. */
 const EXACT_GEOMETRY = WIN || !process.env.WAYLAND_DISPLAY;
-const LEASE_BANNER = 'This note is being edited in another window';
 const MISSING = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
 interface NoteDb {
@@ -106,7 +105,7 @@ test('float opens one native window for the same note id (INF-STKY-01)', async (
   const sp = await stickyPage(app, id);
   expect(sp.url()).toBe(`infinity-app://renderer/index.html#/sticky/${id}`);
   await expect.poll(async () => (await windowsOf(app)).stickies.map((s) => ({ noteId: s.noteId, visible: s.visible }))).toEqual([{ noteId: id, visible: true }]);
-  await expect(stickyHeader(sp).locator('.sticky-title')).toHaveText('Groceries');
+  await expect(titleInput(sp)).toHaveValue('Groceries');
   await expect(editor(sp)).toHaveText('milk');
   expect(noteRow(id)).toMatchObject({ sticky_enabled: 1, color: 'yellow', revision: revisionBefore });
   expect(h.all('SELECT id FROM notes')).toHaveLength(notesBefore);
@@ -198,7 +197,6 @@ test('dock preserves content and edit control (INF-STKY-03)', async () => {
   expect(noteRow(id).sticky_enabled).toBe(1);
   await expect(tabs(page).filter({ hasText: 'Dockable' })).toHaveAttribute('aria-selected', 'true');
   await expect.poll(() => editorText(page)).toBe('start docked');
-  await expect(page.getByText(LEASE_BANNER)).toHaveCount(0);
   await expect(editor(page)).toHaveAttribute('aria-readonly', 'false');
   expect(noteRow(id).plain_text).toBe('start docked');
   expect(draftCount()).toBe(0);
@@ -429,7 +427,7 @@ test('size only where positioning is unsupported (INF-STKY-06)', async () => {
   expect(creates[1]).toEqual({ width: reported.width, height: reported.height });
 });
 
-test('edit control moves between tab and sticky without losing text (INF-STKY-07)', async () => {
+test('tab and sticky edit the same note together without losing text (INF-STKY-07, D-103)', async () => {
   const { app, page } = await h.start();
   const id = await createNote(page, COMMON, 'Relay');
   await reloadUi(page);
@@ -444,25 +442,21 @@ test('edit control moves between tab and sticky without losing text (INF-STKY-07
   await floatFromTab(page);
   const sp = await stickyPage(app, id);
   await expect(editor(sp)).toHaveText('one');
+  // Both views edit at once (D-103): no read-only mirror, no edit control to take.
   await expect(editor(sp)).toHaveAttribute('aria-readonly', 'false');
-  await expect(page.getByText(LEASE_BANNER)).toBeVisible();
-  await expect(editor(page)).toHaveAttribute('aria-readonly', 'true');
+  await expect(editor(page)).toHaveAttribute('aria-readonly', 'false');
   await settled('one');
 
   await typeEnd(sp, ' two');
   await expect.poll(() => editorText(page)).toBe('one two');
   await settled('one two');
 
-  await activate(page.getByRole('button', { name: 'Take edit control' }));
-  await expect(sp.getByText(LEASE_BANNER)).toBeVisible();
-  await expect(editor(sp)).toHaveAttribute('aria-readonly', 'true');
   await typeEnd(page, ' three');
   await expect.poll(() => editorText(sp)).toBe('one two three');
   await settled('one two three');
 
   await stickyMenu(sp, 'Hide');
   await expect.poll(() => stickyNoteIds(app)).toEqual([]);
-  await expect(page.getByText(LEASE_BANNER)).toHaveCount(0);
   await expect(editor(page)).toHaveAttribute('aria-readonly', 'false');
 
   await floatFromTab(page);
@@ -476,23 +470,6 @@ test('edit control moves between tab and sticky without losing text (INF-STKY-07
   for (let i = 1; i < revisions.length; i += 1) expect(revisions[i]!).toBeGreaterThan(revisions[i - 1]!);
   expect(draftCount()).toBe(0);
   console.log(`INF-STKY-07 revisions per step: ${revisions.join(' < ')}; note_drafts=${draftCount()}`);
-});
-
-test('a mirror becomes editable when the editing sticky closes (INF-STKY-07)', async () => {
-  const { app, page } = await h.start();
-  const id = await createNote(page, COMMON, 'Mirror');
-  await saveText(page, id, 'base');
-  await reloadUi(page);
-  await openFromTree(page, id);
-  await floatFromTab(page);
-  const sp = await stickyPage(app, id);
-  await expect(editor(sp)).toHaveAttribute('aria-readonly', 'false');
-  await expect(page.getByText(LEASE_BANNER)).toBeVisible();
-  await stickyMenu(sp, 'Hide');
-  await expect(page.getByText(LEASE_BANNER)).toHaveCount(0, { timeout: 2000 });
-  await typeEnd(page, ' after');
-  await expect.poll(() => noteRow(id).plain_text).toBe('base after');
-  expect(draftCount()).toBe(0);
 });
 
 test('trashing a floating note shows a recoverable trash state (INF-STKY-08)', async () => {

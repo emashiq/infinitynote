@@ -15,7 +15,7 @@ export type CloseBehaviorType = z.infer<typeof CloseBehavior>;
 export const MAX_QUEUED_OPENS = 50;
 
 /** A note main asks the main window to open; `blockId` reveals an anchored block (notification click, D-074). */
-export const AppOpenNoteEvent = z.strictObject({ noteId: Uuid, takeEdit: z.boolean(), blockId: Uuid.nullable().default(null) });
+export const AppOpenNoteEvent = z.strictObject({ noteId: Uuid, blockId: Uuid.nullable().default(null) });
 export type AppOpenNoteEventType = z.infer<typeof AppOpenNoteEvent>;
 
 export const WindowGetStateResponse = z.discriminatedUnion('role', [

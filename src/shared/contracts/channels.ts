@@ -11,6 +11,21 @@ import {
 } from './attachments';
 import type { EventChannel, InvokeChannel } from './channel-names';
 import {
+  CollabFlushRequest,
+  CollabFlushResponse,
+  CollabJoinRequest,
+  CollabLeaveRequest,
+  CollabLeaveResponse,
+  CollabPullRequest,
+  CollabPullResponse,
+  CollabPushRequest,
+  CollabPushResponse,
+  CollabResetEvent,
+  CollabSnapshot,
+  CollabStatusEvent,
+  CollabStepsEvent,
+} from './collab';
+import {
   FolderCreateRequest,
   FolderIdRequest,
   FolderMoveRequest,
@@ -44,16 +59,8 @@ import {
   DraftsListResponse,
   DraftsResolveRequest,
   DraftsResolveResponse,
-  LeaseAcquireRequest,
-  LeaseAcquireResponse,
-  LeaseReleaseRequest,
-  LeaseReleaseRequestEvent,
-  LeaseReleaseResponse,
-  LeaseTakeRequest,
-  LeaseTakeResponse,
   NoteContentResponse,
   NoteConvertRequest,
-  NoteLeaseEvent,
   NoteOpenRequest,
   NoteOpenResponse,
   NoteRevisionEvent,
@@ -164,9 +171,6 @@ export const CHANNEL_SCHEMAS = {
   'palette:searchTitles': { request: PaletteSearchRequest, response: PaletteSearchResponse },
   'note:open': { request: NoteOpenRequest, response: NoteOpenResponse },
   'note:save': { request: NoteSaveRequest, response: NoteSaveAck },
-  'lease:acquire': { request: LeaseAcquireRequest, response: LeaseAcquireResponse },
-  'lease:release': { request: LeaseReleaseRequest, response: LeaseReleaseResponse },
-  'lease:take': { request: LeaseTakeRequest, response: LeaseTakeResponse },
   'note:convertFormat': { request: NoteConvertRequest, response: NoteContentResponse },
   'versions:list': { request: VersionsListRequest, response: VersionsListResponse },
   'versions:restore': { request: VersionsRestoreRequest, response: NoteContentResponse },
@@ -225,14 +229,17 @@ export const CHANNEL_SCHEMAS = {
   'import:portable': { request: Empty, response: ImportPortableResponse },
   'shortcut:getGlobal': { request: Empty, response: ShortcutState },
   'shortcut:setGlobal': { request: ShortcutSetRequest, response: ShortcutState },
+  'collab:join': { request: CollabJoinRequest, response: CollabSnapshot },
+  'collab:push': { request: CollabPushRequest, response: CollabPushResponse },
+  'collab:pull': { request: CollabPullRequest, response: CollabPullResponse },
+  'collab:flush': { request: CollabFlushRequest, response: CollabFlushResponse },
+  'collab:leave': { request: CollabLeaveRequest, response: CollabLeaveResponse },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {
   'settings:changed': SettingsChangedEvent,
   'tree:changed': TreeChangedEvent,
   'note:revision': NoteRevisionEvent,
-  'note:lease': NoteLeaseEvent,
-  'lease:release-request': LeaseReleaseRequestEvent,
   'app:flush-request': AppFlushRequestEvent,
   'sticky:state': StickyState,
   'app:openNote': AppOpenNoteEvent,
@@ -240,6 +247,9 @@ export const EVENT_SCHEMAS = {
   'reminder:alert': ReminderAlertEvent,
   'widget:state': WidgetState,
   'app:openReminders': AppOpenRemindersEvent,
+  'collab:steps': CollabStepsEvent,
+  'collab:reset': CollabResetEvent,
+  'collab:status': CollabStatusEvent,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 type ChannelSchemas = typeof CHANNEL_SCHEMAS;

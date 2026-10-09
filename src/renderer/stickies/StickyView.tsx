@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { useEffect, useRef, useState } from 'react';
 import { displayTitle } from '../../shared/names';
 import { EditorHandle } from '../editor/editor-handle';
 import { NoteEditor } from '../editor/NoteEditor';
@@ -8,7 +7,7 @@ import { ReminderChipBar } from '../reminders/ReminderChipBar';
 import { NoteBanners } from '../notes/NoteBanners';
 import type { ActionResult } from '../notes/note-controller';
 import { NoteDialogs, type NoteDialog } from '../notes/NoteDialogs';
-import { TitleRenameInput } from '../notes/TitleRenameInput';
+import { NoteTitleField } from '../notes/NoteTitleField';
 import { NoticeList } from '../shell/Notices';
 import { useStore } from '../state/use-store';
 import { ConfirmRunner, TRASH_CONFIRM } from '../ui/ConfirmDialog';
@@ -50,14 +49,13 @@ function StickyNote({ editorHandle, findRequest, onFindHandled }: { editorHandle
   if (state.status === 'missing' || state.status === 'error' || state.content === null) {
     return <p className="muted sticky-message">{state.status === 'missing' ? 'This note no longer exists' : 'This note could not be opened'}</p>;
   }
-  const readOnly = state.status === 'readOnly';
+  const busy = state.busy !== null;
   return (
     <>
       <NoteBanners
         state={state}
         now={now()}
         actions={{
-          takeEditControl: () => report(controller.takeEditControl()),
           compare: (draftId) => setDialog({ kind: 'compare', draftId }),
           restoreDraft: (draftId) => report(controller.restoreDraft(draftId)),
           dismissDraft: (draftId) => report(controller.dismissDraft(draftId)),
@@ -71,7 +69,8 @@ function StickyNote({ editorHandle, findRequest, onFindHandled }: { editorHandle
         host={controller}
         format={state.format}
         content={state.content}
-        editable={!readOnly}
+        sync={{ version: state.syncVersion, clientID: controller.viewId }}
+        editable={!busy}
         variant="sticky"
         chips={noteReminders.chips}
         onChipClick={openReminder}
@@ -95,7 +94,7 @@ function StickyNote({ editorHandle, findRequest, onFindHandled }: { editorHandle
         controller={controller}
         dialog={dialog}
         onDialog={setDialog}
-        readOnly={readOnly}
+        busy={busy}
         now={now()}
         report={report}
         bridge={core.bridge}
@@ -117,10 +116,16 @@ export function StickyView() {
   const [editorHandle] = useState(() => new EditorHandle());
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [findRequest, setFindRequest] = useState<object | null>(null);
-  const [renaming, setRenaming] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
   const trashed = sticky?.trashed != null || note.status === 'trashed';
   const collapsed = sticky?.collapsed ?? false;
   const canRename = !trashed && note.status === 'ready';
+
+  // F2 and Rename move into the title with it selected; a click puts the caret where it lands (D-102).
+  const rename = () => {
+    titleRef.current?.focus();
+    titleRef.current?.select();
+  };
 
   // Ctrl+W hides the window, Ctrl+F finds in the note and F2 renames it (UX_SPEC section 7). The window closes when
   // the W key is released, so the key's release never reaches a closed window or the window that gets the focus next.
@@ -129,7 +134,8 @@ export function StickyView() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && canRename) {
         e.preventDefault();
-        setRenaming(true);
+        titleRef.current?.focus();
+        titleRef.current?.select();
         return;
       }
       if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
@@ -171,30 +177,26 @@ export function StickyView() {
         trashed={trashed}
         pinSupported={caps?.alwaysOnTop.status !== 'unsupported'}
         canRename={canRename}
-        renameField={
-          renaming && canRename ? (
-            <TitleRenameInput
-              controller={controller}
-              initial={sticky.title}
-              className="sticky-title-input"
-              editor={editorHandle}
-              onDone={(how) => {
-                if (how !== 'escape') {
-                  setRenaming(false);
-                  return;
-                }
-                flushSync(() => setRenaming(false));
-                editorHandle.focus('end');
-              }}
-            />
-          ) : null
+        titleField={
+          <NoteTitleField
+            controller={controller}
+            title={sticky.title}
+            className="sticky-title-input"
+            editor={editorHandle}
+            readOnly={!canRename}
+            inputRef={titleRef}
+            onDone={(how) => {
+              if (how === 'escape') editorHandle.focus('end');
+            }}
+          />
         }
         actions={{
           setColor: (color) => void actions.setColor(color),
           togglePinned: () => void actions.togglePinned(),
           toggleCollapsed: () => void actions.toggleCollapsed(),
           openInApp: () => void actions.dock(),
-          rename: () => setRenaming(true),
+          // After the menu has given the focus back to its button.
+          rename: () => setTimeout(rename, 0),
           hide: () => void actions.hide(),
           remove: () => void actions.remove(),
           trash: () => setConfirmTrash(true),

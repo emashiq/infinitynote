@@ -1,6 +1,5 @@
 import type { DraftSummaryType } from '../../shared/contracts/notes';
 import { Dialog } from '../ui/Dialog';
-import { TAKE_CONTROL_FIRST_TIP } from './NoteBanners';
 
 /** "Compare recovered draft": the current note text next to the draft text (UX_SPEC section 6). */
 export function CompareDialog({
@@ -30,7 +29,7 @@ export function CompareDialog({
         </section>
       </div>
       <div className="dialog-actions">
-        <button type="button" className="btn btn-primary" disabled={!canRestore} title={canRestore ? undefined : TAKE_CONTROL_FIRST_TIP} onClick={onRestore}>
+        <button type="button" className="btn btn-primary" disabled={!canRestore} onClick={onRestore}>
           Restore draft
         </button>
         <button type="button" className="btn" data-autofocus="" onClick={onClose}>

@@ -37,16 +37,16 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
   const tab = session.tabs.find((t) => t.id === tabId);
   const savedScroll = tab?.kind === 'note' ? (tab.scrollTop ?? 0) : 0;
 
-  // The tab is the note's title (D-102): a title request renames the tab once the note is open (read-only notes keep
-  // their title). Ctrl+F requests are handed to the editor below.
+  // The tab is the note's title (D-102): a title request renames the tab once the note is open. Ctrl+F requests are
+  // handed to the editor below.
   const request = uiState.focusRequest;
-  const shown = state.status === 'ready' || state.status === 'readOnly';
+  const shown = state.status === 'ready';
   useEffect(() => {
     if (request?.target === 'noteTitle' && request.noteId === controller.noteId && shown) {
       ui.consumeFocus();
-      if (state.status === 'ready') ui.startTabRename(tabId);
+      ui.startTabRename(tabId);
     }
-  }, [request, shown, state.status, controller.noteId, tabId, ui]);
+  }, [request, shown, controller.noteId, tabId, ui]);
   const findRequest = request?.target === 'noteFind' && request.noteId === controller.noteId ? request : null;
   const referenceRequest = request?.target === 'noteReference' && request.noteId === controller.noteId ? request : null;
   // A reference to this note may have brought the user here: offer to look for what they meant (INF-REF-06).
@@ -118,7 +118,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
     );
   }
 
-  const readOnly = state.status === 'readOnly';
+  const busy = state.busy !== null;
   const editReminder = (reminderId: string) => {
     const reminder = noteReminders.reminders.find((r) => r.id === reminderId);
     if (reminder) ui.openDialog({ kind: 'reminder', noteId: reminder.noteId, reminder, blockId: reminder.blockId, title: reminder.title });
@@ -143,7 +143,6 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         state={state}
         now={now()}
         actions={{
-          takeEditControl: () => report(controller.takeEditControl()),
           compare: (draftId) => setDialog({ kind: 'compare', draftId }),
           restoreDraft: (draftId) => report(controller.restoreDraft(draftId)),
           dismissDraft: (draftId) => report(controller.dismissDraft(draftId)),
@@ -157,7 +156,8 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         host={controller}
         format={state.format}
         content={state.content}
-        editable={!readOnly}
+        sync={{ version: state.syncVersion, clientID: controller.viewId }}
+        editable={!busy}
         variant="tab"
         scrollTop={savedScroll}
         onScroll={(px) => tabs.setScrollTop(tabId, px)}
@@ -189,7 +189,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         controller={controller}
         dialog={dialog}
         onDialog={setDialog}
-        readOnly={readOnly}
+        busy={busy}
         now={now()}
         report={report}
         bridge={services.bridge}

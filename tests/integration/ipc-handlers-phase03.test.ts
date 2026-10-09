@@ -36,13 +36,12 @@ async function setup() {
     flushed: (webContentsId, flushId, saved) => coordinator.ack(webContentsId, flushId, saved),
   };
   const r = catalogueRouter(s.services, app);
-  /** A rich note with the lease held by window 1. */
+  /** A note and the fields of a content request from a view in window 1. */
   const editable = async (format: 'rich' | 'plain' = 'rich') => {
     const note = (await r.call('note:create', { location: { projectId: null, folderId: null }, sticky: false, format })).data.note;
     const viewId = id();
-    const lease = (await r.call('lease:acquire', { noteId: note.id, viewId })).data;
-    const op = (baseRevision: number) => ({ noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision, requestId: id() });
-    return { note, viewId, lease, op };
+    const op = (baseRevision: number) => ({ noteId: note.id, viewId, baseRevision, requestId: id() });
+    return { note, viewId, op };
   };
   return { s, ...r, opened, coordinator, flushSent, editable };
 }
@@ -51,7 +50,8 @@ describe('Phase 03 IPC handlers (D-052)', () => {
   it('every new channel rejects malformed requests without calling the service', async () => {
     const { call, s } = await setup();
     const spies = [
-      vi.spyOn(s.leases, 'take'),
+      vi.spyOn(s.collab, 'join'),
+      vi.spyOn(s.collab, 'push'),
       vi.spyOn(s.formats, 'convert'),
       vi.spyOn(s.versions, 'list'),
       vi.spyOn(s.versions, 'restore'),
@@ -60,10 +60,14 @@ describe('Phase 03 IPC handlers (D-052)', () => {
       vi.spyOn(s.attachments, 'importBytes'),
       vi.spyOn(s.attachments, 'importFromDialog'),
     ];
-    const op = { noteId: id(), viewId: id(), leaseToken: id(), baseRevision: 0, requestId: id() };
+    const op = { noteId: id(), viewId: id(), baseRevision: 0, requestId: id() };
     const bad: Array<[string, unknown]> = [
-      ['lease:take', { noteId: id() }],
-      ['lease:take', { noteId: id(), viewId: id(), extra: 1 }],
+      ['collab:join', { noteId: id() }],
+      ['collab:join', { noteId: id(), viewId: id(), extra: 1 }],
+      ['collab:push', { noteId: id(), viewId: id(), epoch: id(), version: 0, steps: [] }],
+      ['collab:push', { noteId: id(), viewId: id(), epoch: id(), version: -1, steps: [{ stepType: 'replace' }] }],
+      ['collab:push', { noteId: id(), viewId: id(), epoch: id(), version: 0, steps: [{ from: 1 }] }],
+      ['note:convertFormat', { ...op, leaseToken: id(), targetFormat: 'rich' }],
       ['note:convertFormat', { ...op, targetFormat: 'plain' }],
       ['note:convertFormat', { ...op, targetFormat: 'html' }],
       ['note:convertFormat', { ...op, targetFormat: 'rich', confirmLossy: false }],
@@ -99,7 +103,7 @@ describe('Phase 03 IPC handlers (D-052)', () => {
     expect(await call('note:open', { noteId: note.id })).toMatchObject({ ok: true, data: { format: 'plain', content: '' } });
   });
 
-  it('lease:take, note:convertFormat, versions and drafts work through the router', async () => {
+  it('live sync, note:convertFormat, versions and drafts work through the router (D-103)', async () => {
     const { call, editable, s } = await setup();
     const e = await editable('plain');
     expect(await call('note:save', { ...e.op(0), format: 'plain', content: 'line one' })).toMatchObject({ ok: true, data: { revision: 1 } });
@@ -125,14 +129,18 @@ describe('Phase 03 IPC handlers (D-052)', () => {
     expect(drafts).toEqual([expect.objectContaining({ plainText: 'late', reason: 'conflict' })]);
     expect(await call('drafts:resolve', { action: 'dismiss', noteId: e.note.id, draftId: drafts[0].id })).toEqual({ ok: true, data: { resolved: true, content: null } });
 
-    // Another window takes edit control; the holder gets the release request.
+    // Two windows join the note; a push from one reaches both, and main saves it.
     const other = id();
-    const taking = call('lease:take', { noteId: e.note.id, viewId: other }, 2);
-    expect(s.releaseRequests).toEqual([{ holder: { viewId: e.viewId, webContentsId: 1 }, noteId: e.note.id }]);
-    await call('lease:release', { noteId: e.note.id, viewId: e.viewId, leaseToken: e.lease.leaseToken });
-    expect(await taking).toMatchObject({ ok: true, data: { leaseToken: expect.any(String) } });
-    expect(s.leases.holderOf(e.note.id)).toBe(other);
-    expect(s.revisions.map((x) => x.revision)).toEqual([1, 2, 3, 4]);
+    const mine = await call('collab:join', { noteId: e.note.id, viewId: e.viewId }, 1);
+    expect(await call('collab:join', { noteId: e.note.id, viewId: other }, 2)).toMatchObject({ ok: true, data: { epoch: mine.data.epoch, version: 0 } });
+    const step = { stepType: 'replace', from: 1, to: 1, slice: { content: [{ type: 'text', text: 'Hi ' }] } };
+    expect(await call('collab:push', { noteId: e.note.id, viewId: e.viewId, epoch: mine.data.epoch, version: 0, steps: [step] }, 1)).toEqual({ ok: true, data: { status: 'accepted', version: 1 } });
+    expect(s.collabEvents.filter((ev) => ev.channel === 'collab:steps').map((ev) => ev.webContentsId)).toEqual([1, 2]);
+    // A view cannot be used from another window.
+    expect(await call('collab:push', { noteId: e.note.id, viewId: e.viewId, epoch: mine.data.epoch, version: 1, steps: [step] }, 2)).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+    expect(await call('collab:flush', { noteId: e.note.id, viewId: other }, 2)).toEqual({ ok: true, data: { revision: 5 } });
+    expect(s.row<{ plain_text: string }>('SELECT plain_text FROM notes WHERE id = ?', e.note.id)!.plain_text).toBe('Hi line one');
+    expect(s.revisions.map((x) => x.revision)).toEqual([1, 2, 3, 4, 5]);
   });
 
   it('attachment:importBytes accepts a Uint8Array, measures binary size and enforces the ceiling', async () => {
@@ -201,9 +209,9 @@ describe('Phase 03 IPC handlers (D-052)', () => {
       quit: () => {},
       flushed: () => false,
     });
-    const op ={ noteId: id(), viewId: id(), leaseToken: id(), baseRevision: 0, requestId: id() };
+    const op ={ noteId: id(), viewId: id(), baseRevision: 0, requestId: id() };
     const valid: Array<[string, unknown]> = [
-      ['lease:take', { noteId: id(), viewId: id() }],
+      ['collab:join', { noteId: id(), viewId: id() }],
       ['note:convertFormat', { ...op, targetFormat: 'rich' }],
       ['versions:list', { noteId: id() }],
       ['versions:restore', { ...op, versionId: id() }],

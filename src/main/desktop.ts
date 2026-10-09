@@ -66,7 +66,7 @@ export function createDesktop(deps: DesktopDeps): Desktop {
     registry: deps.windows.registry,
     logger,
     flush: deps.flush,
-    resetLeases: (webContentsId) => services?.leases.webContentsReset(webContentsId),
+    resetViews: (webContentsId) => services?.collab.webContentsReset(webContentsId),
     onQuitStarting: () => {
       stickies?.prepareQuit();
       widget?.prepareQuit();
@@ -101,7 +101,7 @@ export function createDesktop(deps: DesktopDeps): Desktop {
       displays: deps.displays,
       caps: () => caps,
       flush: flushBeforeClose,
-      resetLeases: (webContentsId) => services.leases.webContentsReset(webContentsId),
+      resetViews: (webContentsId) => services.collab.webContentsReset(webContentsId),
       sendState: (webContentsId, state) => deps.eventBus.sendTo(webContentsId, 'sticky:state', state),
       trash: services.trash,
       mainWindow,

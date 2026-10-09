@@ -45,10 +45,8 @@ describe('note references (INF-REF-02..07, D-098)', () => {
     const { s, target } = await setup();
     const note = s.hierarchy.createNote({ projectId: null, folderId: null }, false, 'Stale').note;
     const viewId = randomUUID();
-    const lease = s.leases.acquire(note.id, viewId, 99);
-    if (!lease.granted) throw new Error('lease');
     const save = (baseRevision: number, content: unknown) =>
-      s.writer.save({ noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision, requestId: randomUUID(), format: 'rich', content } as never, { webContentsId: 99 });
+      s.writer.save({ noteId: note.id, viewId, baseRevision, requestId: randomUUID(), format: 'rich', content } as never);
     save(0, doc(refPara(randomUUID(), 'x', { noteId: target.note.id })));
     const before = s.rows('SELECT * FROM note_references');
     expect(thrown(() => save(0, doc(para(randomUUID(), 'gone')))).code).toBe('CONFLICT');

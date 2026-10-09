@@ -33,7 +33,7 @@ async function setup(opts: { caps?: CapabilitiesType } = {}) {
   const own = s.note(null, null, 'Own');
   const other = s.note(null, null, 'Other', true);
   const fake = fakeStickyFactory([]);
-  const opened: Array<{ webContentsId: number; noteId: string; takeEdit: boolean; blockId: string | null }> = [];
+  const opened: Array<{ webContentsId: number; noteId: string; blockId: string | null }> = [];
   const mainWindow = new MainWindowController({
     factory: {
       create: () => ({ webContentsId: MAIN, load() {}, show() {}, focus() {}, restore() {}, isMinimized: () => false, isFocused: () => true, flashFrame() {}, close() {}, isDestroyed: () => false }),
@@ -56,7 +56,7 @@ async function setup(opts: { caps?: CapabilitiesType } = {}) {
     displays: fakeDisplays(),
     caps: () => opts.caps ?? WINDOWS_CAPS,
     flush: async () => true,
-    resetLeases: (id) => s.leases.webContentsReset(id),
+    resetViews: (id) => s.collab.webContentsReset(id),
     sendState: () => {},
     trash: s.trash,
     mainWindow,
@@ -95,8 +95,8 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
 
   it('window:getState answers the main handshake with queued opens and a sticky with its own state', async () => {
     const t = await setup();
-    t.mainWindow.openNote(t.other.id, true);
-    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [{ noteId: t.other.id, takeEdit: true, blockId: null }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } } });
+    t.mainWindow.openNote(t.other.id);
+    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [{ noteId: t.other.id, blockId: null }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } } });
     expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } } });
     await t.call('sticky:float', { noteId: t.own.id });
     expect(await t.call('window:getState', {}, STICKY)).toMatchObject({
@@ -127,7 +127,7 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
     expect(await t.call('sticky:setCollapsed', { noteId: t.own.id, collapsed: true }, STICKY)).toMatchObject({ ok: true, data: { collapsed: true } });
     expect(await t.call('sticky:dock', { noteId: t.own.id }, STICKY)).toEqual({ ok: true, data: {} });
     expect(t.stickies.isFloating(t.own.id)).toBe(false);
-    expect(t.mainWindow.rendererReady(MAIN)).toEqual({ openNotes: [{ noteId: t.own.id, takeEdit: true, blockId: null }], openReminders: null });
+    expect(t.mainWindow.rendererReady(MAIN)).toEqual({ openNotes: [{ noteId: t.own.id, blockId: null }], openReminders: null });
 
     await t.call('sticky:float', { noteId: t.own.id });
     expect(await t.call('sticky:hide', { noteId: t.own.id }, STICKY)).toEqual({ ok: true, data: {} });
@@ -135,7 +135,7 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
     await t.call('sticky:float', { noteId: t.own.id });
     expect(await t.call('sticky:remove', { noteId: t.own.id }, STICKY)).toEqual({ ok: true, data: {} });
     expect(t.s.row<{ sticky_enabled: number }>('SELECT sticky_enabled FROM notes WHERE id = ?', t.own.id)?.sticky_enabled).toBe(0);
-    expect(t.opened).toEqual([{ webContentsId: MAIN, noteId: t.own.id, takeEdit: true, blockId: null }]);
+    expect(t.opened).toEqual([{ webContentsId: MAIN, noteId: t.own.id, blockId: null }]);
   });
 
   it('sticky:restore restores the own trashed note and refuses a live one; setColor needs a sticky', async () => {
@@ -162,17 +162,19 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
     expect(t.s.stickies.state(t.own.id).alwaysOnTop).toBe(false);
   });
 
-  it('a lease release request reaches a sticky holder, and the take completes when it releases', async () => {
+  it('a sticky and the main window edit the same note at once; each gets the steps of the other (D-103)', async () => {
     const t = await setup();
     const stickyView = randomUUID();
     const tabView = randomUUID();
-    const lease = await t.call('lease:acquire', { noteId: t.own.id, viewId: stickyView }, STICKY);
-    expect(lease).toMatchObject({ ok: true, data: { granted: true } });
-    const taking = t.call('lease:take', { noteId: t.own.id, viewId: tabView }, MAIN);
-    await new Promise((r) => setImmediate(r));
-    expect(t.s.releaseRequests).toEqual([{ holder: { viewId: stickyView, webContentsId: STICKY }, noteId: t.own.id }]);
-    expect(await t.call('lease:release', { noteId: t.own.id, viewId: stickyView, leaseToken: lease.data.leaseToken }, STICKY)).toMatchObject({ ok: true, data: { released: true } });
-    expect(await taking).toMatchObject({ ok: true, data: { leaseToken: expect.any(String) } });
+    const sticky = await t.call('collab:join', { noteId: t.own.id, viewId: stickyView }, STICKY);
+    const tab = await t.call('collab:join', { noteId: t.own.id, viewId: tabView }, MAIN);
+    expect(tab).toMatchObject({ ok: true, data: { epoch: sticky.data.epoch } });
+    const step = { stepType: 'replace', from: 1, to: 1, slice: { content: [{ type: 'text', text: 'both' }] } };
+    expect(await t.call('collab:push', { noteId: t.own.id, viewId: stickyView, epoch: sticky.data.epoch, version: 0, steps: [step] }, STICKY)).toMatchObject({ ok: true, data: { status: 'accepted' } });
+    expect(await t.call('collab:push', { noteId: t.own.id, viewId: tabView, epoch: tab.data.epoch, version: 0, steps: [step] }, MAIN)).toMatchObject({ ok: true, data: { status: 'behind', version: 1 } });
+    expect(t.s.collabEvents.filter((e) => e.channel === 'collab:steps').map((e) => e.webContentsId).sort()).toEqual([MAIN, STICKY].sort());
+    // A sticky syncs only its own note.
+    expect(await t.call('collab:join', { noteId: t.other.id, viewId: stickyView }, STICKY)).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
   });
 
   it('without storage the sticky channels answer INTERNAL and the main handshake still works', async () => {

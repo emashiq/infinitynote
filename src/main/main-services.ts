@@ -1,5 +1,6 @@
 import type { TreeChangedEventType } from '../shared/contracts/hierarchy';
-import type { NoteLeaseEventType, NoteRevisionEventType } from '../shared/contracts/notes';
+import type { EventPayload } from '../shared/contracts/channels';
+import type { NoteRevisionEventType } from '../shared/contracts/notes';
 import type { ReminderChangedEventType } from '../shared/contracts/reminders';
 import type { RestoreOutcomeType } from '../shared/contracts/portability';
 import type { SettingsChangedPayload } from '../shared/contracts/settings';
@@ -10,6 +11,7 @@ import type { RestorePaths } from './portability/restore';
 import { AttachmentHandoff } from './services/attachment-handoff';
 import { AttachmentService } from './services/attachment-service';
 import type { Clock } from './services/clock';
+import { CollabHub } from './services/collab-hub';
 import { ContentIndexer } from './services/content-indexer';
 import { ContentOps } from './services/content-ops';
 import type { DialogAdapter } from './services/dialog-adapter';
@@ -18,7 +20,6 @@ import { FormatService } from './services/format-service';
 import { HierarchyService } from './services/hierarchy-service';
 import { HomeService } from './services/home-service';
 import type { IdGenerator } from './services/ids';
-import { LeaseManager, type LeaseHolder } from './services/lease-manager';
 import type { Logger } from './services/logger';
 import { MaintenanceService } from './services/maintenance';
 import { NoteContent } from './services/note-content';
@@ -50,7 +51,8 @@ export interface MainServices {
   palette: PaletteService;
   reader: NoteReader;
   writer: NoteWriter;
-  leases: LeaseManager;
+  /** Live sync of open notes between their views (D-103). */
+  collab: CollabHub;
   versions: VersionService;
   drafts: DraftService;
   formats: FormatService;
@@ -90,9 +92,8 @@ export interface MainServicesDeps {
   onSettingsChanged: (payload: SettingsChangedPayload) => void;
   onTreeChanged: (event: TreeChangedEventType) => void;
   onNoteRevision: (event: NoteRevisionEventType) => void;
-  onLeaseChanged: (event: NoteLeaseEventType) => void;
-  /** Asks the holder's renderer to flush and release the lease (sent to that renderer only). */
-  requestLeaseRelease: (holder: LeaseHolder, noteId: string) => void;
+  /** Sends a live-sync event to one window (the windows of a note's views). */
+  sendCollab: <C extends 'collab:steps' | 'collab:reset' | 'collab:status'>(webContentsId: number, channel: C, payload: EventPayload<C>) => void;
   /** The reminder subsystem's clock (a frozen test clock under the E2E hooks, D-084); defaults to `clock`. */
   reminderClock?: Clock;
   /** The computer's time zone as reminders see it. */
@@ -108,22 +109,25 @@ export interface MainServicesDeps {
 export function createMainServices(deps: MainServicesDeps): MainServices {
   const { db, clock, ids, logger } = deps;
   const settings = new SettingsService({ repo: new SettingsRepo(db), clock, logger, emit: deps.onSettingsChanged });
-  const leases = new LeaseManager({ ids, clock, requestRelease: deps.requestLeaseRelease, emit: deps.onLeaseChanged });
   const reminderClock = deps.reminderClock ?? clock;
   const anchors = new ReminderAnchors(db, { clock: reminderClock, logger });
   const content = new NoteContent(db, new ContentIndexer(db, logger, anchors));
-  // A content write that changed a reminder anchor is followed by reminder:changed after its revision event (D-080).
+  // A write outside a note's live-sync session starts it over (D-103). A content write that changed a reminder anchor
+  // is followed by reminder:changed after its revision event (D-080).
+  let collab: CollabHub | null = null;
   const onNoteRevision = (event: NoteRevisionEventType): void => {
+    collab?.onRevision(event);
     deps.onNoteRevision(event);
     if (anchors.consumeChanged(event.noteId)) deps.onReminderChanged({ reason: 'anchor', noteIds: [event.noteId] });
   };
-  const ops = new ContentOps({ db, leases, clock, logger, content, emit: onNoteRevision });
+  const ops = new ContentOps({ db, settle: (noteId) => collab?.settle(noteId), clock, logger, content, emit: onNoteRevision });
   const versions = new VersionService({
     db,
     ids,
     ops,
     autoPolicy: () => ({ maxAgeDays: settings.getInternal('retention.autoVersionDays'), maxCount: settings.getInternal('retention.autoVersionMax') }),
   });
+  collab = new CollabHub({ db, clock, ids, logger, content, versions, emitRevision: onNoteRevision, send: deps.sendCollab, faults: deps.testFaults?.save });
   const reminders = new ReminderService({
     db,
     clock: reminderClock,
@@ -179,8 +183,8 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     tags: new TagService(db, logger),
     handoff: new AttachmentHandoff(db, { dataDir: deps.dataDir, shell: deps.shell, logger }),
     reader: new NoteReader(db),
-    writer: new NoteWriter({ db, leases, clock, ids, logger, content, versions, emit: onNoteRevision, faults: deps.testFaults?.save }),
-    leases,
+    writer: new NoteWriter({ db, clock, ids, logger, content, versions, emit: onNoteRevision, faults: deps.testFaults?.save }),
+    collab,
     versions,
     drafts: new DraftService({ db, clock, ops, versions }),
     formats: new FormatService({ ids, ops, versions }),

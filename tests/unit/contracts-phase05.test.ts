@@ -142,7 +142,7 @@ describe('collectBlockIds (D-080)', () => {
 
 describe('Phase 05 catalogue (D-074)', () => {
   it('the Phase 05 channels are appended in order after the Phase 04 channels, 12 events', () => {
-    expect(INVOKE_CHANNELS.slice(50, 67)).toEqual([
+    expect(INVOKE_CHANNELS.slice(47, 64)).toEqual([
       'zones:list',
       'reminder:create',
       'reminder:update',
@@ -161,14 +161,14 @@ describe('Phase 05 catalogue (D-074)', () => {
       'autostart:get',
       'autostart:set',
     ]);
-    expect(EVENT_CHANNELS.slice(8)).toEqual(['reminder:changed', 'reminder:alert', 'widget:state', 'app:openReminders']);
-    expect(EVENT_CHANNELS).toHaveLength(12);
+    expect(EVENT_CHANNELS.slice(6, 10)).toEqual(['reminder:changed', 'reminder:alert', 'widget:state', 'app:openReminders']);
+    expect(EVENT_CHANNELS).toHaveLength(13);
   });
 
   it('app:openNote takes an optional block (default null); the main window state carries a pending Reminders view', () => {
-    expect(AppOpenNoteEvent.parse({ noteId: ID, takeEdit: false })).toEqual({ noteId: ID, takeEdit: false, blockId: null });
-    expect(AppOpenNoteEvent.parse({ noteId: ID, takeEdit: false, blockId: B })).toEqual({ noteId: ID, takeEdit: false, blockId: B });
-    expect(AppOpenNoteEvent.safeParse({ noteId: ID, takeEdit: false, blockId: 'x' }).success).toBe(false);
+    expect(AppOpenNoteEvent.parse({ noteId: ID })).toEqual({ noteId: ID, blockId: null });
+    expect(AppOpenNoteEvent.parse({ noteId: ID, blockId: B })).toEqual({ noteId: ID, blockId: B });
+    expect(AppOpenNoteEvent.safeParse({ noteId: ID, blockId: 'x' }).success).toBe(false);
     expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [], openReminders: 'overdue', widget: { open: true, collapsed: false, alwaysOnTop: false } }).success).toBe(true);
     expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } }).success).toBe(true);
     expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [], openReminders: null }).success).toBe(false);

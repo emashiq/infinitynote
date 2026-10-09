@@ -1,24 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { DraftsRepo } from '../../src/main/db/repositories/drafts-repo';
 import { textToDoc } from '../../src/shared/text/textarea-doc';
 import { AUTO_VERSION_INTERVAL_MS, AUTO_VERSION_MAX_AGE_MS, AUTO_VERSION_MAX_COUNT, DAY_MS } from '../../src/shared/versions/retention';
 import { setupServices } from './hierarchy-helpers';
 
-const WC = 5;
 const MINUTE = 60_000;
 
 async function setup() {
   const s = await setupServices();
   const note = s.note(null, null, 'Versions');
   const viewId = randomUUID();
-  const lease = s.leases.acquire(note.id, viewId, WC);
-  if (!lease.granted) throw new Error('lease');
   let revision = 0;
   const save = (text: string) => {
     revision = s.writer.save(
-      { noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision: revision, requestId: randomUUID(), format: 'rich', content: textToDoc(text) },
-      { webContentsId: WC },
-    ).revision;
+      { noteId: note.id, viewId, baseRevision: revision, requestId: randomUUID(), format: 'rich', content: textToDoc(text) }).revision;
   };
   const autos = () =>
     s.rows<{ revision: number; content_snapshot: string; created_at: number }>(
@@ -134,22 +130,16 @@ describe('retention (INF-PORT-07, F-03-4)', () => {
     expect(s.events.at(-1)).toEqual({ reason: 'purge', trashedNoteIds: [] });
   });
 
-  it('a renderer saving with a revoked lease keeps at most 20 open lease_lost drafts; resolved drafts go after 30 days', async () => {
+  it('lease_lost drafts kept before live sync are capped at 20 open per note; resolved drafts go after 30 days', async () => {
     const s = await setupServices();
     const note = s.note(null, null, 'Drafts');
-    const viewId = randomUUID();
-    const lease = s.leases.acquire(note.id, viewId, 9);
-    if (!lease.granted) throw new Error('lease');
-    s.leases.webContentsReset(9);
+    // Earlier versions stored a draft for every save of a view that had lost the lease (live sync has none, D-103).
+    const repo = new DraftsRepo(s.t.db);
     for (let i = 0; i < 25; i += 1) {
       s.clock.advance(1000);
-      expect(() =>
-        s.writer.save(
-          { noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision: 0, requestId: randomUUID(), format: 'rich', content: textToDoc(`late ${i}`) },
-          { webContentsId: 9 },
-        ),
-      ).toThrow('Edit control was lost');
+      repo.insert({ id: randomUUID(), noteId: note.id, viewId: randomUUID(), baseRevision: 0, format: 'rich', content: JSON.stringify(textToDoc(`late ${i}`)), reason: 'lease_lost', now: s.clock.now() });
     }
+    expect((await s.maintenance.run()).draftsCapped).toBe(5);
     const open = () => s.rows<{ content: string }>("SELECT content FROM note_drafts WHERE reason = 'lease_lost' AND resolved_at IS NULL ORDER BY created_at");
     expect(open()).toHaveLength(20);
     expect(open()[0]!.content).toContain('late 5');

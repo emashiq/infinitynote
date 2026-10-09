@@ -42,7 +42,7 @@ test('renderer crash keeps acked text and reloads editable (INF-SAVE-05)', async
   // Main reloads the crashed window after 500 ms; the reloaded app restores the note tab.
   await expect.poll(() => inWindow<string>(app, `document.querySelector('#app-shell')?.dataset.ready ?? ''`), { timeout: 30_000 }).toBe('true');
   await expect.poll(() => inWindow<string>(app, `document.querySelector('.ProseMirror')?.textContent ?? ''`)).toBe('acknowledged before the crash');
-  // The crashed document's lease was reset, so the reloaded window edits (and saves) again.
+  // The crashed document's views left live sync, so the reloaded window joins again and edits (and saves).
   await expect.poll(() => inWindow<string>(app, `document.querySelector('.ProseMirror')?.getAttribute('contenteditable') ?? ''`)).toBe('true');
   await inWindow(app, `document.querySelector('.ProseMirror').editor.chain().focus('end').insertContent(' and after').run()`);
   await expect.poll(() => plainText(id)).toBe('acknowledged before the crash and after');

@@ -29,10 +29,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function setup(opts: { activation?: number; held?: boolean; pin?: 'supported' | 'unsupported'; role?: 'main' | 'other-note' } = {}) {
+async function setup(opts: { activation?: number; pin?: 'supported' | 'unsupported'; role?: 'main' | 'other-note' } = {}) {
   const fake = createFakeBridge();
   const note = await makeNote(fake, undefined, 'Groceries', true);
-  if (opts.held) fake.data.heldElsewhere.add(note.id);
   fake.data.setCapabilities(caps(opts.pin ?? 'supported'));
   // Main has this note's window open.
   fake.data.floating.set(note.id, { collapsed: false, alwaysOnTop: false, activation: opts.activation ?? 1 });
@@ -50,31 +49,29 @@ async function setup(opts: { activation?: number; held?: boolean; pin?: 'support
 const stored = (fake: FakeBridge, id: string) => fake.data.notes.find((n) => n.id === id)!;
 
 describe('sticky services (plan section 9.3)', () => {
-  it('a floated window (activation > 0) takes edit control from another holder and focuses its editor', async () => {
-    const { fake, s } = await setup({ activation: 1, held: true });
+  it('a floated window (activation > 0) joins its note\'s live sync and focuses its editor (D-103)', async () => {
+    const { fake, s } = await setup({ activation: 1 });
     expect(s.phase.getState().phase).toBe('ready');
-    expect(fake.callsTo('lease:take')).toHaveLength(1);
+    expect(fake.callsTo('collab:join')).toHaveLength(1);
     expect(s.controller.store.getState().status).toBe('ready');
     expect(s.focusEditor.getState().request).toBe(1);
   });
 
-  it('a restored window (activation 0) only acquires and stays a read-only mirror', async () => {
-    const { fake, s } = await setup({ activation: 0, held: true });
-    expect(fake.callsTo('lease:take')).toHaveLength(0);
-    expect(s.controller.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'lease' });
+  it('a restored window (activation 0) joins too and leaves the focus where it is', async () => {
+    const { fake, s } = await setup({ activation: 0 });
+    expect(fake.callsTo('collab:join')).toHaveLength(1);
+    expect(s.controller.store.getState().status).toBe('ready');
     expect(s.focusEditor.getState().request).toBe(0);
   });
 
-  it('a later activation takes control and focuses the editor; an unchanged one does not', async () => {
-    const { fake, s, emitState } = await setup({ activation: 0, held: true });
+  it('a later activation focuses the editor; an unchanged one does not', async () => {
+    const { s, emitState } = await setup({ activation: 0 });
     emitState({ activation: 0, color: 'blue' });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fake.callsTo('lease:take')).toHaveLength(0);
+    expect(s.focusEditor.getState().request).toBe(0);
     expect(s.sticky.getState().current?.color).toBe('blue');
     emitState({ activation: 1 });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fake.callsTo('lease:take')).toHaveLength(1);
-    expect(s.controller.store.getState().status).toBe('ready');
     expect(s.focusEditor.getState().request).toBe(1);
   });
 
@@ -109,24 +106,27 @@ describe('sticky services (plan section 9.3)', () => {
     typeInto(s.controller, 'closing');
     fake.emit('app:flush-request', { flushId: '55555555-5555-4555-8555-000000000001', reason: 'close' });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fake.calls.map((c) => c.channel).filter((ch) => ch === 'note:save' || ch === 'app:flushed')).toEqual(['note:save', 'app:flushed']);
+    expect(fake.calls.map((c) => c.channel).filter((ch) => ch === 'collab:flush' || ch === 'app:flushed')).toEqual(['collab:flush', 'app:flushed']);
     expect(fake.callsTo('app:flushed')[0]!.req).toEqual({ flushId: '55555555-5555-4555-8555-000000000001', saved: true });
     typeInto(s.controller, ' failing');
-    fake.failNext('note:save', { code: 'LIMIT_EXCEEDED' });
+    fake.failNext('collab:flush', { code: 'LIMIT_EXCEEDED' });
     fake.emit('app:flush-request', { flushId: '55555555-5555-4555-8555-000000000002', reason: 'quit' });
     await vi.advanceTimersByTimeAsync(0);
     expect(fake.callsTo('app:flushed')[1]!.req).toEqual({ flushId: '55555555-5555-4555-8555-000000000002', saved: false });
   });
 
-  it('release requests for this note hand edit control over; others are ignored', async () => {
+  it('steps from the note\'s other views reach the sticky; a reset of another note is ignored', async () => {
     const { fake, note, s } = await setup();
-    fake.emit('lease:release-request', { noteId: BATCH });
+    const editor = typeInto(s.controller, 'sticky');
     await vi.advanceTimersByTimeAsync(0);
-    expect(fake.callsTo('lease:release')).toHaveLength(0);
-    fake.emit('lease:release-request', { noteId: note.id });
+    const tab = await fake.bridge.collab.join({ noteId: note.id, viewId: BATCH });
+    if (!tab.ok) throw new Error('join');
+    await fake.bridge.collab.push({ noteId: note.id, viewId: BATCH, epoch: tab.data.epoch, version: tab.data.version, steps: [{ stepType: 'replace', from: 7, to: 7, slice: { content: [{ type: 'text', text: ' and tab' }] } } as { stepType: string }] });
+    expect(editor.text).toBe('sticky and tab');
+    const joins = fake.callsTo('collab:join').length;
+    fake.emit('collab:reset', { noteId: BATCH, conflict: null });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fake.callsTo('lease:release')).toHaveLength(1);
-    expect(s.controller.store.getState()).toMatchObject({ status: 'readOnly', readOnlyReason: 'lease' });
+    expect(fake.callsTo('collab:join')).toHaveLength(joins);
   });
 
   it('header actions: color, collapse, pin (not where unsupported), dock and remove flush first, trash', async () => {
@@ -139,8 +139,8 @@ describe('sticky services (plan section 9.3)', () => {
     expect(fake.callsTo('sticky:setPinned').map((c) => c.req)).toEqual([{ noteId: note.id, pinned: true }]);
     typeInto(s.controller, 'docked');
     await s.actions.dock();
-    const order = fake.calls.map((c) => c.channel).filter((ch) => ch === 'note:save' || ch === 'sticky:dock');
-    expect(order).toEqual(['note:save', 'sticky:dock']);
+    const order = fake.calls.map((c) => c.channel).filter((ch) => ch === 'collab:flush' || ch === 'sticky:dock');
+    expect(order).toEqual(['collab:flush', 'sticky:dock']);
     await s.actions.remove();
     expect(fake.callsTo('sticky:remove')).toHaveLength(1);
     expect(await s.actions.trash()).toEqual({ ok: true, data: undefined });
@@ -155,7 +155,7 @@ describe('sticky services (plan section 9.3)', () => {
     const { fake, s, noticeTexts } = await setup();
     for (const action of ['hide', 'dock', 'remove', 'trash'] as const) {
       typeInto(s.controller, ` ${action}`);
-      fake.failNext('note:save', { code: 'LIMIT_EXCEEDED', message: 'too big' });
+      fake.failNext('collab:flush', { code: 'LIMIT_EXCEEDED', message: 'too big' });
       await s.actions[action]();
     }
     for (const channel of ['sticky:hide', 'sticky:dock', 'sticky:remove', 'note:trash']) expect(fake.callsTo(channel), channel).toEqual([]);
@@ -171,11 +171,11 @@ describe('sticky services (plan section 9.3)', () => {
     expect(noticeTexts()).toContain('Not supported by this desktop');
   });
 
-  it('dispose unsubscribes everything and releases the lease (INF-STKY-11)', async () => {
+  it('dispose unsubscribes everything and leaves the live-sync session (INF-STKY-11)', async () => {
     const { fake, s } = await setup();
     expect(fake.subscriberCount()).toBeGreaterThan(0);
     await s.dispose();
     expect(fake.subscriberCount()).toBe(0);
-    expect(fake.callsTo('lease:release')).toHaveLength(1);
+    expect(fake.callsTo('collab:leave')).toHaveLength(1);
   });
 });

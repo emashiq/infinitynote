@@ -1,13 +1,12 @@
 import path from 'node:path';
 import { expect } from 'vitest';
 import type { TreeChangedEventType } from '../../src/shared/contracts/hierarchy';
-import type { NoteLeaseEventType, NoteRevisionEventType } from '../../src/shared/contracts/notes';
+import type { NoteRevisionEventType } from '../../src/shared/contracts/notes';
 import type { ReminderChangedEventType } from '../../src/shared/contracts/reminders';
 import { resolveDataPaths } from '../../src/main/app-paths';
 import { HierarchyRepo } from '../../src/main/db/repositories/hierarchy-repo';
 import { createMainServices, type MainServicesDeps } from '../../src/main/main-services';
 import type { OpenFilesRequest, PathRequest } from '../../src/main/services/dialog-adapter';
-import type { LeaseHolder } from '../../src/main/services/lease-manager';
 import type { FakeClock } from '../../src/main/services/clock';
 import { memoryLogger } from '../../src/main/services/logger';
 import { createFixedZoneProvider } from '../../src/main/services/system-zone';
@@ -44,8 +43,8 @@ export async function setupServices(
   const events: TreeChangedEventType[] = [];
   const settingsEvents: unknown[] = [];
   const revisions: NoteRevisionEventType[] = [];
-  const leaseEvents: NoteLeaseEventType[] = [];
-  const releaseRequests: Array<{ holder: LeaseHolder; noteId: string }> = [];
+  /** Live-sync events main sent, per window (D-103). */
+  const collabEvents: Array<{ webContentsId: number; channel: string; payload: unknown }> = [];
   /** Each dialog call takes the next entry; null or an empty queue means the user canceled. */
   const dialogQueue: Array<string[] | null> = [];
   const dialogCalls: OpenFilesRequest[] = [];
@@ -102,8 +101,7 @@ export async function setupServices(
       opts.onTreeChanged?.(e);
     },
     onNoteRevision: (e) => revisions.push(e),
-    onLeaseChanged: (e) => leaseEvents.push(e),
-    requestLeaseRelease: (holder, noteId) => releaseRequests.push({ holder, noteId }),
+    sendCollab: (webContentsId, channel, payload) => collabEvents.push({ webContentsId, channel, payload }),
     zones,
     onReminderChanged: (e) => reminderEvents.push(e),
     onRemindersWritten: () => {
@@ -149,8 +147,7 @@ export async function setupServices(
     events,
     settingsEvents,
     revisions,
-    leaseEvents,
-    releaseRequests,
+    collabEvents,
     zones,
     reminderEvents,
     reminderWrites,

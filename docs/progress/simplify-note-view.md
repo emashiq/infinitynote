@@ -78,3 +78,84 @@ No orphaned Electron processes: `tasklist | grep -ci electron` printed 0 after t
 
 - The full E2E suite, WSL/WSLg, packaging and `packaged.spec` (outside the requested scope).
 - Native drag of the sticky header with a real pointer. It is covered only by the computed-style assertions.
+
+## Final fix (D-102 sticky title revised, D-103 live sync)
+
+Scope was the user's final request, with targeted checks only: lint, typecheck, unit and integration tests, and the affected or new E2E specs. No full E2E suite, WSL or packaging. Nothing is committed. The user's `npm run dev` processes were left alone: no Electron process was running when the checks started, and none was left afterwards.
+
+### Changes
+
+- **Sticky title edited in place** (`src/renderer/notes/NoteTitleField.tsx`, `stickies/StickyHeader.tsx`, `stickies/StickyView.tsx`, `styles/stickies.css`; D-102 revised):
+  - The header title is a no-drag field as wide as its text (`field-sizing: content`, at most 60%). The gaps, the empty space and the badge stay draggable.
+  - A click edits the title. Enter or blur saves (Enter moves into the text), Escape restores it.
+  - F2 and the "Rename" menu item select the title; the menu item waits until the menu has returned the focus.
+  - The same component serves the tab rename and replaces `TitleRenameInput`.
+- **Live sync of one note between its views** (D-103, supersedes the lease parts of D-018, D-042, D-055 and D-065):
+  - Main: `src/main/services/collab-hub.ts` (new) is the central authority.
+    - It holds one session per open note: the authoritative ProseMirror document in the shared schema, a version, an epoch and the step log.
+    - It validates and applies pushed steps in order, broadcasts the confirmed ones, and saves through the existing transactional path. Saves happen 400 ms after the last step, on flush, when the last view leaves, and on quit.
+    - INTERNAL failures are retried. Writes from outside the session start it over, after keeping unsaved edits as a conflict draft.
+  - Main, other files: `NoteWriter` and `ContentOps` no longer use a lease. `ContentOps` saves the session first (`settle`). `LeaseManager` was deleted, and `resetLeases` became `resetViews`. `main-services`, `index`, `desktop`, the handlers and the test hooks were updated; the external writer for E2E replaces the fake lease view.
+  - Shared:
+    - `contracts/collab.ts` (join, push, pull, flush, leave; the steps, reset and status events).
+    - `editor/schema.ts` and `editor/nodes.ts`: one schema for the editor and main, built with Tiptap `getSchema`.
+    - `editor/savable.ts`.
+    - Lease channels, events, `leaseToken`, `LEASE_REQUIRED` and `takeEdit` were removed.
+    - Stickies may call `collab:*` for their own note only.
+  - Renderer:
+    - `editor/collab-sync.ts`: the prosemirror-collab plugin, sendable steps, rebase on receive.
+    - `notes/note-controller.ts` was rewritten: join, push loop, pull, status, reset with a draft for unsynced edits, flush through main, content operations that join the new session.
+    - `NoteEditor` takes the content as a document for both formats and adds the collab plugin.
+    - UniqueID and the size/depth filter ignore remote steps.
+    - The read-only lease banner, "Take edit control", `ensureEditing` and the take modes were removed.
+  - Plain-text notes use the same steps on the plain editor schema; main stores the text.
+  - Dependency: `prosemirror-collab` 1.3.1 (pinned devDependency; `@tiptap/pm` 3.31 has no collab entry). It shares `prosemirror-state` 1.4.4.
+- **Docs**: D-103 written and D-102's sticky part revised (`DECISIONS.md`); `ARCHITECTURE.md` sections 2, 4, 5 and 6, `UX_SPEC.md` and `USER_GUIDE.md` updated.
+
+### Tests
+
+- New:
+  - `tests/integration/collab.test.ts` (7 tests): two clients interleave edits and converge with the authority, and the stored note equals it; plain text; opening never saves; an external write keeps a draft and resets; refused steps and wrong-window views; trash keeps a draft; the last view leaving saves.
+  - `tests/e2e/live-sync.spec.ts` (3 tests):
+    - Tab to sticky, and sticky to tab.
+    - Simultaneous key-by-key typing in both windows, then alternating turns: both views and the database converge, and the text survives a restart.
+    - Closing the sticky with Ctrl+W right after typing loses nothing.
+  - `note-view.spec.ts` sticky test rewritten: clicking the title focuses an editable field; typing and Enter rename the note in the database and in the main tab's label; the header outside the title (the gap before ×) is a drag region; F2, Escape and Rename behave as described.
+- Updated to the new behavior, with no weaker data-safety assertions:
+  - Unit: `note-controller.test`, `app-events`, `tabs-store`, `sticky-services`, `tree-commands`, `shell-smoke`, `sticky-header`, the contract catalogue tests, and the fake bridge (now with a fake live-sync hub) and test editor source.
+  - Integration: all the save, version, draft and IPC tests (no lease token), `ipc-handlers-phase03` and `ipc-handlers-phase04` (live sync through the router; a sticky syncs only its own note), and the main-window and sticky-manager tests (no `takeEdit`).
+  - E2E: `conflict.spec` (stale and trashed drafts kept), `stickies.spec`, `editor.spec`, `security.spec`, `visual.spec` and `crash.spec`, plus the helpers `seed.ts` and `editor-ui.ts`.
+- Deleted because their behavior no longer exists:
+  - `tests/integration/lease.test.ts`.
+  - `notes-open-save.test` › "after lease release a save gives LEASE_REQUIRED and stores a draft".
+  - `revision.test` › "retried lease-lost reuses the draft (F-01-3)".
+  - `conflict.spec` › "read-only mirror and take control (INF-SAVE-04)", "take from a busy holder…" and "silent holder times out…".
+  - `stickies.spec` › "a mirror becomes editable when the editing sticky closes (INF-STKY-07)".
+  - `tabs-store.test` › "openNote with takeEdit takes edit control…".
+  - The unit tests of leases, take edit control, release requests, lease events and `ensureEditing`.
+  - The `visual.spec` read-only banner screenshots.
+  - `versions.test` › the lease_lost cap test now inserts legacy drafts directly, because maintenance still caps them.
+
+### Commands and results (Windows; E2E with portable Node 24.21)
+
+| Command | Result | Log (`.infinity-work/logs/simplify/`) |
+| --- | --- | --- |
+| `npm install --save-dev --save-exact prosemirror-collab@1.3.1` | EXIT=0 | `npm-install-collab.log` |
+| `npm run lint` | EXIT=0 | `final-lint.log` |
+| `npm run typecheck` | EXIT=0 | `final-typecheck.log` |
+| `npm run test:unit` | 664 passed, EXIT=0 | `final-test-unit.log` |
+| `npm run test:integration` | 410 passed, 1 skipped (already skipped before), EXIT=0 | `final-test-integration.log` |
+| `npm run check:traceability` | fails=0 warns=0, EXIT=0 | `final-traceability.log` |
+| `run-e2e` live-sync, note-view, conflict | 6 passed, 1 failed: the menu Rename focus was taken back by the closing menu; fixed by deferring it | `final-e2e-1.log` |
+| `run-e2e` note-view (after the fix) | 2 passed, EXIT=0 | `final-e2e-1b.log` |
+| `run-e2e` stickies, editor, editor-flow, crash, security, paste | 57 passed, 2 failed: an assertion still on the old title text, and an indicator check that expected "Editing…" while the edit now reaches main at once | `final-e2e-2.log` |
+| `run-e2e` stickies, editor (after the test updates) | 33 passed, EXIT=0 | `final-e2e-2b.log` |
+| `run-e2e` reminders, references, nlp, note-live, a11y-keyboard, visual (screenshots to `screens-final/`) | 68 passed, EXIT=0 | `final-e2e-3.log` |
+| `run-e2e` live-sync (final, renamed tests) | 3 passed, EXIT=0 | `final-e2e-4.log` |
+
+Screenshots looked at: `screens-final/sticky-light.png` and `sticky-dark.png`. The title fits its text and the empty header space before × is free to drag.
+
+### Not run
+
+- The full E2E suite, WSL/WSLg, packaging and `packaged.spec`.
+- A native drag of the sticky header with a real pointer; only the computed `-webkit-app-region` values are checked.

@@ -74,10 +74,10 @@ export interface StickyManagerDeps {
   caps(): CapabilitiesType;
   /** Acknowledged flush of the given renderers (bounded per renderer); true when each confirmed its text is saved. */
   flush(webContentsIds: number[]): Promise<boolean>;
-  resetLeases(webContentsId: number): void;
+  resetViews(webContentsId: number): void;
   sendState(webContentsId: number, state: StickyStateType): void;
   trash: { restore(batchId: string): TrashRestoreResponseType };
-  mainWindow: { openNote(noteId: string, takeEdit: boolean): void };
+  mainWindow: { openNote(noteId: string): void };
   restoreOnStartupEnabled(): boolean;
   theme(): 'light' | 'dark';
   logger: Logger;
@@ -245,7 +245,7 @@ export class StickyManager {
   }
 
   /**
-   * Flush (acknowledged), save bounds, open = 0, reset the window's leases, destroy. A hidden sticky is a closed
+   * Flush (acknowledged), save bounds, open = 0, its views leave live sync, destroy. A hidden sticky is a closed
    * window; the note and its sticky flag stay (INF-STKY-05, D-065). When the renderer did not confirm that its text
    * is saved (a failed save or no answer in time), the window stays open with its text (D-055, D-072); resolves false.
    */
@@ -263,7 +263,7 @@ export class StickyManager {
       }
       this.saveBounds(entry);
       this.deps.service.setOpen(entry.noteId, false);
-      this.deps.resetLeases(entry.handle.webContentsId);
+      this.deps.resetViews(entry.handle.webContentsId);
       entry.handle.destroy();
       this.forget(entry);
       return true;
@@ -284,14 +284,14 @@ export class StickyManager {
   }
 
   /**
-   * Hides the window (if floating) and opens the note in a tab with edit control; the tab never races the sticky,
+   * Hides the window (if floating) and opens the note in a tab; the tab never races the sticky,
    * and it never opens while the sticky still holds unsaved text.
    */
   async dock(noteId: string): Promise<void> {
     this.requireMeta(noteId);
     await this.closeFloating(noteId);
     this.deps.logger.info(`sticky: dock note=${noteId}`);
-    this.deps.mainWindow.openNote(noteId, true);
+    this.deps.mainWindow.openNote(noteId);
   }
 
   /** "Remove from stickies": dock, clear the sticky flag and forget the window state. */
@@ -299,7 +299,7 @@ export class StickyManager {
     this.requireMeta(noteId);
     await this.closeFloating(noteId);
     this.deps.service.disable(noteId);
-    this.deps.mainWindow.openNote(noteId, true);
+    this.deps.mainWindow.openNote(noteId);
   }
 
   // Trash ----------------------------------------------------------------------------------
@@ -322,7 +322,7 @@ export class StickyManager {
       const meta = metas.get(entry.noteId);
       if (!meta) {
         this.deps.logger.info(`sticky: purged note=${entry.noteId}`);
-        this.deps.resetLeases(entry.handle.webContentsId);
+        this.deps.resetViews(entry.handle.webContentsId);
         entry.handle.destroy();
         this.forget(entry);
         continue;

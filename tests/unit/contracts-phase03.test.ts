@@ -14,7 +14,7 @@ import {
 } from '../../src/shared/contracts/notes';
 import { SETTINGS, SettingsSetRequest } from '../../src/shared/contracts/settings';
 
-const op = () => ({ noteId: randomUUID(), viewId: randomUUID(), leaseToken: randomUUID(), baseRevision: 3, requestId: randomUUID() });
+const op = () => ({ noteId: randomUUID(), viewId: randomUUID(), baseRevision: 3, requestId: randomUUID() });
 
 describe('Phase 03 contracts (plan section 6.1)', () => {
   it('conversion to plain text must be confirmed; to rich text needs nothing', () => {
@@ -45,6 +45,7 @@ describe('Phase 03 contracts (plan section 6.1)', () => {
     const version = { id: randomUUID(), revision: 1, format: 'rich', reason: 'auto', createdAt: 1, preview: 'p', attachmentCount: 0 };
     expect(VersionSummary.safeParse(version).success).toBe(true);
     expect(VersionSummary.safeParse({ ...version, preview: 'x'.repeat(201) }).success).toBe(false);
+    // Drafts kept before live sync (D-103) may still carry the old lease_lost reason.
     const draft = { id: randomUUID(), reason: 'lease_lost', baseRevision: 0, format: 'plain', title: null, createdAt: 1, plainText: 't', truncated: false };
     expect(DraftSummary.safeParse(draft).success).toBe(true);
     expect(DraftSummary.safeParse({ ...draft, plainText: 'x'.repeat(20_001) }).success).toBe(false);

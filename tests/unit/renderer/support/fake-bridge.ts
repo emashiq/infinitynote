@@ -32,10 +32,14 @@ import type { AutostartStateType, WidgetStateType } from '../../../../src/shared
 import { resolveLocal } from '../../../../src/shared/time/resolve';
 import type { WindowGetStateResponseType } from '../../../../src/shared/contracts/windows';
 import { extractPlainText } from '../../../../src/shared/text/plain-text';
-import { collectNoteRefs } from '../../../../src/shared/editor/doc-schema';
+import { BLOCK_ID_TYPES, collectNoteRefs } from '../../../../src/shared/editor/doc-schema';
 import type { NotesPickResponseType } from '../../../../src/shared/contracts/references';
 import { textBlocksOf } from '../../../../src/shared/editor/text-blocks';
-import { textToDoc } from '../../../../src/shared/text/textarea-doc';
+import { docToText, textToDoc } from '../../../../src/shared/text/textarea-doc';
+import type { Node as PmNode } from '@tiptap/pm/model';
+import { Step } from '@tiptap/pm/transform';
+import { noteSchema } from '../../../../src/shared/editor/schema';
+import { toSavable } from '../../../../src/shared/editor/savable';
 import { buildPathIndex, pathOf } from '../../../../src/shared/tree/paths';
 
 export interface FakeDraft {
@@ -44,9 +48,19 @@ export interface FakeDraft {
   content: unknown;
   format: 'rich' | 'plain';
   baseRevision: number;
-  reason: 'conflict' | 'lease_lost';
+  reason: 'conflict';
   createdAt: number;
   resolved: boolean;
+}
+
+/** A note's live-sync session as main holds it (D-103): the document, its version and the joined views. */
+export interface FakeSession {
+  epoch: string;
+  version: number;
+  doc: PmNode;
+  log: Array<{ step: { stepType: string }; clientID: string }>;
+  members: Set<string>;
+  dirty: boolean;
 }
 
 export interface FakeVersion {
@@ -71,6 +85,16 @@ export interface FakeBridgeOptions {
   info?: Partial<{ version: string }>;
 }
 
+/** A rich document with an ID on every block type that carries one. */
+function withBlockIds(doc: unknown): unknown {
+  const walk = (node: { type?: string; attrs?: Record<string, unknown>; content?: unknown[] }): unknown => ({
+    ...node,
+    ...((BLOCK_ID_TYPES as readonly string[]).includes(node.type ?? '') && !node.attrs?.id ? { attrs: { ...node.attrs, id: uid() } } : {}),
+    ...(node.content ? { content: node.content.map((c) => walk(c as typeof node)) } : {}),
+  });
+  return walk(doc as { content?: unknown[] });
+}
+
 let counter = 0;
 const uid = (): string => {
   counter += 1;
@@ -87,9 +111,8 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const projects: Array<ProjectDtoType & { deletedAt: number | null; batch: string | null }> = [];
   const folders: Array<FolderDtoType & { deletedAt: number | null; batch: string | null }> = [];
   const notes: FakeNote[] = [];
-  const leases = new Map<string, string>();
-  /** Notes whose lease another window holds: acquire is refused until a take (or a test) frees them. */
-  const heldElsewhere = new Set<string>();
+  const sessions = new Map<string, FakeSession>();
+  const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const drafts: FakeDraft[] = [];
   const versions: FakeVersion[] = [];
   const imports: Array<{ kind: string; originalName?: string; size: number }> = [];
@@ -174,19 +197,40 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     for (const n of notes) if (ids.includes(n.id) && n.deletedAt === null) Object.assign(n, { deletedAt: clock, batch });
   };
 
-  /** Lease and revision checks shared by conversion and restores; applies the change and bumps the revision. */
+  /** Saves a session's document into its note, as main does a moment after an edit (D-103). */
+  const saveSession = (noteId: string): number => {
+    const n = notes.find((x) => x.id === noteId)!;
+    const sess = sessions.get(noteId);
+    if (!sess || !sess.dirty) return n.revision;
+    const json = sess.doc.toJSON() as { content?: unknown[] };
+    n.content = n.format === 'rich' ? toSavable(json) : docToText(json);
+    n.revision += 1;
+    clock += 1;
+    n.updatedAt = clock;
+    sess.dirty = false;
+    emit('collab:status', { noteId, epoch: sess.epoch, savedVersion: sess.version, revision: n.revision, state: 'saved', message: null });
+    return n.revision;
+  };
+  /** A write outside the session (conversion, restore, a whole-content save): its views join again. */
+  const resetSession = (noteId: string) => {
+    if (!sessions.delete(noteId)) return;
+    emit('collab:reset', { noteId, conflict: null });
+  };
+
+  /** Revision checks shared by conversion and restores; applies the change and bumps the revision. */
   const contentOp = (
     req: ContentOpBaseType,
     change: (n: FakeNote) => { format: 'rich' | 'plain'; content: unknown; versionId: string | null } | Result<never>,
   ): Result<NoteContentResponseType> => {
     const n = notes.find((x) => x.id === req.noteId && x.deletedAt === null);
     if (!n) return fail('NOT_FOUND', 'That item no longer exists.');
-    if (leases.get(n.id) !== req.leaseToken) return fail('LEASE_REQUIRED', 'Edit control was lost');
+    saveSession(n.id);
     if (n.revision !== req.baseRevision) return fail('CONFLICT', 'This note changed elsewhere', { currentRevision: n.revision, reason: 'stale' });
     const c = change(n);
     if ('ok' in c) return c;
     clock += 1;
     Object.assign(n, { format: c.format, content: c.content, revision: n.revision + 1, updatedAt: clock });
+    resetSession(n.id);
     return ok({ noteId: n.id, revision: n.revision, format: c.format, content: c.content as never, versionId: c.versionId, updatedAt: clock });
   };
   const snapshot = (n: FakeNote, reason: FakeVersion['reason']): string => {
@@ -573,11 +617,6 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
         handle('note:save', req, () => {
           const n = notes.find((x) => x.id === req.noteId);
           if (!n) return fail('NOT_FOUND', 'Note not found');
-          if (leases.get(n.id) !== req.leaseToken) {
-            const draftId = uid();
-            drafts.push({ id: draftId, noteId: n.id, content: req.content, format: req.format, baseRevision: req.baseRevision, reason: 'lease_lost', createdAt: clock, resolved: false });
-            return fail('LEASE_REQUIRED', 'Edit control was lost', { draftId });
-          }
           if (n.deletedAt !== null || n.revision !== req.baseRevision) {
             const draftId = uid();
             drafts.push({ id: draftId, noteId: n.id, content: req.content, format: req.format, baseRevision: req.baseRevision, reason: 'conflict', createdAt: clock, resolved: false });
@@ -588,6 +627,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           n.revision += 1;
           clock += 1;
           n.updatedAt = clock;
+          resetSession(n.id);
           return ok({ noteId: n.id, revision: n.revision, requestId: req.requestId, updatedAt: clock });
         }),
       convertFormat: (req) =>
@@ -611,26 +651,75 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           return ok({ kind: req.kind, id: req.id, favorite: req.favorite });
         }),
     },
-    lease: {
-      acquire: (req) =>
-        handle<ChannelResponse<'lease:acquire'>>('lease:acquire', req, () => {
-          if (heldElsewhere.has(req.noteId)) return ok({ granted: false as const, holderViewId: '99999999-9999-4999-8999-999999999999' });
-          const token = `lease-${req.noteId}-${req.viewId}`;
-          leases.set(req.noteId, token);
-          return ok({ granted: true as const, leaseToken: token });
+    collab: {
+      join: (req) =>
+        handle('collab:join', req, () => {
+          const n = notes.find((x) => x.id === req.noteId);
+          if (!n) return fail('NOT_FOUND', 'That item no longer exists.');
+          if (n.deletedAt !== null) return fail('NOT_FOUND', 'This note is in Trash', { trashed: true, trashBatchId: n.batch });
+          let sess = sessions.get(n.id);
+          if (!sess) {
+            // Like main, the session gives blocks their IDs once, so no editor has to (D-103).
+            const json = n.format === 'rich' ? withBlockIds(n.content ?? { type: 'doc', content: [{ type: 'paragraph' }] }) : textToDoc(String(n.content ?? ''));
+            sess = { epoch: uid(), version: 0, doc: noteSchema(n.format).nodeFromJSON(json), log: [], members: new Set(), dirty: false };
+            sessions.set(n.id, sess);
+          }
+          sess.members.add(req.viewId);
+          return ok({ epoch: sess.epoch, version: sess.version, format: n.format, doc: sess.doc.toJSON(), revision: n.revision });
         }),
-      release: (req) =>
-        handle('lease:release', req, () => {
-          const held = leases.get(req.noteId) === req.leaseToken;
-          if (held) leases.delete(req.noteId);
-          return ok({ released: held });
+      push: (req) =>
+        handle<ChannelResponse<'collab:push'>>('collab:push', req, () => {
+          const sess = sessions.get(req.noteId);
+          const n = notes.find((x) => x.id === req.noteId)!;
+          if (!sess || !sess.members.has(req.viewId) || sess.epoch !== req.epoch) return ok({ status: 'reset' as const });
+          if (req.version !== sess.version) return ok({ status: 'behind' as const, version: sess.version });
+          const start = sess.version;
+          for (const json of req.steps) {
+            const result = Step.fromJSON(noteSchema(n.format), json).apply(sess.doc);
+            if (!result.doc) return fail('VALIDATION_FAILED', 'These edits could not be applied');
+            sess.doc = result.doc;
+            sess.log.push({ step: json, clientID: req.viewId });
+          }
+          sess.version += req.steps.length;
+          sess.dirty = true;
+          clearTimeout(saveTimers.get(req.noteId));
+          saveTimers.set(req.noteId, setTimeout(() => saveSession(req.noteId), 400));
+          emit('collab:steps', { noteId: req.noteId, epoch: sess.epoch, version: start, steps: req.steps, clientIDs: req.steps.map(() => req.viewId) });
+          return ok({ status: 'accepted' as const, version: sess.version });
         }),
-      take: (req) =>
-        handle('lease:take', req, () => {
-          heldElsewhere.delete(req.noteId);
-          const token = 'take-' + req.noteId + '-' + uid();
-          leases.set(req.noteId, token);
-          return ok({ leaseToken: token });
+      pull: (req) =>
+        handle<ChannelResponse<'collab:pull'>>('collab:pull', req, () => {
+          const sess = sessions.get(req.noteId);
+          if (!sess || sess.epoch !== req.epoch) return ok({ status: 'reset' as const });
+          const missing = sess.log.slice(req.version);
+          return ok({ status: 'steps' as const, version: req.version, steps: missing.map((m) => m.step), clientIDs: missing.map((m) => m.clientID) });
+        }),
+      flush: (req) =>
+        handle('collab:flush', req, () => {
+          const n = notes.find((x) => x.id === req.noteId);
+          if (!n) return fail('NOT_FOUND', 'That item no longer exists.');
+          clearTimeout(saveTimers.get(req.noteId));
+          const sess = sessions.get(req.noteId);
+          if (sess && req.force) sess.dirty = true;
+          if (sess?.dirty && n.deletedAt !== null) {
+            const draftId = uid();
+            const json = sess.doc.toJSON() as { content?: unknown[] };
+            drafts.push({ id: draftId, noteId: n.id, content: n.format === 'rich' ? toSavable(json) : docToText(json), format: n.format, baseRevision: n.revision, reason: 'conflict', createdAt: clock, resolved: false });
+            sessions.delete(n.id);
+            return fail('CONFLICT', 'This note changed elsewhere', { currentRevision: n.revision, draftId, reason: 'trashed' });
+          }
+          return ok({ revision: saveSession(req.noteId) });
+        }),
+      leave: (req) =>
+        handle<ChannelResponse<'collab:leave'>>('collab:leave', req, () => {
+          const sess = sessions.get(req.noteId);
+          if (!sess?.members.delete(req.viewId)) return ok({ left: false });
+          if (sess.members.size === 0) {
+            clearTimeout(saveTimers.get(req.noteId));
+            saveSession(req.noteId);
+            sessions.delete(req.noteId);
+          }
+          return ok({ left: true });
         }),
     },
     trash: {
@@ -970,7 +1059,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     /** The sticky window state a note would have in main. */
     stickyState: (noteId: string) => stickyState(notes.find((n) => n.id === noteId)!),
     /** Direct access for arranging state in tests. */
-    data: { reminders: reminderData, windows: windowData, portability: portabilityData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, heldElsewhere, settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
+    data: { reminders: reminderData, windows: windowData, portability: portabilityData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, settings, projects, folders, notes, sessions, drafts, versions, imports, dialogResults, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
   };
 }
 

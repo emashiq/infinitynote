@@ -65,8 +65,8 @@ export class VersionService {
   }
 
   /** Restores a version; the current content is saved as a `restore` version first. The title is kept. */
-  restore(req: VersionsRestoreRequestType, ctx: { webContentsId: number }): NoteContentResponseType {
-    return this.deps.ops.run(req, ctx, (row, now) => {
+  restore(req: VersionsRestoreRequestType): NoteContentResponseType {
+    return this.deps.ops.run(req, (row, now) => {
       const version = this.versions.get(req.noteId, req.versionId);
       if (!version) throw new AppError('NOT_FOUND', 'That version no longer exists.');
       const content = normalizeContent(version.format, version.format === 'rich' ? JSON.parse(version.content_snapshot) : version.content_snapshot);

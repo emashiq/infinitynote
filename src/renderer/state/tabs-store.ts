@@ -106,11 +106,8 @@ export class TabsStore {
     return tab && tab.kind === 'note' ? tab.noteId : null;
   }
 
-  /**
-   * Makes the held controller match the active tab. The previous controller must already be disposed. A new
-   * controller takes edit control when `mode` is `take` (a docked or app-opened note, D-065).
-   */
-  private syncController(mode: 'acquire' | 'take' = 'acquire'): void {
+  /** Makes the held controller match the active tab. The previous controller must already be disposed. */
+  private syncController(): void {
     const noteId = this.activeNoteId();
     if (noteId === null) {
       this.controller = null;
@@ -122,15 +119,15 @@ export class TabsStore {
         timers: this.deps.timers,
         uuid: this.deps.uuid,
       });
-      void this.controller.open(mode);
+      void this.controller.open();
     }
     if (this.store.getState().controllerNoteId !== noteId) this.store.setState({ controllerNoteId: noteId });
   }
 
   /**
-   * Flushes and releases the active note. Returns false when a save failure must keep the tab open: only a
-   * failure after which main kept the edits as a draft (CONFLICT, LEASE_REQUIRED) or the note is gone (NOT_FOUND)
-   * lets the tab go (D-055).
+   * Flushes the active note and leaves its live-sync session. Returns false when a save failure must keep the tab open:
+   * only a failure after which main kept the edits as a draft (CONFLICT) or the note is gone (NOT_FOUND) lets the tab
+   * go (D-055).
    */
   private async leaveActive(): Promise<boolean> {
     const c = this.controller;
@@ -165,23 +162,20 @@ export class TabsStore {
   }
 
   // Operations ------------------------------------------------------------------
-  private async switchTo(next: TabSessionType, mode: 'acquire' | 'take' = 'acquire'): Promise<boolean> {
+  private async switchTo(next: TabSessionType): Promise<boolean> {
     if (next === this.session) return true;
     // A scroll position reported just before switching must reach the session the next view reads.
     this.applyScrollNow();
     if (next.activeTabId !== this.session.activeTabId && !(await this.leaveActive())) return false;
     this.store.setState({ session: next });
-    this.syncController(mode);
+    this.syncController();
     this.schedulePersist();
     return true;
   }
 
-  /**
-   * Opens or activates a note tab; `takeEdit` also takes edit control (dock and "Open in app", D-065); `blockId` reveals
-   * a reminder's block once the editor shows the note (D-074).
-   */
-  async openNote(noteId: string, opts: { takeEdit?: boolean; blockId?: string | null } = {}): Promise<boolean> {
-    const opened = await this.openTabInternal({ id: noteTabId(noteId), kind: 'note', noteId }, opts.takeEdit ? 'take' : 'acquire');
+  /** Opens or activates a note tab; `blockId` reveals a reminder's block once the editor shows the note (D-074). */
+  async openNote(noteId: string, opts: { blockId?: string | null } = {}): Promise<boolean> {
+    const opened = await this.openTabInternal({ id: noteTabId(noteId), kind: 'note', noteId });
     if (opened && opts.blockId && this.controller?.noteId === noteId) this.controller.requestReveal(opts.blockId);
     return opened;
   }
@@ -190,17 +184,14 @@ export class TabsStore {
     return this.openTabInternal({ id: `page:${kind}`, kind } as TabType);
   }
 
-  private openTabInternal(tab: TabType, mode: 'acquire' | 'take' = 'acquire'): Promise<boolean> {
+  private openTabInternal(tab: TabType): Promise<boolean> {
     return this.run(async () => {
       const r = openTab(this.session, tab);
       if ('error' in r) {
         this.deps.notices.push(TAB_LIMIT_NOTICE, 'info');
         return false;
       }
-      if (!(await this.switchTo(r.session, mode))) return false;
-      // The tab was already active: its controller exists, so it takes control itself.
-      if (mode === 'take' && tab.kind === 'note' && this.controller?.noteId === tab.noteId) await this.controller.ensureEditing();
-      return true;
+      return this.switchTo(r.session);
     });
   }
 

@@ -116,16 +116,17 @@ describe('Phase 02 shell (smoke)', () => {
     await act(async () => {
       editor!.commands.insertContentAt(1, 'hello world');
     });
-    expect(el.querySelector('[role="status"].save-status')?.textContent).toBe('Editing…');
+    // The steps went to main at once; main saves a moment later (D-103).
+    expect(el.querySelector('[role="status"].save-status')?.textContent).toMatch(/^(Editing|Saving)…$/);
     expect(el.querySelector('.save-status')?.classList.contains('sr-only')).toBe(true);
+    expect(fake.callsTo('collab:push').length).toBeGreaterThan(0);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 450));
     });
     await settle(8);
-    const save = fake.callsTo('note:save').at(-1)?.req as { format: string; content: { type: string; content: unknown[] } } | undefined;
-    expect(save?.format).toBe('rich');
-    expect(save?.content.type).toBe('doc');
-    expect(JSON.stringify(save?.content)).toContain('hello world');
+    const stored = fake.data.notes.at(-1)!;
+    expect(stored.format).toBe('rich');
+    expect(JSON.stringify(stored.content)).toContain('hello world');
     expect(el.querySelector('[role="status"].save-status')?.textContent).toBe('Saved');
   });
 
@@ -239,7 +240,7 @@ describe('Phase 02 shell (smoke)', () => {
     expect(status.textContent).toBe('Saved');
     expect(status.classList.contains('sr-only')).toBe(true);
 
-    fake.failNext('note:save', { code: 'LIMIT_EXCEEDED', message: NOTE_TOO_LARGE_MESSAGE });
+    fake.failNext('collab:push', { code: 'LIMIT_EXCEEDED', message: NOTE_TOO_LARGE_MESSAGE });
     await act(async () => {
       liveEditor()!.commands.insertContentAt(1, 'too much');
     });

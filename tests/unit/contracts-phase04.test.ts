@@ -35,7 +35,7 @@ describe('Phase 04 contracts (D-062, D-063)', () => {
     expect(CHANNEL_SCHEMAS['sticky:setColor'].response.safeParse(state).success).toBe(true);
     expect(CHANNEL_SCHEMAS['window:getState'].request.safeParse({}).success).toBe(true);
     expect(CHANNEL_SCHEMAS['window:getState'].request.safeParse({ noteId: ID }).success).toBe(false);
-    expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [{ noteId: ID, takeEdit: true }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } }).success).toBe(true);
+    expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [{ noteId: ID }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } }).success).toBe(true);
     expect(WindowGetStateResponse.safeParse({ role: 'sticky', sticky: state }).success).toBe(true);
     expect(WindowGetStateResponse.safeParse({ role: 'sticky', openNotes: [] }).success).toBe(false);
     expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: Array.from({ length: 51 }, () => ({ noteId: ID, takeEdit: false })), openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } }).success).toBe(false);
@@ -64,8 +64,9 @@ describe('Phase 04 contracts (D-062, D-063)', () => {
 
   it('events: sticky:state and app:openNote', () => {
     expect(EVENT_SCHEMAS['sticky:state'].safeParse(state).success).toBe(true);
-    expect(EVENT_SCHEMAS['app:openNote'].safeParse({ noteId: ID, takeEdit: true }).success).toBe(true);
-    expect(AppOpenNoteEvent.safeParse({ noteId: ID }).success).toBe(false);
+    expect(EVENT_SCHEMAS['app:openNote'].safeParse({ noteId: ID }).success).toBe(true);
+    expect(AppOpenNoteEvent.safeParse({ noteId: ID, takeEdit: true }).success).toBe(false);
+    expect(AppOpenNoteEvent.safeParse({}).success).toBe(false);
   });
 
   it('tree:changed gains the reason sticky', () => {

@@ -58,7 +58,7 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
   registerHomeHandlers(router, use('home'));
   registerSessionHandlers(router, use('sessions'));
   registerPaletteHandlers(router, use('palette'));
-  registerNoteHandlers(router, { reader: use('reader'), writer: use('writer'), leases: use('leases'), formats: use('formats') });
+  registerNoteHandlers(router, { reader: use('reader'), writer: use('writer'), collab: use('collab'), formats: use('formats') });
   registerContentHandlers(router, { versions: use('versions'), drafts: use('drafts') });
   registerAttachmentHandlers(router, use('attachments'), use('handoff'));
   registerRetrievalHandlers(router, { references: use('references'), search: use('search'), tags: use('tags') });
@@ -71,7 +71,7 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
   });
   registerReminderHandlers(router, {
     reminders: use('reminders'),
-    openNote: (noteId, blockId) => desktop.mainWindow.openNote(noteId, false, blockId),
+    openNote: (noteId, blockId) => desktop.mainWindow.openNote(noteId, blockId),
   });
   registerSuggestionHandlers(router, { reminders: use('reminders'), suggestions: use('suggestions') });
   registerWidgetHandlers(router, widget);

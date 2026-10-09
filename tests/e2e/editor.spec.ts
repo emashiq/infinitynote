@@ -504,7 +504,8 @@ test('save indicator (INF-EDIT-13)', async () => {
   await openFromTree(page, id);
   await focusEditorEnd(page);
   await page.keyboard.insertText('a');
-  await expect(saveStatus(page)).toHaveText('Editing…');
+  // The edit reaches main at once and main saves it a moment later (D-103): never Saved before that.
+  await expect(saveStatus(page)).toHaveText(/^(Editing|Saving)…$/);
   await expect(saveStatus(page)).toHaveText('Saved');
 
   await setHook(app, 'failSaves', 4);

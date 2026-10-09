@@ -45,20 +45,16 @@ describe('attachment import (INF-EDIT-08, INF-EDIT-10, INF-EDIT-14)', () => {
 
     const note = s.note(null, null, 'With image');
     const viewId = randomUUID();
-    const lease = s.leases.acquire(note.id, viewId, 1);
-    if (!lease.granted) throw new Error('lease');
     const blockId = randomUUID();
     s.writer.save(
       {
         noteId: note.id,
         viewId,
-        leaseToken: lease.leaseToken,
         baseRevision: 0,
         requestId: randomUUID(),
         format: 'rich',
         content: { type: 'doc', content: [{ type: 'image', attrs: { id: blockId, attachmentId: attachment.id, width: 64, height: 48 } }] },
       },
-      { webContentsId: 1 },
     );
     expect(attachmentRow(s, attachment.id).unreferenced_since).toBeNull();
     expect(s.rows('SELECT note_id, attachment_id, block_id FROM note_attachments')).toEqual([{ note_id: note.id, attachment_id: attachment.id, block_id: blockId }]);
@@ -208,13 +204,9 @@ describe('attachment import (INF-EDIT-08, INF-EDIT-10, INF-EDIT-14)', () => {
     const s = await setupServices();
     const note = s.hierarchy.createNote({ projectId: null, folderId: null }, false, 'P', 'plain').note;
     const viewId = randomUUID();
-    const lease = s.leases.acquire(note.id, viewId, 1);
-    if (!lease.granted) throw new Error('lease');
     const { attachment } = await s.attachments.importBytes({ kind: 'image', bytes: makePng(2, 2) });
     s.writer.save(
-      { noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision: 0, requestId: randomUUID(), format: 'plain', content: `see ${attachment.id}` },
-      { webContentsId: 1 },
-    );
+      { noteId: note.id, viewId, baseRevision: 0, requestId: randomUUID(), format: 'plain', content: `see ${attachment.id}` });
     expect(s.rows('SELECT * FROM note_attachments')).toEqual([]);
   });
 });

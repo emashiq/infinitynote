@@ -56,7 +56,7 @@ const bridge: InfinityBridge = {
     convertFormat: call('note:convertFormat'),
   },
   item: { setFavorite: call('item:setFavorite') },
-  lease: { acquire: call('lease:acquire'), release: call('lease:release'), take: call('lease:take') },
+  collab: { join: call('collab:join'), push: call('collab:push'), pull: call('collab:pull'), flush: call('collab:flush'), leave: call('collab:leave') },
   versions: { list: call('versions:list'), restore: call('versions:restore') },
   drafts: { list: call('drafts:list'), resolve: call('drafts:resolve') },
   shell: { openExternal: call('shell:openExternal') },

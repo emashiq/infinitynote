@@ -27,7 +27,7 @@ async function setup(opts: { caps?: CapabilitiesType; displays?: DisplayInfo[]; 
   const displays = fakeDisplays(opts.displays ?? [display(1, 0)]);
   const timers = manualTimers();
   const sent: Array<{ webContentsId: number; state: StickyStateType }> = [];
-  const opened: Array<{ noteId: string; takeEdit: boolean }> = [];
+  const opened: Array<{ noteId: string }> = [];
   const layout: StickyLayoutEntry[] = [];
   const ctl = { caps: opts.caps ?? WINDOWS_CAPS, restore: opts.restore ?? false, flushGate: null as Deferred | null, saved: true };
   // The real StickyService, with setOpen recorded in the order log.
@@ -47,16 +47,16 @@ async function setup(opts: { caps?: CapabilitiesType; displays?: DisplayInfo[]; 
       await ctl.flushGate?.promise;
       return ctl.saved;
     },
-    resetLeases: (id) => {
+    resetViews: (id) => {
       log.push(`reset:${id}`);
-      s.leases.webContentsReset(id);
+      s.collab.webContentsReset(id);
     },
     sendState: (webContentsId, state) => sent.push({ webContentsId, state }),
     trash: s.trash,
     mainWindow: {
-      openNote: (noteId, takeEdit) => {
+      openNote: (noteId) => {
         log.push(`openNote:${noteId}`);
-        opened.push({ noteId, takeEdit });
+        opened.push({ noteId });
       },
     },
     restoreOnStartupEnabled: () => ctl.restore,
@@ -169,7 +169,7 @@ describe('StickyManager hide, dock and remove (INF-STKY-03, INF-STKY-05)', () =>
     t.ctl.saved = true;
     await t.m.dock(note.id);
     expect(win.destroyed).toBe(true);
-    expect(t.opened).toEqual([{ noteId: note.id, takeEdit: true }]);
+    expect(t.opened).toEqual([{ noteId: note.id }]);
   });
 
   it('a canceled quit makes the OS close hide again', async () => {
@@ -206,7 +206,7 @@ describe('StickyManager hide, dock and remove (INF-STKY-03, INF-STKY-05)', () =>
     t.log.length = 0;
     await t.m.dock(note.id);
     expect(t.log).toEqual([`flush:${win.webContentsId}`, 'open:0', `reset:${win.webContentsId}`, `destroy:${win.webContentsId}`, `openNote:${note.id}`]);
-    expect(t.opened).toEqual([{ noteId: note.id, takeEdit: true }]);
+    expect(t.opened).toEqual([{ noteId: note.id }]);
     expect(t.noteRow(note.id)?.sticky_enabled).toBe(1);
 
     t.log.length = 0;
@@ -224,7 +224,7 @@ describe('StickyManager hide, dock and remove (INF-STKY-03, INF-STKY-05)', () =>
     expect(t.last().destroyed).toBe(true);
     expect(t.noteRow(note.id)?.sticky_enabled).toBe(0);
     expect(t.s.rows('SELECT key FROM window_state')).toEqual([]);
-    expect(t.opened).toEqual([{ noteId: note.id, takeEdit: true }]);
+    expect(t.opened).toEqual([{ noteId: note.id }]);
   });
 });
 
@@ -458,7 +458,7 @@ function managerDepsLike(t: Awaited<ReturnType<typeof setup>>) {
     displays: t.displays,
     caps: () => WINDOWS_CAPS,
     flush: async () => true,
-    resetLeases: () => {},
+    resetViews: () => {},
     sendState: () => {},
     trash: t.s.trash,
     mainWindow: { openNote: () => {} },

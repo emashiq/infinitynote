@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { JSONContent } from '@tiptap/core';
 import { describe, expect, it } from 'vitest';
-import { toSavable } from '../../../../src/renderer/editor/content';
+import { toSavable } from '../../../../src/shared/editor/savable';
 import { normalizeRichDoc } from '../../../../src/shared/editor/doc-schema';
 import { makeEditor, tick } from './support';
 

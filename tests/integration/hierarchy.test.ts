@@ -280,13 +280,8 @@ describe('rename, pin and favorite side effects', () => {
     const n = s.note(null, null, 'T');
     s.tick();
     const viewId = randomUUID();
-    const lease = s.leases.acquire(n.id, viewId, 1);
-    expect(lease.granted).toBe(true);
-    if (!lease.granted) throw new Error('no lease');
     s.writer.save(
-      { noteId: n.id, viewId, leaseToken: lease.leaseToken, baseRevision: 0, requestId: randomUUID(), format: 'rich', content: { type: 'doc', content: [{ type: 'paragraph' }] } },
-      { webContentsId: 1 },
-    );
+      { noteId: n.id, viewId, baseRevision: 0, requestId: randomUUID(), format: 'rich', content: { type: 'doc', content: [{ type: 'paragraph' }] } });
     const afterSave = s.row<{ revision: number; updated_at: number }>('SELECT revision, updated_at FROM notes WHERE id = ?', n.id)!;
     expect(afterSave.revision).toBe(1);
     s.tick();

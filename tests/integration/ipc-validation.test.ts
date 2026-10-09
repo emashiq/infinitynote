@@ -197,7 +197,7 @@ describe('role allowlist and note ownership (D-064)', () => {
     expect([...STICKY_ALLOWED_CHANNELS].sort()).toEqual(
       [
         'app:getInfo', 'app:quit', 'app:flushed', 'capabilities:get', 'settings:get', 'note:open', 'note:save', 'note:rename', 'note:trash',
-        'note:convertFormat', 'lease:acquire', 'lease:release', 'lease:take', 'versions:list', 'versions:restore', 'drafts:list',
+        'note:convertFormat', 'versions:list', 'versions:restore', 'drafts:list',
         'drafts:resolve', 'attachment:importBytes', 'attachment:importFromDialog', 'shell:openExternal', 'window:getState', 'sticky:dock',
         'sticky:hide', 'sticky:setColor', 'sticky:setPinned', 'sticky:setCollapsed', 'sticky:remove', 'sticky:restore',
         'reminder:listForNote', 'reminder:open',
@@ -205,6 +205,8 @@ describe('role allowlist and note ownership (D-064)', () => {
         'zones:list', 'reminder:create', 'reminder:createFromSuggestion', 'suggestion:dismiss', 'suggestion:listDismissed',
         // Phase 07 (D-098): the sticky's own note's attached files.
         'attachment:open', 'attachment:showInFolder',
+        // D-103: live sync of the sticky's own note.
+        'collab:join', 'collab:push', 'collab:pull', 'collab:flush', 'collab:leave',
       ].sort(),
     );
     for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('main', channel)).toBe(true);
@@ -218,7 +220,7 @@ describe('role allowlist and note ownership (D-064)', () => {
       ].sort(),
     );
     for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('widget', channel), channel).toBe(WIDGET_ALLOWED_CHANNELS.has(channel));
-    for (const channel of ['note:open', 'lease:acquire', 'session:set', 'tree:list', 'trash:list', 'reminder:create', 'reminder:update', 'reminder:delete', 'widget:show'] as const) {
+    for (const channel of ['note:open', 'collab:join', 'session:set', 'tree:list', 'trash:list', 'reminder:create', 'reminder:update', 'reminder:delete', 'widget:show'] as const) {
       expect(isChannelAllowed('widget', channel), channel).toBe(false);
     }
   });
@@ -241,13 +243,15 @@ describe('role allowlist and note ownership (D-064)', () => {
 
   it('a sticky may name only its own note; requests without a note id are not affected', async () => {
     const r = rolesRouter();
-    const op = (noteId: string) => ({ noteId, viewId: U, leaseToken: U, baseRevision: 1, requestId: U });
+    const op = (noteId: string) => ({ noteId, viewId: U, baseRevision: 1, requestId: U });
     const cases: Array<[InvokeChannel, (noteId: string) => unknown]> = [
       ['note:open', (noteId) => ({ noteId })],
       ['note:rename', (noteId) => ({ noteId, title: 't' })],
       ['note:trash', (noteId) => ({ noteId })],
-      ['lease:acquire', (noteId) => ({ noteId, viewId: U })],
-      ['lease:take', (noteId) => ({ noteId, viewId: U })],
+      ['collab:join', (noteId) => ({ noteId, viewId: U })],
+      ['collab:push', (noteId) => ({ noteId, viewId: U, epoch: U, version: 0, steps: [{ stepType: 'replace' }] })],
+      ['collab:flush', (noteId) => ({ noteId, viewId: U })],
+      ['collab:leave', (noteId) => ({ noteId, viewId: U })],
       ['versions:list', (noteId) => ({ noteId })],
       ['drafts:list', (noteId) => ({ noteId })],
       ['drafts:resolve', (noteId) => ({ action: 'dismiss', noteId, draftId: U })],

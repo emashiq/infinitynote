@@ -27,7 +27,7 @@ function setup() {
       log.push(`flush:${ids.join(',')}:${reason}`);
       return { acked: ids, unsaved: answer.unsaved, timedOut: [] };
     },
-    resetLeases: (id) => log.push(`reset:${id}`),
+    resetViews: (id) => log.push(`reset:${id}`),
     onQuitStarting: () => log.push('quit-starting'),
     onQuitCanceled: () => log.push('quit-canceled'),
     now: () => clock.t,

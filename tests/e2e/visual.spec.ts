@@ -6,7 +6,7 @@ import { useApp } from './harness';
 import { makePng } from '../support/png';
 import { COMMON, createNote, importImage, reloadUi, saveDoc, saveText, seedNotebook, type Notebook } from './seed';
 import { activate, activeTab, openByPalette, openFromTree, railGo, tabItem, treeByKey } from './ui';
-import { chooseNoteMenu, editor, fakeView, findInput } from './editor-ui';
+import { chooseNoteMenu, editor, externalWrite, findInput } from './editor-ui';
 import { stickyHeader, stickyPage } from './sticky-ui';
 import { advance, createReminder, detailsPanel, fillReminder, reminderDialog, reminderEnv, widgetPage, withPanel } from './reminder-ui';
 
@@ -187,7 +187,7 @@ test('1100x720 light: plain note', async () => {
   await shot(page, '1100x720-light-plain-note.png');
 });
 
-test('1100x720 light: conflict and read-only banners, find bar', async () => {
+test('1100x720 light: conflict banner, find bar', async () => {
   const { app, page } = await h.start();
   const id = await richNote(page);
   await reloadUi(page);
@@ -196,7 +196,7 @@ test('1100x720 light: conflict and read-only banners, find bar', async () => {
   await editor(page).click();
   await page.keyboard.press('Control+End');
   await page.keyboard.insertText(' typed');
-  await fakeView.forceWrite(app, id, 'Changed in another window', false);
+  await externalWrite(app, id, 'Changed in another window', false);
   await expect(page.getByText('This note changed elsewhere. Your edits were kept as a recovered draft')).toBeVisible();
   await shot(page, '1100x720-light-conflict-banner.png');
 
@@ -205,10 +205,6 @@ test('1100x720 light: conflict and read-only banners, find bar', async () => {
   await expect(page.locator('.find-count')).toHaveText('1 of 1');
   await shot(page, '1100x720-light-find-bar.png');
   await page.keyboard.press('Escape');
-
-  expect(await fakeView.take(app, id)).toBe(true);
-  await expect(page.getByText('This note is being edited in another window')).toBeVisible();
-  await shot(page, '1100x720-light-read-only-banner.png');
 });
 
 test('760x560 light: formatting toolbar on a selection', async () => {
@@ -256,12 +252,8 @@ test('sticky dark', async () => {
   await shot(sp, 'sticky-dark.png', 3_000);
 });
 
-test('sticky read-only banner and trash state', async () => {
+test('sticky trash state', async () => {
   const { page, nb, sp } = await floatedSticky();
-  await openByPalette(page, 'Call Maya');
-  await activate(page.getByRole('button', { name: 'Take edit control' }));
-  await expect(sp.getByText('This note is being edited in another window')).toBeVisible();
-  await shot(sp, 'sticky-read-only-banner.png', 3_000);
   await page.evaluate((id) => window.infinity.note.trash({ noteId: id }), nb.sticky);
   await expect(sp.getByRole('heading', { name: 'This note is in Trash' })).toBeVisible();
   await shot(sp, 'sticky-trash-state.png', 3_000);

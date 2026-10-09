@@ -26,8 +26,8 @@ export interface WindowLifecycleDeps {
   logger: Logger;
   /** Asks each renderer to flush and waits for its answer (bounded per renderer). */
   flush(webContentsIds: number[], reason: FlushReasonType): Promise<FlushOutcome>;
-  /** The renderer document of a webContents went away: revoke its leases. */
-  resetLeases(webContentsId: number): void;
+  /** The renderer document of a webContents went away: its views leave the live-sync sessions (D-103). */
+  resetViews(webContentsId: number): void;
   /** Quitting starts (Quit, or the OS session ends): windows save their state before anything closes. */
   onQuitStarting(): void;
   /** A quit was canceled because a window could not save its text; windows behave normally again. */
@@ -41,7 +41,7 @@ export interface WindowLifecycleDeps {
  * shows why) and arms an escape: the one Quit that follows within 2 minutes goes ahead (D-085). Every Quit consumes
  * the escape, so a later storage failure warns again. A renderer that does not answer within the bounded wait does
  * not block quitting. A crashed renderer is reloaded (at most 3 times a minute per window); any new document drops
- * the leases of the previous one. Window close policies live in the window controllers.
+ * the views of the previous one. Window close policies live in the window controllers.
  */
 export function createWindowLifecycle(deps: WindowLifecycleDeps) {
   const now = deps.now ?? Date.now;
@@ -91,7 +91,7 @@ export function createWindowLifecycle(deps: WindowLifecycleDeps) {
     const crashes: number[] = [];
     return {
       onRendererGone(webContentsId, reason, reload) {
-        deps.resetLeases(webContentsId);
+        deps.resetViews(webContentsId);
         if (reason === 'clean-exit') return;
         deps.logger.warn(`renderer-gone reason=${reason}`);
         const t = now();
@@ -104,7 +104,7 @@ export function createWindowLifecycle(deps: WindowLifecycleDeps) {
         setTimeout(reload, CRASH_RELOAD_DELAY_MS);
       },
       onNavigated(webContentsId) {
-        deps.resetLeases(webContentsId);
+        deps.resetViews(webContentsId);
       },
       onSessionEnd: markQuitting,
     };

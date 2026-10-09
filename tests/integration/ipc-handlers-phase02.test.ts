@@ -93,8 +93,8 @@ describe('Phase 02 IPC handlers', () => {
       ['palette:searchTitles', { query: 'a', limit: 51 }],
       ['note:open', { noteId: 'x' }],
       ['note:save', { noteId: id() }],
-      ['lease:acquire', { noteId: id(), viewId: 'v' }],
-      ['lease:release', { noteId: id(), viewId: id() }],
+      ['collab:join', { noteId: id(), viewId: 'v' }],
+      ['collab:leave', { noteId: id() }],
     ];
     for (const [channel, payload] of bad) {
       const res = await call(channel, payload);
@@ -158,10 +158,8 @@ describe('Phase 02 IPC handlers', () => {
     const { call, s } = await setup();
     const note = (await call('note:create', { location: { projectId: null, folderId: null }, sticky: false })).data.note;
     const viewId = id();
-    const lease = (await call('lease:acquire', { noteId: note.id, viewId })).data;
-    expect(lease.granted).toBe(true);
     const save = (text: string, base: number) =>
-      call('note:save', { noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision: base, requestId: id(), format: 'rich', content: textToDoc(text) });
+      call('note:save', { noteId: note.id, viewId, baseRevision: base, requestId: id(), format: 'rich', content: textToDoc(text) });
     const mib = 1024 * 1024;
     const okRes = await save('x'.repeat(Math.floor(4.9 * mib)), 0);
     expect(okRes).toMatchObject({ ok: true, data: { revision: 1 } });
@@ -171,8 +169,6 @@ describe('Phase 02 IPC handlers', () => {
     expect(await save('x'.repeat(5 * mib + 70_000), 1)).toMatchObject(tooLarge);
     expect(await save('x'.repeat(6 * mib), 1)).toMatchObject(tooLarge);
     expect(s.row<{ revision: number }>('SELECT revision FROM notes WHERE id = ?', note.id)?.revision).toBe(1);
-    const released = await call('lease:release', { noteId: note.id, viewId, leaseToken: lease.leaseToken });
-    expect(released).toEqual({ ok: true, data: { released: true } });
   });
 
   it('session:get and session:set round-trip through the router', async () => {
@@ -200,7 +196,7 @@ describe('Phase 02 IPC handlers', () => {
       ['session:get', {}],
       ['palette:searchTitles', { query: 'a' }],
       ['note:open', { noteId: id() }],
-      ['lease:acquire', { noteId: id(), viewId: id() }],
+      ['collab:join', { noteId: id(), viewId: id() }],
     ];
     for (const [channel, payload] of valid) expect(await call(channel, payload), channel).toEqual(unavailable);
     expect(await call('app:quit', {})).toEqual({ ok: true, data: {} });

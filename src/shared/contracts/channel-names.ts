@@ -29,9 +29,6 @@ export const INVOKE_CHANNELS = [
   'palette:searchTitles',
   'note:open',
   'note:save',
-  'lease:acquire',
-  'lease:release',
-  'lease:take',
   'note:convertFormat',
   'versions:list',
   'versions:restore',
@@ -90,14 +87,17 @@ export const INVOKE_CHANNELS = [
   'import:portable',
   'shortcut:getGlobal',
   'shortcut:setGlobal',
+  'collab:join',
+  'collab:push',
+  'collab:pull',
+  'collab:flush',
+  'collab:leave',
 ] as const;
 
 export const EVENT_CHANNELS = [
   'settings:changed',
   'tree:changed',
   'note:revision',
-  'note:lease',
-  'lease:release-request',
   'app:flush-request',
   'sticky:state',
   'app:openNote',
@@ -105,6 +105,9 @@ export const EVENT_CHANNELS = [
   'reminder:alert',
   'widget:state',
   'app:openReminders',
+  'collab:steps',
+  'collab:reset',
+  'collab:status',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

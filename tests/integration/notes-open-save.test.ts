@@ -15,17 +15,13 @@ describe('note create, open and save (INF-TABS-03, INF-HIER-04)', () => {
     expect(opened.note).toMatchObject({ id: n.id, title: 'T', path: ['P'], sticky: false });
   });
 
-  it('saves a textToDoc document with a lease: revision 1 and plain_text; rename keeps it; next save keeps the title', async () => {
+  it('saves a textToDoc document: revision 1 and plain_text; rename keeps it; next save keeps the title', async () => {
     const s = await setupServices();
     const n = s.note(null, null, 'Title');
     const viewId = randomUUID();
-    const lease = s.leases.acquire(n.id, viewId, 1);
-    if (!lease.granted) throw new Error('lease');
     const save = (base: number, text: string) =>
       s.writer.save(
-        { noteId: n.id, viewId, leaseToken: lease.leaseToken, baseRevision: base, requestId: randomUUID(), format: 'rich', content: textToDoc(text) },
-        { webContentsId: 1 },
-      );
+        { noteId: n.id, viewId, baseRevision: base, requestId: randomUUID(), format: 'rich', content: textToDoc(text) });
     const ack = save(0, 'hello\nworld');
     expect(ack.revision).toBe(1);
     expect(s.row<{ plain_text: string; revision: number }>('SELECT plain_text, revision FROM notes WHERE id = ?', n.id)).toMatchObject({ revision: 1 });
@@ -47,22 +43,5 @@ describe('note create, open and save (INF-TABS-03, INF-HIER-04)', () => {
     const err = thrown(() => s.reader.open(n.id));
     expect(err).toEqual({ code: 'NOT_FOUND', message: 'This note is in Trash', details: { trashed: true, trashBatchId: r.trashBatchId } });
     expect(thrown(() => s.reader.open(randomUUID()))).toMatchObject({ code: 'NOT_FOUND', message: 'That item no longer exists.' });
-  });
-
-  it('after lease release a save gives LEASE_REQUIRED and stores a draft', async () => {
-    const s = await setupServices();
-    const n = s.note(null, null, 'T');
-    const viewId = randomUUID();
-    const lease = s.leases.acquire(n.id, viewId, 1);
-    if (!lease.granted) throw new Error('lease');
-    expect(s.leases.release(n.id, viewId, lease.leaseToken, 1)).toEqual({ released: true });
-    const err = thrown(() =>
-      s.writer.save(
-        { noteId: n.id, viewId, leaseToken: lease.leaseToken, baseRevision: 0, requestId: randomUUID(), format: 'rich', content: textToDoc('x') },
-        { webContentsId: 1 },
-      ),
-    );
-    expect(err.code).toBe('LEASE_REQUIRED');
-    expect(s.row<{ n: number }>('SELECT count(*) AS n FROM note_drafts WHERE note_id = ?', n.id)?.n).toBe(1);
   });
 });

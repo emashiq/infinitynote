@@ -62,10 +62,13 @@ export interface InfinityBridge {
   readonly item: {
     setFavorite: Call<'item:setFavorite'>;
   };
-  readonly lease: {
-    acquire: Call<'lease:acquire'>;
-    release: Call<'lease:release'>;
-    take: Call<'lease:take'>;
+  /** Live sync of a note between its views (D-103). */
+  readonly collab: {
+    join: Call<'collab:join'>;
+    push: Call<'collab:push'>;
+    pull: Call<'collab:pull'>;
+    flush: Call<'collab:flush'>;
+    leave: Call<'collab:leave'>;
   };
   readonly versions: {
     list: Call<'versions:list'>;
