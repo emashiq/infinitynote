@@ -4,10 +4,11 @@ import path from 'node:path';
 import { repoRoot, setContentSize } from './fixtures';
 import { useApp } from './harness';
 import { makePng } from '../support/png';
-import { createNote, importImage, reloadUi, saveDoc, saveText, seedNotebook, type Notebook } from './seed';
+import { COMMON, createNote, importImage, reloadUi, saveDoc, saveText, seedNotebook, type Notebook } from './seed';
 import { activate, openByPalette, openFromTree, railGo, tabItem, treeByKey, titleInput } from './ui';
-import { editor, fakeView, findInput } from './editor-ui';
+import { chooseMore, editor, fakeView, findInput } from './editor-ui';
 import { stickyHeader, stickyPage } from './sticky-ui';
+import { advance, createReminder, fillReminder, reminderDialog, reminderEnv, widgetPage } from './reminder-ui';
 
 const SHOTS = process.env.INFINITY_SCREENSHOT_DIR ?? path.join(repoRoot, 'test-results', 'screens');
 const h = useApp();
@@ -89,7 +90,7 @@ test('tab overflow and context menu', async () => {
   await reloadUi(page);
   await page.keyboard.press('Control+K');
   for (let i = 0; i < 14; i += 1) {
-    await page.getByRole('combobox').fill(`Overflow note ${String(i + 1).padStart(2, "0")}`);
+    await page.getByRole('combobox', { name: 'Type a command or note title' }).fill(`Overflow note ${String(i + 1).padStart(2, "0")}`);
     await expect(page.getByRole('option', { name: new RegExp(`Overflow note ${String(i + 1).padStart(2, '0')}`) }).first()).toBeVisible();
     await page.keyboard.press('Enter');
     await expect(tabItem(page, `Overflow note ${String(i + 1).padStart(2, "0")}`)).toBeVisible();
@@ -282,4 +283,78 @@ test('1100x720 light: stickies page, settings windows and tray, tab float button
   await expect(titleInput(page)).toHaveValue('Launch plan');
   await page.getByRole('button', { name: 'Float as sticky' }).focus();
   await shot(page, 'tab-float-button.png');
+});
+
+// Phase 05 reminders (plan section 12.6), on a frozen reminder clock in Asia/Dhaka.
+async function reminderBoot(): Promise<{ page: Page; app: ElectronApplication; noteId: string; block: string }> {
+  const { app, page } = await h.start(reminderEnv());
+  await setContentSize(app, page, 1400, 860);
+  const noteId = await createNote(page, COMMON, 'Bills');
+  const block = '1b4e28ba-2fa1-41d2-883f-0016d3cca427';
+  await saveDoc(page, noteId, { type: 'doc', content: [{ type: 'paragraph', attrs: { id: block }, content: [{ type: 'text', text: 'Pay rent' }] }] }, 'Pay rent');
+  await createReminder(page, { noteId, blockId: block, title: 'Pay rent', date: '2026-10-09', time: '17:00' });
+  await createReminder(page, { noteId, title: 'Call the bank', date: '2026-10-08', time: '12:00', allowPast: true } as never);
+  await createReminder(page, { noteId, title: 'Water plants', zoneId: 'America/New_York', date: '2026-10-08', time: '09:00', recurrence: { freq: 'daily' } });
+  await reloadUi(page);
+  return { app, page, noteId, block };
+}
+
+test('reminders: page, dialog, chips, panel, Home, alert banner, settings', async () => {
+  const { app, page, noteId, block } = await reminderBoot();
+  await railGo(page, 'Reminders');
+  await expect(page.getByRole('tab', { name: /^Today, / })).toBeVisible();
+  await shot(page, 'reminders-today.png');
+  await activate(page.getByRole('tab', { name: /^Overdue, / }));
+  await expect(page.locator('.reminder-row')).toHaveCount(1);
+  await shot(page, 'reminders-overdue.png');
+  await openFromTree(page, noteId);
+  await expect(page.locator(`[data-id="${block}"] .reminder-chip`)).toBeVisible();
+  await shot(page, 'note-with-chip-light.png');
+  await shot(page, 'panel-reminders.png');
+  await chooseMore(page, 'Add reminder…');
+  await fillReminder(page, { zone: 'America/New_York', date: '2026-10-09', time: '09:00' });
+  await shot(page, 'reminder-dialog.png');
+  await fillReminder(page, { date: '2027-03-14', time: '02:30' });
+  await expect(reminderDialog(page)).toContainText('does not exist on this date');
+  await shot(page, 'reminder-dialog-gap.png');
+  await fillReminder(page, { date: '2026-11-01', time: '01:30' });
+  await expect(reminderDialog(page)).toContainText('happens twice on this date');
+  await shot(page, 'reminder-dialog-fold.png');
+  await activate(reminderDialog(page).getByRole('button', { name: 'Cancel' }));
+  await railGo(page, 'Home');
+  await expect(page.getByRole('region', { name: 'Reminders' })).toContainText('Call the bank');
+  await shot(page, 'home-reminders.png');
+  await app.evaluate(() => {
+    globalThis.__infinityTest!.notifications!.mode = 'fail';
+  });
+  await createReminder(page, { noteId, title: 'Stand-up', zoneId: 'UTC', date: '2026-10-08', time: '07:01' });
+  await advance(app, 60_000);
+  await expect(page.getByRole('status', { name: 'Reminder alerts' })).toContainText('Reminder: Stand-up');
+  await shot(page, 'alert-banner.png');
+  await railGo(page, 'Settings');
+  await page.getByText('Reminders only fire while Infinity Notes is running', { exact: false }).scrollIntoViewIfNeeded();
+  await shot(page, 'settings-reminders.png');
+  await page.evaluate(() => window.infinity.settings.set({ key: 'appearance.theme', value: 'dark' }));
+  await openFromTree(page, noteId);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await shot(page, 'note-with-chip-dark.png');
+});
+
+test('reminder widget light, dark and collapsed; sticky with a chip', async () => {
+  const { app, page, noteId, block } = await reminderBoot();
+  await page.evaluate(() => window.infinity.widget.show());
+  const w = await widgetPage(app);
+  await expect(w.locator('.reminder-row').first()).toBeVisible();
+  await shot(w, 'widget-light.png', 3_000);
+  await page.evaluate(() => window.infinity.settings.set({ key: 'appearance.theme', value: 'dark' }));
+  await expect(w.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await shot(w, 'widget-dark.png', 3_000);
+  await activate(w.getByRole('button', { name: 'Collapse widget' }));
+  await expect(w.locator('.widget-body')).toBeHidden();
+  await shot(w, 'widget-collapsed.png', 300);
+  await page.evaluate(() => window.infinity.settings.set({ key: 'appearance.theme', value: 'light' }));
+  await page.evaluate((id) => window.infinity.sticky.float({ noteId: id }), noteId);
+  const sp = await stickyPage(app, noteId);
+  await expect(sp.locator(`[data-id="${block}"] .reminder-chip`)).toBeVisible();
+  await shot(sp, 'sticky-with-chip.png', 3_000);
 });

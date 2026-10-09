@@ -20,7 +20,7 @@ test('actions and titles', async () => {
   await page.keyboard.press('Control+K');
   const palette = dialogByName(page, 'Command palette');
   await expect(palette).toBeVisible();
-  const input = palette.getByRole('combobox');
+  const input = palette.getByRole('combobox', { name: 'Type a command or note title' });
   await expect(input).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(palette).toHaveCount(0);

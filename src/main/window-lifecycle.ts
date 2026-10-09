@@ -7,6 +7,8 @@ import type { WindowRegistry } from './windows/window-registry';
 export const CRASH_RELOAD_DELAY_MS = 500;
 export const MAX_CRASH_RELOADS = 3;
 export const CRASH_WINDOW_MS = 60_000;
+/** A canceled Quit lets the next Quit within this time go ahead without saving (D-085). */
+export const QUIT_ESCAPE_MS = 120_000;
 
 /** Renderer and session events of one window. */
 export interface WindowHooks {
@@ -35,8 +37,9 @@ export interface WindowLifecycleDeps {
 
 /**
  * App quit, session end, renderer crash and reload handling (INF-SAVE-01, INF-SAVE-05, D-055, D-066, D-072): quitting
- * first flushes every renderer; when a window answers that its text could not be saved, the first Quit is canceled
- * (the window shows why) and a repeated Quit goes ahead. A renderer that does not answer within the bounded wait does
+ * first flushes every renderer; when a window answers that its text could not be saved, the Quit is canceled (the window
+ * shows why) and arms an escape: the one Quit that follows within 2 minutes goes ahead (D-085). Every Quit consumes
+ * the escape, so a later storage failure warns again. A renderer that does not answer within the bounded wait does
  * not block quitting. A crashed renderer is reloaded (at most 3 times a minute per window); any new document drops
  * the leases of the previous one. Window close policies live in the window controllers.
  */
@@ -44,19 +47,21 @@ export function createWindowLifecycle(deps: WindowLifecycleDeps) {
   const now = deps.now ?? Date.now;
   let quitting = false;
   let quitFlushStarted = false;
-  let quitCanceled = false;
+  let escapeArmedAt: number | null = null;
 
   deps.app.on('before-quit', (event) => {
     if (quitting) return;
     event.preventDefault();
     if (quitFlushStarted) return;
     quitFlushStarted = true;
+    const escape = escapeArmedAt !== null && now() - escapeArmedAt <= QUIT_ESCAPE_MS;
+    escapeArmedAt = null;
     deps.onQuitStarting();
     const open = deps.registry.all().filter((w) => !w.isDestroyed()).map((w) => w.webContentsId);
     void deps.flush(open, 'quit').then(
       (outcome) => {
-        if (outcome.unsaved.length > 0 && !quitCanceled) {
-          quitCanceled = true;
+        if (outcome.unsaved.length > 0 && !escape) {
+          escapeArmedAt = now();
           quitFlushStarted = false;
           deps.logger.warn(`quit: canceled, unsaved windows=${outcome.unsaved.length}`);
           deps.onQuitCanceled();

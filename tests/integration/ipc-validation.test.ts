@@ -9,7 +9,7 @@ import { memoryLogger } from '../../src/main/services/logger';
 import { SettingsService } from '../../src/main/services/settings-service';
 import { fixedClock, openFresh } from './helpers';
 import { INVOKE_CHANNELS, type InvokeChannel } from '../../src/shared/contracts/channel-names';
-import { STICKY_ALLOWED_CHANNELS, isChannelAllowed } from '../../src/shared/contracts/channel-roles';
+import { STICKY_ALLOWED_CHANNELS, WIDGET_ALLOWED_CHANNELS, isChannelAllowed } from '../../src/shared/contracts/channel-roles';
 import { fakeIpcMain, rendererEvent as goodEvent, rolesRegistry } from './ipc-helpers';
 
 function makeRouter(opts: { validateResponses?: boolean; devOrigin?: string | null; registered?: number[] } = {}) {
@@ -116,7 +116,7 @@ describe('IPC router (INF-FND-04)', () => {
 
   it('refuses channels outside the catalogue and duplicates; dispose removes handlers', () => {
     const r = makeRouter();
-    expect(() => r.router.register('reminder:create' as never, () => ({}) as never)).toThrow(/catalogue/);
+    expect(() => r.router.register('reminder:createFromSuggestion' as never, () => ({}) as never)).toThrow(/catalogue/);
     r.router.register('app:quit', () => ({}));
     expect(() => r.router.register('app:quit', () => ({}))).toThrow(/already/);
     expect(r.handlers.size).toBe(1);
@@ -199,9 +199,23 @@ describe('role allowlist and note ownership (D-064)', () => {
         'note:convertFormat', 'lease:acquire', 'lease:release', 'lease:take', 'versions:list', 'versions:restore', 'drafts:list',
         'drafts:resolve', 'attachment:importBytes', 'attachment:importFromDialog', 'shell:openExternal', 'window:getState', 'sticky:dock',
         'sticky:hide', 'sticky:setColor', 'sticky:setPinned', 'sticky:setCollapsed', 'sticky:remove', 'sticky:restore',
+        'reminder:listForNote', 'reminder:open',
       ].sort(),
     );
     for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('main', channel)).toBe(true);
+  });
+
+  it('the widget has its own allowlist: its lists and actions, never notes, tabs, the tree or reminder edits (D-074)', () => {
+    expect([...WIDGET_ALLOWED_CHANNELS].sort()).toEqual(
+      [
+        'app:getInfo', 'app:quit', 'app:flushed', 'capabilities:get', 'settings:get', 'window:getState', 'reminders:listView',
+        'occurrence:complete', 'occurrence:snooze', 'reminder:open', 'widget:hide', 'widget:setPinned', 'widget:setCollapsed',
+      ].sort(),
+    );
+    for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('widget', channel), channel).toBe(WIDGET_ALLOWED_CHANNELS.has(channel));
+    for (const channel of ['note:open', 'lease:acquire', 'session:set', 'tree:list', 'trash:list', 'reminder:create', 'reminder:update', 'reminder:delete', 'widget:show'] as const) {
+      expect(isChannelAllowed('widget', channel), channel).toBe(false);
+    }
   });
 
   it('every main-only channel group answers FORBIDDEN to a sticky window and never reaches its handler', async () => {

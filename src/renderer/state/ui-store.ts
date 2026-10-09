@@ -1,4 +1,5 @@
 import type { FolderTargetType } from '../../shared/contracts/hierarchy';
+import type { ReminderDtoType } from '../../shared/contracts/reminders';
 import { createStore, type Store } from './store';
 
 export type DialogState =
@@ -7,7 +8,9 @@ export type DialogState =
   | { kind: 'move'; key: string }
   | { kind: 'confirmTrash'; key: string }
   | { kind: 'confirmPurge'; batchId: string; count: number }
-  | { kind: 'confirmEmptyTrash'; count: number };
+  | { kind: 'confirmEmptyTrash'; count: number }
+  /** Add (reminder null) or edit a reminder of a note (plan section 9.7). */
+  | { kind: 'reminder'; noteId: string; reminder: ReminderDtoType | null; blockId: string | null; title: string };
 
 export type FocusRequest =
   | { target: 'noteTitle'; noteId: string }

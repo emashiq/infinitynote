@@ -31,7 +31,7 @@ describe('migration 004 window_state (D-062)', () => {
     v3.db.prepare('INSERT INTO trash_reanchored(batch_id) VALUES (\'b\')').run();
     v3.db.close();
 
-    const v4 = await openDatabase({ dbFile, preMigrationDir });
+    const v4 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 4) });
     if (!v4.ok) throw new Error('v4 open failed');
     const db = trackDb(v4.db);
     expect(v4.schemaVersion).toBe(4);

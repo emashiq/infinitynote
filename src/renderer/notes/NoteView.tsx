@@ -1,7 +1,10 @@
 import type { Editor } from '@tiptap/core';
 import { PictureInPicture2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { REMINDER_MESSAGES } from '../../shared/contracts/reminders';
 import { NoteEditor } from '../editor/NoteEditor';
+import { newReminderDialog, useNoteReminders } from '../reminders/note-reminders';
+import { ReminderChipBar } from '../reminders/ReminderChipBar';
 import { useServices, useStore } from '../state/use-store';
 import { IconButton } from '../ui/IconButton';
 import { useLiveNote } from './live-note';
@@ -23,6 +26,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
   const titleRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const [dialog, setDialog] = useState<NoteDialog | null>(null);
+  const noteReminders = useNoteReminders(services.bridge, controller.noteId);
   const tab = session.tabs.find((t) => t.id === tabId);
   const savedScroll = tab?.kind === 'note' ? (tab.scrollTop ?? 0) : 0;
 
@@ -99,6 +103,10 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
 
   const readOnly = state.status === 'readOnly';
   const note = state.note;
+  const editReminder = (reminderId: string) => {
+    const reminder = noteReminders.reminders.find((r) => r.id === reminderId);
+    if (reminder) ui.openDialog({ kind: 'reminder', noteId: reminder.noteId, reminder, blockId: reminder.blockId, title: reminder.title });
+  };
   return (
     <div className="note-view">
       <h2 className="sr-only">{liveTitle.trim() === '' ? 'Untitled note' : liveTitle}</h2>
@@ -142,6 +150,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
           dismissConverted: () => controller.dismissConverted(),
         }}
       />
+      <ReminderChipBar reminders={noteReminders.reminders} displayZone={noteReminders.displayZone} onSelect={(r) => editReminder(r.id)} />
       <NoteEditor
         key={`${state.format}:${state.contentKey}`}
         host={controller}
@@ -157,6 +166,14 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         editorRef={editorRef}
         onConvert={(target) => (target === 'plain' ? setDialog({ kind: 'convert' }) : report(controller.convert('rich')))}
         onOpenVersions={() => setDialog({ kind: 'versions' })}
+        chips={noteReminders.chips}
+        onChipClick={editReminder}
+        reveal={state.reveal}
+        onRevealDone={(found) => {
+          if (!found) notices.push(REMINDER_MESSAGES.blockGone, 'error');
+          controller.revealDone();
+        }}
+        onAddReminder={() => ui.openDialog(newReminderDialog(controller, liveTitle))}
       />
       <NoteDialogs controller={controller} dialog={dialog} onDialog={setDialog} readOnly={readOnly} now={now()} report={report} />
     </div>

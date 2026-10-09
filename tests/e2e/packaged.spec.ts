@@ -21,7 +21,7 @@ test('packaged app starts, reports diagnostics and persists the theme @packaged'
   });
   expect(info?.isPackaged).toBe(true);
   expect(info?.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
-  expect(info?.schemaVersion).toBe(4);
+  expect(info?.schemaVersion).toBe(5);
   expect(info?.startup).toEqual({ status: 'ok' });
 
   await railGo(page, 'Settings');
@@ -96,4 +96,47 @@ test('packaged sticky window is sandboxed and test seams are ignored @packaged',
   console.log(`packaged sticky renderer sandbox: ${sandbox.evidence}`);
   expect(sandbox.osSandboxed, sandbox.evidence).toBe(true);
   expect(await app.evaluate(() => typeof globalThis.__infinityTest)).toBe('undefined');
+});
+
+test('packaged reminder reaches the OS notification layer; reminder seams ignored; launch at login is only read @packaged', async () => {
+  test.setTimeout(180_000);
+  const { page } = await h.start({ INFINITY_NOTES_TEST_CLOCK: '2020-01-01T00:00:00Z', INFINITY_NOTES_TEST_ZONE: 'Pacific/Chatham', INFINITY_NOTES_TEST_NOTIFY: 'fake' });
+  const zones = await page.evaluate(async () => {
+    const r = await window.infinity.zones.list();
+    return r.ok ? r.data : null;
+  });
+  // The real clock and the computer's zone, not the seams.
+  expect(Math.abs(zones!.asOf - Date.now())).toBeLessThan(60_000);
+  expect(zones!.systemZone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const caps = await page.evaluate(async () => {
+    const r = await window.infinity.capabilities.get();
+    return r.ok ? r.data : null;
+  });
+  const autostart = await page.evaluate(async () => window.infinity.autostart.get());
+  console.log(`packaged capabilities: notifications=${JSON.stringify(caps!.nativeNotifications)} autostart=${JSON.stringify(autostart)}`);
+  if (process.platform === 'win32') {
+    expect(autostart).toEqual({ ok: true, data: { enabled: false, capability: { status: 'supported', reason: 'login-items' } } });
+  } else {
+    expect(autostart).toMatchObject({ ok: true, data: { enabled: false, capability: { status: 'unsupported' } } });
+  }
+
+  // A reminder due at the next whole minute (UTC), dispatched by the real scheduler and adapter.
+  const due = new Date(Math.ceil((Date.now() + 5_000) / 60_000) * 60_000);
+  const iso = due.toISOString();
+  const id = await page.evaluate(async () => {
+    const r = await window.infinity.note.create({ location: { projectId: null, folderId: null }, sticky: false, title: 'Packaged reminder' });
+    return r.ok ? r.data.note.id : '';
+  });
+  const created = await page.evaluate(
+    ([noteId, date, time]) => window.infinity.reminder.create({ noteId: noteId!, blockId: null, title: 'Packaged reminder', zoneId: 'UTC', date: date!, time: time!, recurrence: null, followup: null }),
+    [id, iso.slice(0, 10), iso.slice(11, 16)],
+  );
+  expect(created.ok).toBe(true);
+  await expect
+    .poll(() => h.all("SELECT outcome FROM alert_deliveries WHERE outcome <> 'claimed'"), { timeout: 90_000, intervals: [1_000] })
+    .toHaveLength(1);
+  const [delivery] = h.all<{ outcome: string; detail: string | null }>('SELECT outcome, detail FROM alert_deliveries');
+  console.log(`packaged delivery: ${JSON.stringify(delivery)}`);
+  if (caps!.nativeNotifications.status === 'unsupported') expect(delivery).toEqual({ outcome: 'unsupported', detail: caps!.nativeNotifications.reason });
+  else expect(delivery!.outcome).toBe('dispatched');
 });

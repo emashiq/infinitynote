@@ -61,6 +61,26 @@ import {
   VersionsRestoreRequest,
 } from './notes';
 import { PaletteSearchRequest, PaletteSearchResponse } from './palette';
+import {
+  AppOpenRemindersEvent,
+  OccurrenceIdRequest,
+  OccurrenceItem,
+  OccurrenceSnoozeRequest,
+  ReminderAlertEvent,
+  ReminderChangedEvent,
+  ReminderCreateRequest,
+  ReminderDeleteResponse,
+  ReminderDto,
+  ReminderIdRequest,
+  ReminderListForNoteRequest,
+  ReminderListResponse,
+  ReminderUpdateRequest,
+  ReminderViewResponse,
+  RemindersListViewRequest,
+  RemindersSummaryRequest,
+  RemindersSummaryResponse,
+  ZonesListResponse,
+} from './reminders';
 import { SessionGetResponse, SessionSetRequest, SessionSetResponse } from './session';
 import {
   StickyFloatResponse,
@@ -71,6 +91,7 @@ import {
   StickyState,
 } from './stickies';
 import { AppOpenNoteEvent, WindowGetStateResponse } from './windows';
+import { AutostartSetRequest, AutostartState, WidgetSetCollapsedRequest, WidgetSetPinnedRequest, WidgetState } from './widget';
 import {
   SettingsChangedEvent,
   SettingsGetRequest,
@@ -137,6 +158,23 @@ export const CHANNEL_SCHEMAS = {
   'sticky:remove': { request: StickyNoteRequest, response: Empty },
   'sticky:restore': { request: StickyNoteRequest, response: TrashRestoreResponse },
   'window:getState': { request: Empty, response: WindowGetStateResponse },
+  'zones:list': { request: Empty, response: ZonesListResponse },
+  'reminder:create': { request: ReminderCreateRequest, response: ReminderDto },
+  'reminder:update': { request: ReminderUpdateRequest, response: ReminderDto },
+  'reminder:delete': { request: ReminderIdRequest, response: ReminderDeleteResponse },
+  'reminder:undoDelete': { request: ReminderIdRequest, response: ReminderDto },
+  'reminder:listForNote': { request: ReminderListForNoteRequest, response: ReminderListResponse },
+  'reminder:open': { request: ReminderIdRequest, response: Empty },
+  'reminders:listView': { request: RemindersListViewRequest, response: ReminderViewResponse },
+  'reminders:summary': { request: RemindersSummaryRequest, response: RemindersSummaryResponse },
+  'occurrence:complete': { request: OccurrenceIdRequest, response: OccurrenceItem },
+  'occurrence:snooze': { request: OccurrenceSnoozeRequest, response: OccurrenceItem },
+  'widget:show': { request: Empty, response: WidgetState },
+  'widget:hide': { request: Empty, response: WidgetState },
+  'widget:setPinned': { request: WidgetSetPinnedRequest, response: WidgetState },
+  'widget:setCollapsed': { request: WidgetSetCollapsedRequest, response: WidgetState },
+  'autostart:get': { request: Empty, response: AutostartState },
+  'autostart:set': { request: AutostartSetRequest, response: AutostartState },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {
@@ -148,6 +186,10 @@ export const EVENT_SCHEMAS = {
   'app:flush-request': AppFlushRequestEvent,
   'sticky:state': StickyState,
   'app:openNote': AppOpenNoteEvent,
+  'reminder:changed': ReminderChangedEvent,
+  'reminder:alert': ReminderAlertEvent,
+  'widget:state': WidgetState,
+  'app:openReminders': AppOpenRemindersEvent,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 type ChannelSchemas = typeof CHANNEL_SCHEMAS;

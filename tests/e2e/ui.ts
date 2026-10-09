@@ -61,7 +61,7 @@ export async function activeTabLabel(page: Page): Promise<string> {
 /** Opens a note through the command palette with the keyboard (types the full title, Enter on the first match). */
 export async function openByPalette(page: Page, title: string): Promise<void> {
   await page.keyboard.press('Control+K');
-  const input = page.getByRole('combobox');
+  const input = page.getByRole('combobox', { name: 'Type a command or note title' });
   await input.fill(title);
   const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   await page.getByRole('option', { name: new RegExp(escaped) }).first().waitFor({ state: 'visible' });

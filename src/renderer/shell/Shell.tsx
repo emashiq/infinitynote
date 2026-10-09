@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ContextPanel } from '../panel/ContextPanel';
+import { AlertBanner } from '../reminders/AlertBanner';
 import { useServices, useStore } from '../state/use-store';
 import { TabPanel } from '../tabs/TabPanel';
 import { TabStrip } from '../tabs/TabStrip';
@@ -43,6 +44,7 @@ export function Shell() {
       ) : null}
       <main className="doc-column">
         <TabStrip />
+        <AlertBanner />
         <TabPanel />
         <Notices />
       </main>

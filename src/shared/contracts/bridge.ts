@@ -104,5 +104,34 @@ export interface InfinityBridge {
   readonly window: {
     getState: Query<'window:getState'>;
   };
+  readonly zones: {
+    list: Query<'zones:list'>;
+  };
+  readonly reminder: {
+    create: Call<'reminder:create'>;
+    update: Call<'reminder:update'>;
+    delete: Call<'reminder:delete'>;
+    undoDelete: Call<'reminder:undoDelete'>;
+    listForNote: Call<'reminder:listForNote'>;
+    open: Call<'reminder:open'>;
+  };
+  readonly reminders: {
+    listView: Call<'reminders:listView'>;
+    summary: Call<'reminders:summary'>;
+  };
+  readonly occurrence: {
+    complete: Call<'occurrence:complete'>;
+    snooze: Call<'occurrence:snooze'>;
+  };
+  readonly widget: {
+    show: Query<'widget:show'>;
+    hide: Query<'widget:hide'>;
+    setPinned: Call<'widget:setPinned'>;
+    setCollapsed: Call<'widget:setCollapsed'>;
+  };
+  readonly autostart: {
+    get: Query<'autostart:get'>;
+    set: Call<'autostart:set'>;
+  };
   subscribe<C extends EventChannel>(channel: C, cb: (payload: EventPayload<C>) => void): () => void;
 }

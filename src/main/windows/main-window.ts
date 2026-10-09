@@ -43,6 +43,7 @@ export function createMainWindowFactory(options: AppWindowFactoryOptions): MainW
       win.on('closed', () => events.onClosed());
       win.webContents.on('did-start-loading', () => events.onLoadStarted());
       win.webContents.on('did-finish-load', () => events.onLoaded());
+      win.on('focus', () => events.onFocus());
       return {
         webContentsId,
         load: () => void win.loadURL(rendererUrl(options.devUrl, '#/')),
@@ -50,6 +51,8 @@ export function createMainWindowFactory(options: AppWindowFactoryOptions): MainW
         focus: () => win.focus(),
         restore: () => win.restore(),
         isMinimized: () => win.isMinimized(),
+        isFocused: () => win.isFocused(),
+        flashFrame: (on) => win.flashFrame(on),
         close: () => win.close(),
         isDestroyed: () => win.isDestroyed(),
       };

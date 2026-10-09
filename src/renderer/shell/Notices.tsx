@@ -11,6 +11,18 @@ export function NoticeList({ notices }: { notices: NoticeStore }) {
       {list.map((n) => (
         <div key={n.id} className={`toast toast-${n.tone}`}>
           <span>{n.text}</span>
+          {n.action ? (
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                notices.dismiss(n.id);
+                n.action!.run();
+              }}
+            >
+              {n.action.label}
+            </button>
+          ) : null}
           <IconButton label="Dismiss" icon={X} size={14} onClick={() => notices.dismiss(n.id)} />
         </div>
       ))}

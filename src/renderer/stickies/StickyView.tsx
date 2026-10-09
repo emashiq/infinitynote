@@ -2,6 +2,8 @@ import type { Editor } from '@tiptap/core';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { displayTitle } from '../../shared/names';
 import { NoteEditor } from '../editor/NoteEditor';
+import { useNoteReminders } from '../reminders/note-reminders';
+import { ReminderChipBar } from '../reminders/ReminderChipBar';
 import { NoteBanners } from '../notes/NoteBanners';
 import type { ActionResult } from '../notes/note-controller';
 import { NoteDialogs, type NoteDialog } from '../notes/NoteDialogs';
@@ -32,6 +34,12 @@ function StickyNote({ editorRef, findRequest, onFindHandled }: { editorRef: RefO
   const { controller, core, now } = useSticky();
   const state = useStore(controller.store);
   const [dialog, setDialog] = useState<NoteDialog | null>(null);
+  // The sticky shows its note's reminders read-only; a click opens the reminder in the main window (D-080).
+  const noteReminders = useNoteReminders(core.bridge, controller.noteId);
+  const openReminder = (reminderId: string) =>
+    void core.bridge.reminder.open({ reminderId }).then((res) => {
+      if (!res.ok) core.notices.push(res.error.message, 'error');
+    });
   const report = (result: Promise<ActionResult>) => {
     void result.then((r) => {
       if (!r.ok) core.notices.push(r.message, 'error');
@@ -56,6 +64,7 @@ function StickyNote({ editorRef, findRequest, onFindHandled }: { editorRef: RefO
           dismissConverted: () => controller.dismissConverted(),
         }}
       />
+      <ReminderChipBar reminders={noteReminders.reminders} displayZone={noteReminders.displayZone} onSelect={(r) => openReminder(r.id)} />
       <NoteEditor
         key={`${state.format}:${state.contentKey}`}
         host={controller}
@@ -63,6 +72,8 @@ function StickyNote({ editorRef, findRequest, onFindHandled }: { editorRef: RefO
         content={state.content}
         editable={!readOnly}
         variant="sticky"
+        chips={noteReminders.chips}
+        onChipClick={openReminder}
         scrollTop={0}
         onScroll={() => undefined}
         services={core.editor}

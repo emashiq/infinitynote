@@ -24,6 +24,14 @@ export interface Placement {
   displayId?: number;
 }
 
+/** Default and minimum outer size of a kind of small window (stickies, the reminder widget). */
+export interface WindowGeometry {
+  default: { width: number; height: number };
+  min: { width: number; height: number };
+}
+
+export const STICKY_GEOMETRY: WindowGeometry = { default: STICKY_DEFAULT, min: STICKY_MIN };
+
 export interface ComputeStickyBoundsInput {
   stored: StoredBoundsType | null;
   displayHint: number | null;
@@ -31,6 +39,8 @@ export interface ComputeStickyBoundsInput {
   primaryId: number;
   positioning: PositioningStatus;
   cascadeIndex: number;
+  /** Sticky sizes unless given (the widget passes its own). */
+  geometry?: WindowGeometry;
 }
 
 /** A window is reachable when its top strip overlaps a work area by at least this many pixels horizontally (D-068). */
@@ -80,28 +90,29 @@ export function displayFor(r: Rect, displays: readonly DisplayInfo[]): number | 
   return best ? best.id : null;
 }
 
-function sizeWithin(stored: StoredBoundsType | null, wa: Rect): { width: number; height: number } {
+function sizeWithin(stored: StoredBoundsType | null, wa: Rect, g: WindowGeometry): { width: number; height: number } {
   return {
-    width: Math.round(clamp(stored?.width ?? STICKY_DEFAULT.width, STICKY_MIN.width, wa.width)),
-    height: Math.round(clamp(stored?.height ?? STICKY_DEFAULT.height, STICKY_MIN.height, wa.height)),
+    width: Math.round(clamp(stored?.width ?? g.default.width, g.min.width, wa.width)),
+    height: Math.round(clamp(stored?.height ?? g.default.height, g.min.height, wa.height)),
   };
 }
 
 /**
- * Bounds for a sticky window that is about to open or must be recovered after a display change (plan section 8.6,
+ * Bounds for a sticky (or the widget) that is about to open or must be recovered after a display change (plan section 8.6,
  * D-068). A reachable window stays on its best display, shifted fully inside it; an unreachable one moves to the
  * hint display (if still connected) or the primary display, centered with a cascade offset.
  */
 export function computeStickyBounds(input: ComputeStickyBoundsInput): Placement {
   const { stored, displays } = input;
+  const g = input.geometry ?? STICKY_GEOMETRY;
   const primary = displays.find((d) => d.id === input.primaryId) ?? displays[0];
-  if (!primary) return sizeWithin(stored, { x: 0, y: 0, width: STICKY_DEFAULT.width, height: STICKY_DEFAULT.height });
+  if (!primary) return sizeWithin(stored, { x: 0, y: 0, ...g.default }, g);
   const k = ((input.cascadeIndex % CASCADE_SLOTS) + CASCADE_SLOTS) % CASCADE_SLOTS;
 
-  if (input.positioning === 'unsupported') return sizeWithin(stored, primary.workArea);
+  if (input.positioning === 'unsupported') return sizeWithin(stored, primary.workArea, g);
   if (!stored) {
     const wa = primary.workArea;
-    const size = sizeWithin(stored, wa);
+    const size = sizeWithin(stored, wa, g);
     return {
       ...size,
       x: Math.round(wa.x + wa.width - size.width - EDGE_MARGIN_PX - CASCADE_STEP_PX * k),
@@ -111,12 +122,12 @@ export function computeStickyBounds(input: ComputeStickyBoundsInput): Placement 
   }
 
   // A position stored as null was saved where the compositor placed the window; it places it again.
-  if (stored.x === null || stored.y === null) return sizeWithin(stored, primary.workArea);
-  const rect: Rect = { x: stored.x, y: stored.y, width: Math.max(stored.width, STICKY_MIN.width), height: Math.max(stored.height, STICKY_MIN.height) };
+  if (stored.x === null || stored.y === null) return sizeWithin(stored, primary.workArea, g);
+  const rect: Rect = { x: stored.x, y: stored.y, width: Math.max(stored.width, g.min.width), height: Math.max(stored.height, g.min.height) };
   const best = reachableDisplays(rect, displays)[0];
   const target = best ?? displays.find((d) => d.id === input.displayHint) ?? primary;
   const wa = target.workArea;
-  const size = sizeWithin(stored, wa);
+  const size = sizeWithin(stored, wa, g);
   const x = best ? rect.x : wa.x + (wa.width - size.width) / 2 + CASCADE_STEP_PX * k;
   const y = best ? rect.y : wa.y + (wa.height - size.height) / 2 + CASCADE_STEP_PX * k;
   return {

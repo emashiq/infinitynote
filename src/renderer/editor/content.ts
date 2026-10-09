@@ -23,6 +23,8 @@ export interface ContentSource {
   getContent(): RichDocLike | string;
   /** The visible text, one line per block (Compare dialog). */
   getPlainText(): string;
+  /** The text of the block with this id (a reminder title), or null when the block is not in the document. */
+  blockText(blockId: string): string | null;
   hasPendingUploads(): boolean;
   /** Resolves true once pending imports finished, or false after `ms`. */
   waitForUploads(ms: number): Promise<boolean>;
@@ -35,6 +37,8 @@ export interface EditorHost {
   markDirty(): void;
   flush(): Promise<unknown>;
   contentError(): void;
+  /** The block the cursor is in (its id), for reminders on the current paragraph. */
+  setCursorBlock(blockId: string | null): void;
 }
 
 function savableNodes(nodes: JSONContent[] | undefined): JSONContent[] | undefined {

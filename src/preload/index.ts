@@ -70,6 +70,24 @@ const bridge: InfinityBridge = {
     restore: call('sticky:restore'),
   },
   window: { getState: call('window:getState') },
+  zones: { list: call('zones:list') },
+  reminder: {
+    create: call('reminder:create'),
+    update: call('reminder:update'),
+    delete: call('reminder:delete'),
+    undoDelete: call('reminder:undoDelete'),
+    listForNote: call('reminder:listForNote'),
+    open: call('reminder:open'),
+  },
+  reminders: { listView: call('reminders:listView'), summary: call('reminders:summary') },
+  occurrence: { complete: call('occurrence:complete'), snooze: call('occurrence:snooze') },
+  widget: {
+    show: call('widget:show'),
+    hide: call('widget:hide'),
+    setPinned: call('widget:setPinned'),
+    setCollapsed: call('widget:setCollapsed'),
+  },
+  autostart: { get: call('autostart:get'), set: call('autostart:set') },
   subscribe,
 };
 

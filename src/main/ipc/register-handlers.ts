@@ -1,7 +1,9 @@
 import type { MainServices } from '../main-services';
+import type { AutostartControl } from '../services/autostart';
 import { AppError } from '../services/app-error';
 import type { MainWindowController } from '../windows/main-window-controller';
 import type { StickyManager } from '../windows/sticky-manager';
+import type { WidgetManager } from '../windows/widget-manager';
 import { registerAppHandlers, type AppHandlerDeps } from './handlers/app-handlers';
 import { registerAttachmentHandlers } from './handlers/attachment-handlers';
 import { registerContentHandlers } from './handlers/content-handlers';
@@ -9,17 +11,21 @@ import { registerHierarchyHandlers } from './handlers/hierarchy-handlers';
 import { registerHomeHandlers } from './handlers/home-handlers';
 import { registerNoteHandlers } from './handlers/note-handlers';
 import { registerPaletteHandlers } from './handlers/palette-handlers';
+import { registerReminderHandlers } from './handlers/reminder-handlers';
 import { registerSessionHandlers } from './handlers/session-handlers';
 import { registerSettingsHandlers } from './handlers/settings-handlers';
 import { registerStickyHandlers } from './handlers/sticky-handlers';
 import { registerTrashHandlers } from './handlers/trash-handlers';
+import { registerAutostartHandlers, registerWidgetHandlers } from './handlers/widget-handlers';
 import { registerWindowHandlers } from './handlers/window-handlers';
 import type { IpcRouter } from './router';
 
-/** The windows side of the app; stickies need storage, so they are null when the database failed to open. */
+/** The windows side of the app; stickies and the widget need storage, so they are null when the database failed to open. */
 export interface DesktopHandlerDeps {
-  mainWindow: Pick<MainWindowController, 'rendererReady'>;
+  mainWindow: Pick<MainWindowController, 'rendererReady' | 'openNote'>;
   stickies: StickyManager | null;
+  widget: WidgetManager | null;
+  autostart: AutostartControl;
 }
 
 const storageUnavailable = (): never => {
@@ -37,6 +43,7 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
     (): MainServices[K] =>
       services ? services[key] : storageUnavailable();
   const stickies = (): StickyManager => desktop.stickies ?? storageUnavailable();
+  const widget = (): WidgetManager => desktop.widget ?? storageUnavailable();
   registerAppHandlers(router, deps.app);
   registerSettingsHandlers(router, use('settings'));
   registerHierarchyHandlers(router, use('hierarchy'));
@@ -48,5 +55,16 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
   registerContentHandlers(router, { versions: use('versions'), drafts: use('drafts') });
   registerAttachmentHandlers(router, use('attachments'));
   registerStickyHandlers(router, stickies);
-  registerWindowHandlers(router, { mainWindow: desktop.mainWindow, stickies });
+  registerWindowHandlers(router, {
+    mainWindow: desktop.mainWindow,
+    stickies,
+    widget,
+    widgetState: () => desktop.widget?.state() ?? { open: false, collapsed: false, alwaysOnTop: false },
+  });
+  registerReminderHandlers(router, {
+    reminders: use('reminders'),
+    openNote: (noteId, blockId) => desktop.mainWindow.openNote(noteId, false, blockId),
+  });
+  registerWidgetHandlers(router, widget);
+  registerAutostartHandlers(router, desktop.autostart);
 }

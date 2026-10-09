@@ -7,8 +7,8 @@ export interface Harness {
   readonly page: Page;
   readonly app: ElectronApplication;
   start(extraEnv?: Record<string, string>): Promise<Launched>;
-  /** Closes the app (a real quit of the process) and starts it again on the same userData. */
-  restart(): Promise<Launched>;
+  /** Closes the app (a real quit of the process) and starts it again on the same userData, with these extra variables. */
+  restart(extraEnv?: Record<string, string>): Promise<Launched>;
   stop(): Promise<void>;
   /** Read-only SQL against the live database file. */
   all<T = Record<string, unknown>>(sql: string, ...params: unknown[]): T[];
@@ -53,10 +53,10 @@ export function useApp(options: { failOnMainErrors?: boolean } = {}): Harness {
       launched = await launchApp({ userDataDir: userData, extraEnv });
       return launched;
     },
-    async restart() {
+    async restart(extraEnv) {
       await closeApp(launched?.app);
       launched = null;
-      return h.start();
+      return h.start(extraEnv);
     },
     async stop() {
       await closeApp(launched?.app);

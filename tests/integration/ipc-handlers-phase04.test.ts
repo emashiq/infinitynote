@@ -7,7 +7,7 @@ import { closeDialogOptions } from '../../src/main/services/close-dialog';
 import { MainWindowController } from '../../src/main/windows/main-window-controller';
 import { StickyManager } from '../../src/main/windows/sticky-manager';
 import { setupServices } from './hierarchy-helpers';
-import { catalogueRouter } from './ipc-helpers';
+import { catalogueRouter, NO_DESKTOP } from './ipc-helpers';
 import { fakeDisplays, fakeStickyFactory, manualTimers, WINDOWS_CAPS, WSLG_CAPS } from './sticky-fakes';
 
 const MISSING = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
@@ -33,12 +33,13 @@ async function setup(opts: { caps?: CapabilitiesType } = {}) {
   const own = s.note(null, null, 'Own');
   const other = s.note(null, null, 'Other', true);
   const fake = fakeStickyFactory([]);
-  const opened: Array<{ webContentsId: number; noteId: string; takeEdit: boolean }> = [];
+  const opened: Array<{ webContentsId: number; noteId: string; takeEdit: boolean; blockId: string | null }> = [];
   const mainWindow = new MainWindowController({
     factory: {
-      create: () => ({ webContentsId: MAIN, load() {}, show() {}, focus() {}, restore() {}, isMinimized: () => false, close() {}, isDestroyed: () => false }),
+      create: () => ({ webContentsId: MAIN, load() {}, show() {}, focus() {}, restore() {}, isMinimized: () => false, isFocused: () => true, flashFrame() {}, close() {}, isDestroyed: () => false }),
     },
     sendOpenNote: (webContentsId, e) => opened.push({ webContentsId, ...e }),
+    sendOpenReminders: () => {},
     closeBehavior: () => 'ask',
     rememberCloseBehavior: () => {},
     closeDialogOptions: () => closeDialogOptions({ platform: 'win32', trayStatus: 'supported' }),
@@ -64,7 +65,7 @@ async function setup(opts: { caps?: CapabilitiesType } = {}) {
     logger: s.logger,
     timers: manualTimers(),
   });
-  const r = catalogueRouter(s.services, app, { stickyNoteId: own.id, desktop: { mainWindow, stickies } });
+  const r = catalogueRouter(s.services, app, { stickyNoteId: own.id, desktop: { ...NO_DESKTOP, mainWindow, stickies } });
   /** Every successful answer must match the channel's response schema (validateResponses is on as well). */
   const call = async (channel: keyof typeof CHANNEL_SCHEMAS, payload: unknown, from = MAIN) => {
     const res = await r.call(channel, payload, from);
@@ -95,8 +96,8 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
   it('window:getState answers the main handshake with queued opens and a sticky with its own state', async () => {
     const t = await setup();
     t.mainWindow.openNote(t.other.id, true);
-    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [{ noteId: t.other.id, takeEdit: true }] } });
-    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [] } });
+    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [{ noteId: t.other.id, takeEdit: true, blockId: null }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } } });
+    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } } });
     await t.call('sticky:float', { noteId: t.own.id });
     expect(await t.call('window:getState', {}, STICKY)).toMatchObject({
       ok: true,
@@ -126,7 +127,7 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
     expect(await t.call('sticky:setCollapsed', { noteId: t.own.id, collapsed: true }, STICKY)).toMatchObject({ ok: true, data: { collapsed: true } });
     expect(await t.call('sticky:dock', { noteId: t.own.id }, STICKY)).toEqual({ ok: true, data: {} });
     expect(t.stickies.isFloating(t.own.id)).toBe(false);
-    expect(t.mainWindow.rendererReady(MAIN)).toEqual([{ noteId: t.own.id, takeEdit: true }]);
+    expect(t.mainWindow.rendererReady(MAIN)).toEqual({ openNotes: [{ noteId: t.own.id, takeEdit: true, blockId: null }], openReminders: null });
 
     await t.call('sticky:float', { noteId: t.own.id });
     expect(await t.call('sticky:hide', { noteId: t.own.id }, STICKY)).toEqual({ ok: true, data: {} });
@@ -134,7 +135,7 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
     await t.call('sticky:float', { noteId: t.own.id });
     expect(await t.call('sticky:remove', { noteId: t.own.id }, STICKY)).toEqual({ ok: true, data: {} });
     expect(t.s.row<{ sticky_enabled: number }>('SELECT sticky_enabled FROM notes WHERE id = ?', t.own.id)?.sticky_enabled).toBe(0);
-    expect(t.opened).toEqual([{ webContentsId: MAIN, noteId: t.own.id, takeEdit: true }]);
+    expect(t.opened).toEqual([{ webContentsId: MAIN, noteId: t.own.id, takeEdit: true, blockId: null }]);
   });
 
   it('sticky:restore restores the own trashed note and refuses a live one; setColor needs a sticky', async () => {
@@ -177,6 +178,6 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
   it('without storage the sticky channels answer INTERNAL and the main handshake still works', async () => {
     const r = catalogueRouter(null, app);
     expect(await r.call('sticky:float', { noteId: MISSING })).toMatchObject({ ok: false, error: { code: 'INTERNAL', message: 'Storage is unavailable' } });
-    expect(await r.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [] } });
+    expect(await r.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } } });
   });
 });

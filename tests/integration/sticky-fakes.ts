@@ -2,12 +2,15 @@ import { detectCapabilities, type CapabilityInputs } from '../../src/main/servic
 import type { DisplayInfo, Rect } from '../../src/main/windows/display-clamp';
 import { createFakeDisplayProvider } from '../../src/main/windows/display-provider';
 import type { StickyTimers, StickyWindowEvents, StickyWindowFactory, StickyWindowHandle, StickyWindowSpec } from '../../src/main/windows/sticky-manager';
+import type { WidgetWindowFactory } from '../../src/main/windows/widget-manager';
+import { WIDGET_TITLE } from '../../src/shared/contracts/widget';
 
 /** Frame added around the content by the fake window manager. */
 export const FRAME = { width: 16, height: 39 };
 
 const inputs: CapabilityInputs = {
   platform: 'win32',
+  isPackaged: false,
   ozonePlatform: null,
   xdgSessionType: null,
   waylandDisplay: null,
@@ -15,6 +18,7 @@ const inputs: CapabilityInputs = {
   wslDistro: null,
   wslgVersion: null,
   statusNotifierHost: null,
+  notificationServer: null,
 };
 export const WINDOWS_CAPS = detectCapabilities(inputs);
 export const WSLG_CAPS = detectCapabilities({ ...inputs, platform: 'linux', wslDistro: 'Ubuntu', wslgVersion: 'WSLg 1.0.73', statusNotifierHost: 'absent' });
@@ -160,4 +164,19 @@ export function manualTimers(): StickyTimers & { advance(ms: number): void; pend
 
 export function fakeDisplays(displays: DisplayInfo[] = [display(1, 0)], primaryId = 1) {
   return createFakeDisplayProvider({ displays, primaryId });
+}
+
+/** Widget windows built from the same fake window (the widget handle is a subset of the sticky one). */
+export function fakeWidgetFactory(log: string[]) {
+  const windows: FakeStickyWindow[] = [];
+  let nextId = 500;
+  const factory: WidgetWindowFactory = {
+    create(spec, events) {
+      const win = new FakeStickyWindow(nextId++, { noteId: 'widget', placement: spec.placement, alwaysOnTop: spec.alwaysOnTop, backgroundColor: '', title: WIDGET_TITLE }, events, log);
+      windows.push(win);
+      log.push('create:widget');
+      return win;
+    },
+  };
+  return { factory, windows, last: () => windows[windows.length - 1]! };
 }

@@ -54,12 +54,12 @@ describe('import boundaries', () => {
     expect(files.filter((f) => /\buseEditor\(/.test(f.text)).map((f) => f.file)).toEqual(['editor/NoteEditor.tsx']);
   });
 
-  it('the preload surface and router expose no Phase 05 channels', async () => {
+  it('the preload surface and router expose no Phase 06 channels', async () => {
     const fs = await import('node:fs');
     const preload = fs.readFileSync('src/preload/index.ts', 'utf8');
     expect(preload).toContain("call('sticky:float')");
-    expect(preload).toContain("call('window:getState')");
-    expect(preload).not.toMatch(/reminder:create|widget:show|reminder:changed|note:trashed/);
+    expect(preload).toContain("call('reminder:create')");
+    expect(preload).not.toMatch(/reminder:createFromSuggestion|suggestion:dismiss|reminder:updateFromSource|note:trashed/);
     expect(preload).not.toMatch(/exposeInMainWorld\('(?!infinity')/);
     const ipcSources = fs
       .readdirSync('src/main/ipc', { recursive: true, encoding: 'utf8' })
@@ -68,7 +68,36 @@ describe('import boundaries', () => {
       .join('\n');
     // Positive control: the pattern below must be able to see how channels are registered.
     expect(ipcSources).toContain("router.register('sticky:float'");
-    expect(ipcSources).not.toMatch(/'(reminder:create|widget:show|reminder:changed|note:trashed)'/);
+    expect(ipcSources).toContain("router.register('reminder:create'");
+    expect(ipcSources).not.toMatch(/'(reminder:createFromSuggestion|suggestion:dismiss|reminder:updateFromSource|note:trashed)'/);
+  });
+
+  it('no hard-coded reminder zone (INF-REM-02, D-079): no Asia/Dhaka literal, UTC only as the disclosed fallback', async () => {
+    const fs = await import('node:fs');
+    const sources = fs
+      .readdirSync('src', { recursive: true, encoding: 'utf8' })
+      .filter((f) => /\.(ts|tsx)$/.test(f))
+      .map((f) => ({ file: f.replace(/\\/g, '/'), text: fs.readFileSync(`src/${f}`, 'utf8') }));
+    const quoted = (zone: string) => new RegExp(`['"\`]${zone.replace('/', '\\/')}['"\`]`);
+    expect(sources.filter((s) => quoted('UTC').test(s.text)).map((s) => s.file)).toEqual(['shared/time/zones.ts']);
+    for (const { file, text } of sources) expect(text, file).not.toMatch(quoted('Asia/Dhaka'));
+  });
+
+  it('one scheduler timer (INF-SCHED-01): no per-reminder timers in the reminder modules', async () => {
+    const fs = await import('node:fs');
+    const files = fs.readdirSync('src/main/services').filter((f) => /^reminder-.*\.ts$/.test(f));
+    expect(files).toEqual(expect.arrayContaining(['reminder-scheduler.ts', 'reminder-service.ts', 'reminder-anchors.ts']));
+    const calls = files.flatMap((f) => [...fs.readFileSync(`src/main/services/${f}`, 'utf8').matchAll(/setTimeout\(|setInterval\(/g)].map(() => f));
+    expect(calls).toEqual(['reminder-scheduler.ts']);
+  });
+
+  it('reminders stop when the app is fully quit (INF-SCHED-09): no OS-level timers, tasks or wake locks', async () => {
+    const fs = await import('node:fs');
+    const sources = fs
+      .readdirSync('src', { recursive: true, encoding: 'utf8' })
+      .filter((f) => /\.(ts|tsx)$/.test(f))
+      .map((f) => ({ file: f, text: fs.readFileSync(`src/${f}`, 'utf8') }));
+    for (const { file, text } of sources) expect(text, file).not.toMatch(/schtasks|systemd-run|crontab|powerSaveBlocker/);
   });
 
   it('no code forces an ozone platform (INF-STKY-13, D-050)', async () => {
@@ -95,6 +124,20 @@ describe('import boundaries', () => {
       'src/main/services/tray-probe.ts',
       'src/main/services/close-dialog.ts',
       'src/main/test-hooks.ts',
+      'src/main/db/repositories/reminders-repo.ts',
+      'src/main/services/reminder-service.ts',
+      'src/main/services/reminder-model.ts',
+      'src/main/services/reminder-anchors.ts',
+      'src/main/services/reminder-scheduler.ts',
+      'src/main/services/notification-adapter.ts',
+      'src/main/services/electron-notifications.ts',
+      'src/main/services/power-events.ts',
+      'src/main/services/system-zone.ts',
+      'src/main/services/timers.ts',
+      'src/main/services/autostart.ts',
+      'src/main/services/electron-autostart.ts',
+      'src/main/services/widget-state.ts',
+      'src/main/windows/widget-manager.ts',
     ]) {
       const text = fs.readFileSync(file, 'utf8');
       expect(text, file).not.toMatch(/^import (?!type )[^;]*from 'electron';/m);

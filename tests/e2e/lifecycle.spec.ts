@@ -2,7 +2,8 @@ import { expect, test, type ElectronApplication } from '@playwright/test';
 import { appArgs, appEnv, appExecutable, readMainLog, spawnAndWait, waitForExit } from './fixtures';
 import { useApp } from './harness';
 import { COMMON, createNote, saveText } from './seed';
-import { activate, openFromTree, railGo } from './ui';
+import { activate, activeTabLabel, openFromTree, railGo } from './ui';
+import { T0, createReminder, reminderEnv, shownNotifications } from './reminder-ui';
 import { editor } from './editor-ui';
 import { closeWindowByUrl, mainPageOf, queueClose, stickyMenu, stickyNoteIds, stickyPage, windowCount, windowsOf } from './sticky-ui';
 
@@ -161,7 +162,7 @@ test('tray menu (INF-DESK-02, Windows)', async () => {
   test.skip(!WIN, 'Windows always has a tray; on Linux the tray-less fallback below applies (D-067)');
   const { app, page } = await h.start();
   const tray = () => app.evaluate(() => ({ present: globalThis.__infinityTest!.tray!.present, items: globalThis.__infinityTest!.tray!.items() }));
-  expect(await tray()).toEqual({ present: true, items: ['Open Infinity Notes', 'New sticky', 'Quit Infinity Notes'] });
+  expect(await tray()).toEqual({ present: true, items: ['Open Infinity Notes', 'New sticky', 'Show widget', 'Quit Infinity Notes'] });
   expect(readMainLog(h.userData)).toContain('tray: created');
 
   await app.evaluate(() => globalThis.__infinityTest!.tray!.click('New sticky'));
@@ -179,6 +180,15 @@ test('tray menu (INF-DESK-02, Windows)', async () => {
   const main = await mainPageOf(app);
   await main.waitForSelector('#app-shell[data-ready="true"]');
   await expect.poll(async () => (await windowsOf(app)).main?.visible).toBe(true);
+
+  // Show widget opens the reminder widget window (W05-03, D-067); a second click keeps one window.
+  await app.evaluate(() => globalThis.__infinityTest!.tray!.click('Show widget'));
+  await app.evaluate(() => globalThis.__infinityTest!.tray!.click('Show widget'));
+  await expect.poll(() => app.windows().filter((p) => !p.isClosed() && p.url().endsWith('#/widget')).length).toBe(1);
+  expect(await app.evaluate(() => globalThis.__infinityTest!.widget().then((w) => w !== null))).toBe(true);
+  expect(h.one<{ open: number }>("SELECT open FROM window_state WHERE key = 'widget'")!.open).toBe(1);
+  await main.evaluate(() => window.infinity.widget.hide());
+  await expect.poll(() => app.evaluate(() => globalThis.__infinityTest!.widget())).toBeNull();
 
   const proc = app.process();
   await app.evaluate(() => globalThis.__infinityTest!.tray!.click('Quit Infinity Notes'));
@@ -211,4 +221,22 @@ test('without a tray host a second launch brings the window back (INF-DESK-02)',
   await secondLaunch();
   await (await mainPageOf(app)).waitForSelector('#app-shell[data-ready="true"]');
   expect(await windowCount(app)).toBe(1);
+});
+
+test('relaunch overdue summary: reminders stop when quit and recover at the next start (INF-SCHED-09, INF-SCHED-05)', async () => {
+  const { page } = await h.start(reminderEnv({ notifications: true }));
+  const id = await createNote(page, COMMON, 'Quit test');
+  await createReminder(page, { noteId: id, title: 'While quit', zoneId: 'UTC', date: '2026-10-08', time: '07:10' });
+  await h.stop();
+  // Nothing was claimed while the app was not running.
+  expect(h.all('SELECT id FROM alert_deliveries')).toEqual([]);
+  const relaunchAt = Date.parse(T0) + 30 * 60_000;
+  const second = await h.restart(reminderEnv({ clock: new Date(relaunchAt).toISOString(), notifications: true }));
+  const banner = second.page.getByRole('status', { name: 'Reminder alerts' });
+  await expect(banner).toContainText('1 reminder is overdue');
+  await expect.poll(() => shownNotifications(second.app)).toHaveLength(1);
+  expect(h.all<{ reason: string; claimed_at: number }>('SELECT reason, claimed_at FROM alert_deliveries')).toEqual([{ reason: 'startup', claimed_at: relaunchAt }]);
+  await activate(banner.getByRole('button', { name: 'Show overdue' }));
+  await expect.poll(() => activeTabLabel(second.page)).toBe('Reminders');
+  await expect(second.page.getByRole('tab', { name: 'Overdue, 1' })).toHaveAttribute('aria-selected', 'true');
 });

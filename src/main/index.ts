@@ -1,11 +1,15 @@
 import './windows/schemes';
-import { Menu, app, ipcMain, nativeTheme, protocol, screen, session, shell } from 'electron';
+import { Menu, Notification, app, ipcMain, nativeTheme, protocol, screen, session, shell } from 'electron';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { APP_ID, APP_VERSION, ATTACHMENT_SCHEME, PRODUCT_NAME, RENDERER_SCHEME } from '../shared/app-identity';
 import type { AppInfoType, CapabilitiesType, FlushReasonType, StartupStateType } from '../shared/contracts/app';
+import type { TreeChangedEventType } from '../shared/contracts/hierarchy';
 import type { NoteRevisionEventType } from '../shared/contracts/notes';
+import type { ReminderAlertEventType, ReminderChangedEventType } from '../shared/contracts/reminders';
 import { ThemeSetting } from '../shared/contracts/settings';
+import { LAUNCHED_AT_LOGIN_ARG } from '../shared/contracts/widget';
 import { assertNotInstallDir, ensureDataDirs, resolveDataPaths, resolveUserDataOverride } from './app-paths';
 import { openDatabase } from './db/open-database';
 import { createDesktop, type Desktop } from './desktop';
@@ -16,14 +20,22 @@ import { createSenderPolicy } from './ipc/sender-policy';
 import { createMainServices, type MainServices } from './main-services';
 import { buildMenu } from './menu';
 import { errorMessage } from './services/app-error';
+import { createAutostartControl, createXdgAutostart, type AutostartAdapter } from './services/autostart';
 import { applyCapabilityOverride, collectCapabilityInputs, detectCapabilities, type CapabilityInputs } from './services/capabilities';
 import { systemClock } from './services/clock';
 import { createElectronDialogAdapter } from './services/dialog-adapter';
+import { createLoginItemsAutostart } from './services/electron-autostart';
+import { createElectronNotificationAdapter } from './services/electron-notifications';
+import { electronPowerEvents } from './services/electron-power';
 import { FlushCoordinator, type FlushOutcome } from './services/flush-coordinator';
 import { systemIds } from './services/ids';
 import { createFileLogger, nullLogger, type Logger } from './services/logger';
 import { installNetworkGuard } from './services/network-guard';
+import { capabilityGate } from './services/notification-adapter';
+import { detectNotificationServer } from './services/notification-probe';
+import { ReminderScheduler, type WakeReason } from './services/reminder-scheduler';
 import type { ShellAdapter } from './services/shell-adapter';
+import { intlZoneProvider } from './services/system-zone';
 import { detectStatusNotifierHost, nodeExecFile } from './services/tray-probe';
 import { isSelfTestMode, runSelfTestMode } from './self-test-mode';
 import { acquireSingleInstance, installSecondInstanceHandler } from './single-instance';
@@ -81,9 +93,11 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   if (overrideWarning) log.warn(overrideWarning);
 
   const ozoneSwitch = app.commandLine.getSwitchValue('ozone-platform');
-  // Bounded (2 s) and before any window, so the capabilities never change while windows exist (D-067).
-  const trayHost = process.platform === 'linux' ? await detectStatusNotifierHost(nodeExecFile) : null;
-  const display = collectCapabilityInputs(ozoneSwitch, trayHost);
+  // Bounded (2 s, both session-bus probes in parallel) and before any window, so the capabilities never change while
+  // windows exist (D-067, D-076).
+  const [statusNotifierHost, notificationServer] =
+    process.platform === 'linux' ? await Promise.all([detectStatusNotifierHost(nodeExecFile), detectNotificationServer(nodeExecFile)]) : [null, null];
+  const display = collectCapabilityInputs(ozoneSwitch, { statusNotifierHost, notificationServer }, isPackaged);
   log.info(
     `startup app=${APP_VERSION} electron=${process.versions.electron} chrome=${process.versions.chrome} node=${process.versions.node} platform=${process.platform} arch=${process.arch} packaged=${isPackaged} userDataOverride=${overrideOn ? 'on' : 'off'}`,
   );
@@ -130,6 +144,13 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     return outcome;
   };
   const dialog = hooks ? hooks.dialog : createElectronDialogAdapter();
+  // The reminder subsystem's seams (D-084): a frozen clock, a fixed computer zone and fake notifications under the hooks.
+  const seams = hooks?.reminderSeams;
+  const reminderClock = seams?.clock ?? systemClock;
+  const zones = seams?.zones ?? intlZoneProvider;
+  let scheduler: ReminderScheduler | null = null;
+  const wakeReminders = (reason: WakeReason) => scheduler?.wake(reason);
+  const reminderChanged = (event: ReminderChangedEventType) => eventBus.broadcast('reminder:changed', event);
   let services: MainServices | null = null;
   if (db) {
     const emitRevision = (event: NoteRevisionEventType) => eventBus.broadcast('note:revision', event);
@@ -143,10 +164,15 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       onSettingsChanged: (payload) => {
         if (payload.key === 'appearance.theme') applyNativeTheme(payload.value);
         eventBus.broadcast('settings:changed', payload);
+        if (payload.key.startsWith('reminders.')) {
+          reminderChanged({ reason: 'settings', noteIds: [] });
+          wakeReminders('settings');
+        }
       },
       onTreeChanged: (event) => {
         eventBus.broadcast('tree:changed', event);
         desktop?.stickies?.onTreeChanged();
+        onTreeChangedForReminders(event, reminderChanged, wakeReminders);
       },
       onNoteRevision: emitRevision,
       onLeaseChanged: (event) => eventBus.broadcast('note:lease', event),
@@ -154,6 +180,10 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
         if (hooks?.ownsWebContents(holder.webContentsId)) hooks.onReleaseRequest(noteId);
         else eventBus.sendTo(holder.webContentsId, 'lease:release-request', { noteId });
       },
+      reminderClock,
+      zones,
+      onReminderChanged: reminderChanged,
+      onRemindersWritten: () => wakeReminders('write'),
       testFaults: hooks?.faults,
     });
     hooks?.attachServices({ services, db, clock: systemClock, emitRevision });
@@ -204,8 +234,42 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       devUrl: devUrl ? `${devUrl}${devUrl.endsWith('/') ? '' : '/'}` : null,
     },
     onStickyLayout: hooks ? (entry) => hooks.state.stickyLog.push(entry) : undefined,
+    // Started once the startup windows are back, so an overdue alert at startup has a window to fall back to.
+    afterStartup: () => scheduler?.start(),
+    launchedAtLogin: process.argv.includes(LAUNCHED_AT_LOGIN_ARG),
   });
   desktop = windowsSide;
+  if (services && db) {
+    const iconPath = path.join(app.getAppPath(), 'resources', 'icon.png');
+    const { mainWindow } = windowsSide;
+    // The in-app fallback goes to the main window and the widget (D-076).
+    const sendAlert = (event: ReminderAlertEventType) => {
+      for (const id of [mainWindow.webContentsId(), windowsSide.widget?.handle()?.webContentsId ?? null]) {
+        if (id !== null) eventBus.sendTo(id, 'reminder:alert', event);
+      }
+    };
+    const settings = services.settings;
+    scheduler = new ReminderScheduler({
+      db,
+      clock: reminderClock,
+      ids: systemIds,
+      logger: log,
+      reminders: services.reminders,
+      zones,
+      quietHours: () => settings.getInternal('reminders.quietHours'),
+      adapter: capabilityGate(
+        seams?.notifications ?? createElectronNotificationAdapter({ NotificationClass: Notification, platform: process.platform, iconPath }),
+        () => capabilities.nativeNotifications,
+      ),
+      power: seams ? seams.power : electronPowerEvents,
+      emitChanged: reminderChanged,
+      emitAlert: sendAlert,
+      requestAttention: () => mainWindow.requestAttention(),
+      openNote: (noteId, blockId) => mainWindow.openNote(noteId, false, blockId),
+      openReminders: (view) => mainWindow.openReminders(view),
+    });
+    hooks?.attachReminders({ scheduler, db });
+  }
   registerIpcHandlers(router, {
     app: {
       getInfo,
@@ -216,7 +280,14 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       flushed: (webContentsId, flushId, saved) => coordinator.ack(webContentsId, flushId, saved),
     },
     services,
-    desktop: windowsSide,
+    desktop: {
+      ...windowsSide,
+      autostart: createAutostartControl({
+        adapter: hooks ? hooks.autostart : nativeAutostart(),
+        capability: () => capabilities.launchAtLogin,
+        logger: log,
+      }),
+    },
   });
   hooks?.attachDesktop({ desktop: windowsSide, registry, services, inspector: createElectronInspector() });
 
@@ -224,6 +295,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   windowsSide.start();
 
   app.on('will-quit', () => {
+    scheduler?.stop();
     try {
       db?.close();
     } catch {
@@ -238,9 +310,26 @@ function computeCapabilities(inputs: CapabilityInputs, testOverrides: boolean, l
   const { caps, warning } = testOverrides ? applyCapabilityOverride(detected, process.env.INFINITY_NOTES_TEST_CAPS) : { caps: detected, warning: null };
   if (warning) log.warn(warning);
   log.info(
-    `capabilities positioning=${caps.windowPositioning.status} alwaysOnTop=${caps.alwaysOnTop.status} tray=${caps.tray.status}(${caps.tray.reason}) session=${caps.sessionType} ozone=${caps.ozonePlatform ?? 'unset'}`,
+    `capabilities positioning=${caps.windowPositioning.status} alwaysOnTop=${caps.alwaysOnTop.status} tray=${caps.tray.status}(${caps.tray.reason}) session=${caps.sessionType} ozone=${caps.ozonePlatform ?? 'unset'} notifications=${caps.nativeNotifications.status}(${caps.nativeNotifications.reason}) autostart=${caps.launchAtLogin.status}`,
   );
   return caps;
+}
+
+/** The OS login entry of this executable (D-082): Windows login items, else an XDG autostart file. */
+function nativeAutostart(): AutostartAdapter {
+  if (process.platform === 'win32') return createLoginItemsAutostart(app, process.execPath);
+  return createXdgAutostart({
+    configHome: process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
+    exec: process.env.APPIMAGE || process.execPath,
+    name: PRODUCT_NAME,
+  });
+}
+
+/** Trash hides a note's reminders and restore brings them back (D-073): views refresh and the scheduler re-reads. */
+function onTreeChangedForReminders(event: TreeChangedEventType, changed: (e: ReminderChangedEventType) => void, wake: (reason: WakeReason) => void): void {
+  if (event.reason !== 'trash' && event.reason !== 'restore' && event.reason !== 'purge') return;
+  changed({ reason: 'suspended', noteIds: event.trashedNoteIds });
+  wake(event.reason === 'restore' ? 'restore' : 'write');
 }
 
 function applyNativeTheme(value: unknown): void {

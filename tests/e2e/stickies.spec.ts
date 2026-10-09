@@ -693,3 +693,46 @@ test('unsupported pin is shown as unavailable (INF-STKY-13)', async () => {
   expect(line).toBeTruthy();
   console.log(`main.log: ${line}`);
 });
+
+test('windows hook stays safe while windows close (F04-A2)', async () => {
+  test.setTimeout(300_000);
+  const { app, page } = await h.start();
+  const id = await createNote(page, COMMON, 'Busy');
+  await saveText(page, id, 'safe');
+  // A background poller calls the database-reading hook as fast as Playwright allows during every close (QA2-X1 shape).
+  const errors: string[] = [];
+  let polls = 0;
+  let polling = true;
+  const poller = (async () => {
+    while (polling) {
+      polls += 1;
+      await windowsOf(app).catch((err: unknown) => errors.push(String(err)));
+    }
+  })();
+  for (let round = 0; round < 15; round += 1) {
+    await floatViaBridge(page, id);
+    const sp = await stickyPage(app, id);
+    // Saves fail: the OS close keeps the window open with its text.
+    await app.evaluate(() => {
+      globalThis.__infinityTest!.failSaves = 100;
+    });
+    await typeEnd(sp, ` f${round}`);
+    await closeWindowByUrl(app, `#/sticky/${id}`);
+    await expect(sp.getByText('Could not save this note. The window stays open.').first()).toBeVisible({ timeout: 20_000 });
+    expect(await stickyNoteIds(app)).toEqual([id]);
+    // Saving recovers: the next close stores the text and closes the window.
+    await app.evaluate(() => {
+      globalThis.__infinityTest!.failSaves = 0;
+    });
+    await typeEnd(sp, ` r${round}`);
+    await closeWindowByUrl(app, `#/sticky/${id}`);
+    await expect.poll(() => stickyNoteIds(app)).toEqual([]);
+  }
+  polling = false;
+  await poller;
+  console.log(`windows hook polls=${polls} errors=${errors.length}`);
+  expect(errors).toEqual([]);
+  expect(polls).toBeGreaterThan(100);
+  expect(noteRow(id).plain_text.endsWith(' r14')).toBe(true);
+  expect(draftCount()).toBe(0);
+});

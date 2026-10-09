@@ -189,16 +189,32 @@ export interface AttachmentRef {
   blockId: string | null;
 }
 
-/** Every image and file reference in a document (tolerates unnormalized input), in document order. */
-export function collectAttachmentRefs(doc: unknown): AttachmentRef[] {
-  const refs: AttachmentRef[] = [];
+/** Visits every node of a document in document order (tolerates unnormalized input; stops at the depth limit). */
+function eachNode(doc: unknown, visit: (node: Json) => void): void {
   const walk = (node: unknown, depth: number): void => {
     if (!isObject(node) || depth > MAX_DOC_DEPTH) return;
-    if ((node.type === 'image' || node.type === 'fileAttachment') && isObject(node.attrs) && isUuid(node.attrs.attachmentId)) {
-      refs.push({ attachmentId: node.attrs.attachmentId, blockId: isUuid(node.attrs.id) ? node.attrs.id : null });
-    }
+    visit(node);
     if (Array.isArray(node.content)) for (const child of node.content) walk(child, depth + 1);
   };
   walk(doc, 0);
+}
+
+/** Every image and file reference in a document, in document order. */
+export function collectAttachmentRefs(doc: unknown): AttachmentRef[] {
+  const refs: AttachmentRef[] = [];
+  eachNode(doc, (node) => {
+    if ((node.type === 'image' || node.type === 'fileAttachment') && isObject(node.attrs) && isUuid(node.attrs.attachmentId)) {
+      refs.push({ attachmentId: node.attrs.attachmentId, blockId: isUuid(node.attrs.id) ? node.attrs.id : null });
+    }
+  });
   return refs;
+}
+
+/** The IDs of every block that can carry one (BLOCK_ID_TYPES), for reminder anchors (D-080). */
+export function collectBlockIds(doc: unknown): Set<string> {
+  const ids = new Set<string>();
+  eachNode(doc, (node) => {
+    if ((BLOCK_ID_TYPES as readonly unknown[]).includes(node.type) && isObject(node.attrs) && isUuid(node.attrs.id)) ids.add(node.attrs.id);
+  });
+  return ids;
 }

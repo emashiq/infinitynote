@@ -1,6 +1,7 @@
 import { PinnedSection } from './PinnedSection';
 import { QuickActions } from './QuickActions';
 import { RecentSection } from './RecentSection';
+import { RemindersSection } from './RemindersSection';
 import { ScopeFilter } from './ScopeFilter';
 
 export function HomeView() {
@@ -13,6 +14,7 @@ export function HomeView() {
       <QuickActions />
       <PinnedSection />
       <RecentSection />
+      <RemindersSection />
     </div>
   );
 }

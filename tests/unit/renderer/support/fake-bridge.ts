@@ -15,7 +15,17 @@ import type { HomeScopeType } from '../../../../src/shared/contracts/home';
 import { DEFAULT_SESSION, type TabSessionType } from '../../../../src/shared/contracts/session';
 import { SETTINGS, type SettingKey } from '../../../../src/shared/contracts/settings';
 import type { ContentOpBaseType, DraftsResolveResponseType, NoteContentResponseType } from '../../../../src/shared/contracts/notes';
+import type {
+  OccurrenceItemType,
+  ReminderCreateRequestType,
+  ReminderDtoType,
+  ReminderViewType,
+  RemindersSummaryResponseType,
+  ZonesListResponseType,
+} from '../../../../src/shared/contracts/reminders';
 import type { StickyStateType } from '../../../../src/shared/contracts/stickies';
+import type { AutostartStateType, WidgetStateType } from '../../../../src/shared/contracts/widget';
+import { resolveLocal } from '../../../../src/shared/time/resolve';
 import type { WindowGetStateResponseType } from '../../../../src/shared/contracts/windows';
 import { extractPlainText } from '../../../../src/shared/text/plain-text';
 import { textToDoc } from '../../../../src/shared/text/textarea-doc';
@@ -84,7 +94,20 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const calls: Array<{ channel: string; req: unknown }> = [];
   /** Notes whose sticky window is open, with its collapse and pin state. */
   const floating = new Map<string, { collapsed: boolean; alwaysOnTop: boolean; activation: number }>();
-  let windowState: WindowGetStateResponseType = { role: 'main', openNotes: [] };
+  let windowState: WindowGetStateResponseType = { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } };
+  /** Reminder state the tests arrange: the zone list, the view lists, the Home summary and each note's reminders. */
+  const reminderData = {
+    zones: { zones: ['America/Chicago', 'America/New_York', 'Asia/Dhaka', 'UTC'], systemZone: 'Asia/Dhaka', defaultZone: 'Asia/Dhaka', asOf: Date.parse('2026-10-08T07:00:00Z') } as ZonesListResponseType,
+    views: { today: [], upcoming: [], overdue: [], completed: [] } as Record<ReminderViewType, OccurrenceItemType[]>,
+    summary: null as RemindersSummaryResponseType | null,
+    byNote: new Map<string, ReminderDtoType[]>(),
+    deleted: new Map<string, ReminderDtoType>(),
+  };
+  /** The widget window and launch-at-login state main would report. */
+  const windowData = {
+    widget: { open: false, collapsed: false, alwaysOnTop: false } as WidgetStateType,
+    autostart: { enabled: false, capability: { status: 'unsupported', reason: 'development-build' } } as AutostartStateType,
+  };
   let capabilities: CapabilitiesType | null = null;
   let clock = 1_000;
 
@@ -153,6 +176,31 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     const id = uid();
     versions.push({ id, noteId: n.id, format: n.format, content: n.content, reason, createdAt: clock });
     return id;
+  };
+
+  const allReminders = () => [...reminderData.byNote.values()].flat();
+  const viewItems = () => Object.values(reminderData.views).flat();
+  /** A reminder as main would answer it; the instant comes from the shared resolver. */
+  const toReminder = (req: ReminderCreateRequestType, id: string, revision: number): ReminderDtoType => {
+    const r = resolveLocal({ date: req.date, time: req.time }, req.zoneId, req.foldPreference);
+    return {
+      id,
+      noteId: req.noteId,
+      blockId: req.blockId,
+      anchorState: 'ok',
+      title: req.title,
+      zoneId: req.zoneId,
+      date: req.date,
+      time: req.time,
+      recurrence: req.recurrence,
+      foldPreference: req.foldPreference,
+      followup: req.followup,
+      revision,
+      createdAt: clock,
+      updatedAt: clock,
+      resolution: { status: r.status },
+      current: null,
+    };
   };
 
   const bridge: InfinityBridge = {
@@ -636,6 +684,103 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     window: {
       getState: () => handle('window:getState', {}, () => ok(windowState)),
     },
+    zones: { list: () => handle('zones:list', {}, () => ok(reminderData.zones)) },
+    reminder: {
+      create: (req) =>
+        handle('reminder:create', req, () => {
+          const full = { foldPreference: 'earlier' as const, allowPast: false, ...req };
+          const dto = toReminder(full, uid(), 1);
+          reminderData.byNote.set(req.noteId, [...(reminderData.byNote.get(req.noteId) ?? []), dto]);
+          return ok(dto);
+        }),
+      update: (req) =>
+        handle('reminder:update', req, () => {
+          const old = allReminders().find((r) => r.id === req.reminderId);
+          if (!old) return fail('NOT_FOUND', 'This reminder no longer exists');
+          if (old.revision !== req.expectedRevision) return fail('CONFLICT', 'This reminder changed elsewhere. Reopen it to edit.', { currentRevision: old.revision });
+          const dto = toReminder({ foldPreference: 'earlier', allowPast: false, ...req, noteId: old.noteId }, old.id, old.revision + 1);
+          reminderData.byNote.set(old.noteId, reminderData.byNote.get(old.noteId)!.map((r) => (r.id === old.id ? dto : r)));
+          return ok(dto);
+        }),
+      delete: (req) =>
+        handle('reminder:delete', req, () => {
+          const old = allReminders().find((r) => r.id === req.reminderId);
+          if (!old) return fail('NOT_FOUND', 'This reminder no longer exists');
+          reminderData.byNote.set(old.noteId, reminderData.byNote.get(old.noteId)!.filter((r) => r.id !== old.id));
+          reminderData.deleted.set(old.id, old);
+          return ok({ reminderId: old.id, undoUntil: clock + 10_000 });
+        }),
+      undoDelete: (req) =>
+        handle('reminder:undoDelete', req, () => {
+          const old = reminderData.deleted.get(req.reminderId);
+          if (!old) return fail('VALIDATION_FAILED', 'Undo is no longer available');
+          reminderData.deleted.delete(old.id);
+          reminderData.byNote.set(old.noteId, [...(reminderData.byNote.get(old.noteId) ?? []), old]);
+          return ok(old);
+        }),
+      listForNote: (req) =>
+        handle('reminder:listForNote', req, () => ok({ reminders: reminderData.byNote.get(req.noteId) ?? [], asOf: clock, displayZone: reminderData.zones.systemZone })),
+      open: (req) => handle('reminder:open', req, () => ok({})),
+    },
+    reminders: {
+      listView: (req) =>
+        handle('reminders:listView', req, () => {
+          const { views } = reminderData;
+          return ok({
+            view: req.view,
+            asOf: clock,
+            displayZone: reminderData.zones.systemZone,
+            items: views[req.view],
+            counts: { today: views.today.length, upcoming: views.upcoming.length, overdue: views.overdue.length },
+          });
+        }),
+      summary: (req) =>
+        handle('reminders:summary', req, () => {
+          const { views } = reminderData;
+          return ok(
+            reminderData.summary ?? {
+              asOf: clock,
+              displayZone: reminderData.zones.systemZone,
+              overdue: views.overdue.slice(0, 5),
+              overdueTotal: views.overdue.length,
+              today: views.today.slice(0, 5),
+              todayTotal: views.today.length,
+            },
+          );
+        }),
+    },
+    occurrence: {
+      complete: (req) =>
+        handle('occurrence:complete', req, () => {
+          const item = viewItems().find((i) => i.occurrenceId === req.occurrenceId);
+          return item ? ok({ ...item, state: 'completed' as const, completedAt: clock, overdue: false }) : fail('NOT_FOUND', 'This reminder no longer exists');
+        }),
+      snooze: (req) =>
+        handle('occurrence:snooze', req, () => {
+          const item = viewItems().find((i) => i.occurrenceId === req.occurrenceId);
+          return item ? ok({ ...item, state: 'snoozed' as const, overdue: false }) : fail('NOT_FOUND', 'This reminder no longer exists');
+        }),
+    },
+    widget: {
+      show: () => handle('widget:show', {}, () => ok((windowData.widget = { ...windowData.widget, open: true }))),
+      hide: () => handle('widget:hide', {}, () => ok((windowData.widget = { ...windowData.widget, open: false }))),
+      setPinned: (req) =>
+        handle('widget:setPinned', req, () =>
+          capabilities?.alwaysOnTop.status === 'unsupported'
+            ? fail('UNSUPPORTED', 'Not supported by this desktop')
+            : ok((windowData.widget = { ...windowData.widget, alwaysOnTop: req.pinned })),
+        ),
+      setCollapsed: (req) => handle('widget:setCollapsed', req, () => ok((windowData.widget = { ...windowData.widget, collapsed: req.collapsed }))),
+    },
+    autostart: {
+      get: () => handle('autostart:get', {}, () => ok(windowData.autostart)),
+      set: (req) =>
+        handle('autostart:set', req, () =>
+          windowData.autostart.capability.status === 'supported'
+            ? ok((windowData.autostart = { ...windowData.autostart, enabled: req.enabled }))
+            : fail('UNSUPPORTED', 'Not supported by this desktop'),
+        ),
+    },
     subscribe(channel, cb) {
       if (!(EVENT_CHANNELS as readonly string[]).includes(channel)) throw new Error('Unknown event channel');
       let set = subscribers.get(channel);
@@ -667,7 +812,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     /** The sticky window state a note would have in main. */
     stickyState: (noteId: string) => stickyState(notes.find((n) => n.id === noteId)!),
     /** Direct access for arranging state in tests. */
-    data: { setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, heldElsewhere, settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
+    data: { reminders: reminderData, windows: windowData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, heldElsewhere, settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
   };
 }
 

@@ -1,5 +1,5 @@
-/** Who sent an IPC request: the main window, or a sticky window bound to one note (D-064). */
-export type SenderInfo = { role: 'main' } | { role: 'sticky'; noteId: string };
+/** Who sent an IPC request: the main window, a sticky window bound to one note (D-064), or the reminder widget (D-074). */
+export type SenderInfo = { role: 'main' } | { role: 'sticky'; noteId: string } | { role: 'widget' };
 
 interface WindowChannel {
   webContentsId: number;
@@ -45,10 +45,14 @@ export class WindowRegistry {
     return this.all().find((w) => w.role === 'sticky' && w.noteId === noteId && !w.isDestroyed());
   }
 
+  widget(): RegisteredWindow | undefined {
+    return this.all().find((w) => w.role === 'widget' && !w.isDestroyed());
+  }
+
   /** The role of a live registered window, or undefined when it is unknown or gone. */
   info(webContentsId: number): SenderInfo | undefined {
     const win = this.windows.get(webContentsId);
     if (!win || win.isDestroyed()) return undefined;
-    return win.role === 'sticky' ? { role: 'sticky', noteId: win.noteId } : { role: 'main' };
+    return win.role === 'sticky' ? { role: 'sticky', noteId: win.noteId } : { role: win.role };
   }
 }

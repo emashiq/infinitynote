@@ -102,7 +102,7 @@ describe('app events reach the active note (plan section 10.3)', () => {
     const fake = createFakeBridge();
     const a = await makeNote(fake, undefined, 'Docked');
     fake.data.heldElsewhere.add(a.id);
-    const { services } = await setupServices({ fake, initialOpens: [{ noteId: a.id, takeEdit: true }] });
+    const { services } = await setupServices({ fake, initialOpens: [{ noteId: a.id, takeEdit: true, blockId: null }] });
     await vi.advanceTimersByTimeAsync(0);
     expect(services.tabs.store.getState().session.activeTabId).toBe(`note:${a.id}`);
     expect(services.tabs.activeController()!.store.getState().status).toBe('ready');

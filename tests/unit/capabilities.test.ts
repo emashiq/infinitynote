@@ -3,6 +3,7 @@ import { applyCapabilityOverride, detectCapabilities, type CapabilityInputs } fr
 
 const base: CapabilityInputs = {
   platform: 'linux',
+  isPackaged: false,
   ozonePlatform: null,
   xdgSessionType: null,
   waylandDisplay: null,
@@ -10,6 +11,7 @@ const base: CapabilityInputs = {
   wslDistro: null,
   wslgVersion: null,
   statusNotifierHost: null,
+  notificationServer: null,
 };
 
 describe('capabilities (W01-14)', () => {
@@ -45,11 +47,25 @@ describe('capabilities (W01-14)', () => {
   it('notificationActions is always unsupported; later-phase fields stay unknown', () => {
     for (const input of [{ ...base, platform: 'win32' }, base, { ...base, ozonePlatform: 'wayland' }, { ...base, wslDistro: 'Ubuntu' }, { ...base, platform: 'darwin' }]) {
       const c = detectCapabilities(input);
-      expect(c.notificationActions.status).toBe('unsupported');
-      for (const key of ['nativeNotifications', 'launchAtLogin', 'globalShortcut'] as const) {
+      expect(c.notificationActions).toEqual({ status: 'unsupported', reason: 'not-promised-on-all-desktops' });
+      expect(c.launchAtLogin).toEqual({ status: 'unsupported', reason: 'development-build' });
+      for (const key of ['globalShortcut'] as const) {
         expect(c[key]).toEqual({ status: 'unknown', reason: 'detected-in-later-phase' });
       }
     }
+  });
+});
+
+describe('notification capability (D-076, D-077)', () => {
+  it('Windows reaches its notification platform; Linux follows the session-bus probe, not Electron', () => {
+    expect(detectCapabilities({ ...base, platform: 'win32' }).nativeNotifications).toEqual({ status: 'supported', reason: 'native-windows' });
+    const wslg = { ...base, wslDistro: 'Ubuntu', wslgVersion: 'WSLg 1.0.73', display: ':0', waylandDisplay: 'wayland-0' };
+    expect(detectCapabilities({ ...wslg, notificationServer: 'absent' }).nativeNotifications).toEqual({ status: 'unsupported', reason: 'no-notification-server' });
+    expect(detectCapabilities({ ...wslg, notificationServer: 'present' }).nativeNotifications).toEqual({ status: 'supported', reason: 'notification-server' });
+    const x11 = { ...base, xdgSessionType: 'x11', display: ':0' };
+    expect(detectCapabilities({ ...x11, notificationServer: 'unknown' }).nativeNotifications).toEqual({ status: 'unknown', reason: 'notification-server-unknown' });
+    expect(detectCapabilities({ ...x11, notificationServer: null }).nativeNotifications.status).toBe('unknown');
+    expect(detectCapabilities({ ...base, platform: 'darwin' }).nativeNotifications.status).toBe('unknown');
   });
 });
 
@@ -79,12 +95,15 @@ describe('test capability override (plan section 8.9)', () => {
   const win = detectCapabilities({ ...base, platform: 'win32' });
 
   it('sets the named statuses with the reason test-override and ignores unknown keys and values', () => {
-    const { caps, warning } = applyCapabilityOverride(win, JSON.stringify({ windowPositioning: 'unsupported', tray: 'unknown', alwaysOnTop: 'maybe', nativeNotifications: 'supported' }));
+    const { caps, warning } = applyCapabilityOverride(win, JSON.stringify({ windowPositioning: 'unsupported', tray: 'unknown', alwaysOnTop: 'maybe', globalShortcut: 'supported' }));
     expect(warning).toBeNull();
     expect(caps.windowPositioning).toEqual({ status: 'unsupported', reason: 'test-override' });
     expect(caps.tray).toEqual({ status: 'unknown', reason: 'test-override' });
     expect(caps.alwaysOnTop).toEqual(win.alwaysOnTop);
-    expect(caps.nativeNotifications).toEqual(win.nativeNotifications);
+    expect(caps.globalShortcut).toEqual(win.globalShortcut);
+    const phase05 = applyCapabilityOverride(win, JSON.stringify({ nativeNotifications: 'unsupported', launchAtLogin: 'supported' })).caps;
+    expect(phase05.nativeNotifications).toEqual({ status: 'unsupported', reason: 'test-override' });
+    expect(phase05.launchAtLogin).toEqual({ status: 'supported', reason: 'test-override' });
   });
 
   it('leaves the capabilities unchanged for invalid JSON, a non-object or no value', () => {

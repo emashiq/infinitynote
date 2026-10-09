@@ -3,10 +3,17 @@ import type { TrashRestoreResponseType } from '../../shared/contracts/hierarchy'
 import { STICKY_MESSAGES } from '../../shared/contracts/stickies';
 import { createStore, type Store, type Timers } from './store';
 
+export interface NoticeAction {
+  label: string;
+  run: () => void;
+}
+
 export interface Notice {
   id: number;
   text: string;
   tone: 'info' | 'error';
+  /** One button next to the text (for example Undo); the notice closes when it is used. */
+  action?: NoticeAction;
 }
 export interface NoticeState {
   notices: Notice[];
@@ -21,9 +28,9 @@ export class NoticeStore {
 
   constructor(private readonly timers: Timers) {}
 
-  push(text: string, tone: 'info' | 'error' = 'info'): number {
+  push(text: string, tone: 'info' | 'error' = 'info', action?: NoticeAction): number {
     const id = this.nextId++;
-    this.store.setState((s) => ({ notices: [...s.notices, { id, text, tone }].slice(-MAX_NOTICES) }));
+    this.store.setState((s) => ({ notices: [...s.notices, { id, text, tone, ...(action ? { action } : {}) }].slice(-MAX_NOTICES) }));
     this.timers.setTimeout(() => this.dismiss(id), NOTICE_TTL_MS);
     return id;
   }

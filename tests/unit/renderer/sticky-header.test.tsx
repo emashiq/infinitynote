@@ -171,7 +171,7 @@ describe('window routes in the renderer (plan section 9.1)', () => {
     const fake = createFakeBridge();
     const r = await fake.bridge.note.create({ location: { projectId: null, folderId: null }, sticky: false, title: 'Docked note' });
     if (!r.ok) throw new Error('note');
-    fake.data.setWindowState({ role: 'main', openNotes: [{ noteId: r.data.note.id, takeEdit: true }] });
+    fake.data.setWindowState({ role: 'main', openNotes: [{ noteId: r.data.note.id, takeEdit: true, blockId: null }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } });
     window.location.hash = '#/';
     const { el } = await dom.mount(fake);
     expect(el.querySelector('#app-shell')).not.toBeNull();

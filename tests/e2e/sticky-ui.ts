@@ -34,7 +34,10 @@ export interface WindowsSnapshot {
   stickies: StickyWindowInfo[];
 }
 
-/** The app's windows as main sees them (test hooks). */
+/**
+ * The app's windows as main sees them (test hooks). Rule for every hook that touches the database (F04-A2): it resolves
+ * on a fresh macrotask in main, so always await it; never read the database synchronously inside `app.evaluate`.
+ */
 export function windowsOf(app: ElectronApplication): Promise<WindowsSnapshot> {
   return app.evaluate(() => globalThis.__infinityTest!.windows());
 }

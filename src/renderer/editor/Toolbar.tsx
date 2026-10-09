@@ -19,6 +19,8 @@ export interface ToolbarActions {
   openFind(): void;
   convert(target: 'rich' | 'plain'): void;
   openVersions(): void;
+  /** More "Add reminder…" (absent where reminders cannot be added from the note, a sticky). */
+  addReminder?: () => void;
 }
 
 const IMAGE_SIZE_OPTIONS: Array<{ value: ImageSize; label: string }> = [
@@ -126,6 +128,7 @@ export function Toolbar({ editor, format, editable, actions }: { editor: Editor;
     { id: 'find', label: 'Find in note', onSelect: actions.openFind },
     { id: 'convert', label: 'Convert to plain text…', disabled: off, onSelect: () => actions.convert('plain') },
     { id: 'versions', label: 'Version history…', onSelect: actions.openVersions },
+    ...(actions.addReminder ? [{ id: 'reminder', label: 'Add reminder…', separatorBefore: true, onSelect: actions.addReminder }] : []),
   ];
 
   return (

@@ -50,6 +50,23 @@ export const INVOKE_CHANNELS = [
   'sticky:remove',
   'sticky:restore',
   'window:getState',
+  'zones:list',
+  'reminder:create',
+  'reminder:update',
+  'reminder:delete',
+  'reminder:undoDelete',
+  'reminder:listForNote',
+  'reminder:open',
+  'reminders:listView',
+  'reminders:summary',
+  'occurrence:complete',
+  'occurrence:snooze',
+  'widget:show',
+  'widget:hide',
+  'widget:setPinned',
+  'widget:setCollapsed',
+  'autostart:get',
+  'autostart:set',
 ] as const;
 
 export const EVENT_CHANNELS = [
@@ -61,6 +78,10 @@ export const EVENT_CHANNELS = [
   'app:flush-request',
   'sticky:state',
   'app:openNote',
+  'reminder:changed',
+  'reminder:alert',
+  'widget:state',
+  'app:openReminders',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

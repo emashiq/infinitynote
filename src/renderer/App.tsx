@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AppInfoType } from '../shared/contracts/app';
 import type { InfinityBridge } from '../shared/contracts/bridge';
-import type { AppOpenNoteEventType, WindowGetStateResponseType } from '../shared/contracts/windows';
+import type { WindowGetStateResponseType } from '../shared/contracts/windows';
 import { parseRoute, type Route } from '../shared/routes';
 import { getBridge } from './bridge';
 import { Shell } from './shell/Shell';
@@ -9,7 +9,10 @@ import { createAppServices, type AppServices } from './state/app-services';
 import { AppServicesContext } from './state/use-store';
 import { StartupErrorScreen } from './startup/StartupErrorScreen';
 import { StickyApp } from './stickies/StickyApp';
+import { WidgetApp } from './widget/WidgetApp';
 import { InvalidWindow } from './stickies/StickyView';
+
+type MainIdentity = Extract<WindowGetStateResponseType, { role: 'main' }>;
 
 type Load =
   | { state: 'pending' }
@@ -37,17 +40,17 @@ function loadFor(bridge: InfinityBridge): Promise<Load> {
 // One AppServices per bridge: the cache survives StrictMode's double render, and the window lifecycle
 // hooks inside the services flush the active note when the page hides.
 const servicesByBridge = new WeakMap<InfinityBridge, AppServices>();
-function servicesFor(bridge: InfinityBridge, initialOpens: readonly AppOpenNoteEventType[]): AppServices {
+function servicesFor(bridge: InfinityBridge, identity: MainIdentity): AppServices {
   let services = servicesByBridge.get(bridge);
   if (!services) {
-    services = createAppServices(bridge, { initialOpens });
+    services = createAppServices(bridge, { initialOpens: identity.openNotes, initialReminders: identity.openReminders, initialWidget: identity.widget });
     servicesByBridge.set(bridge, services);
   }
   return services;
 }
 
-function ShellRoot({ bridge, initialOpens }: { bridge: InfinityBridge; initialOpens: readonly AppOpenNoteEventType[] }) {
-  const [services] = useState(() => servicesFor(bridge, initialOpens));
+function ShellRoot({ bridge, identity }: { bridge: InfinityBridge; identity: MainIdentity }) {
+  const [services] = useState(() => servicesFor(bridge, identity));
   return (
     <AppServicesContext.Provider value={services}>
       <Shell />
@@ -60,8 +63,14 @@ const initialRoute = (): Route => parseRoute(typeof window === 'undefined' ? '' 
 
 /** The URL must name what main says this window is, so a sticky never renders the main shell (QA-2, D-064). */
 function routeMatches(route: Route, identity: WindowGetStateResponseType): boolean {
-  if (identity.role === 'main') return route.kind === 'main';
-  return route.kind === 'sticky' && route.noteId === identity.sticky.noteId;
+  switch (identity.role) {
+    case 'main':
+      return route.kind === 'main';
+    case 'widget':
+      return route.kind === 'widget';
+    case 'sticky':
+      return route.kind === 'sticky' && route.noteId === identity.sticky.noteId;
+  }
 }
 
 export function App({ bridge }: { bridge?: InfinityBridge }) {
@@ -94,9 +103,7 @@ export function App({ bridge }: { bridge?: InfinityBridge }) {
   if (load.info.startup.status === 'error') {
     return <StartupErrorScreen bridge={api} code={load.info.startup.code} />;
   }
-  return identity.role === 'sticky' ? (
-    <StickyApp bridge={api} noteId={identity.sticky.noteId} />
-  ) : (
-    <ShellRoot bridge={api} initialOpens={identity.openNotes} />
-  );
+  if (identity.role === 'sticky') return <StickyApp bridge={api} noteId={identity.sticky.noteId} />;
+  if (identity.role === 'widget') return <WidgetApp bridge={api} initial={identity.widget} />;
+  return <ShellRoot bridge={api} identity={identity} />;
 }

@@ -487,13 +487,105 @@ Recorded by the Phase 04 planner on 2026-10-09. The implementation plan is `docs
   - Quit: when a window answers that its text is not saved, the first Quit is canceled and that window shows "Could not save this note, so Infinity Notes did not quit. Quit again to quit without saving it." A repeated Quit goes ahead (an explicit escape when storage keeps failing). A renderer that does not answer within the wait does not block quitting, and the OS session end never waits (D-066).
   - The renderer takes its window identity from `window:getState` at startup (main's registry), renders the main shell only for the main role and a sticky only for its own note, and shows "This window could not be opened." when the URL hash names anything else.
 - Consequences: D-055's 2000 ms close/quit bound becomes 5000 ms per window. The flush log line gains `unsaved=<n>`. Regression: `tests/e2e/save-failure.spec.ts`, `tests/unit/window-lifecycle.test.ts`, `integration/{flush-coordinator,sticky-manager,main-window-controller}.test.ts`, `unit/renderer/{sticky-header.test.tsx,state/app-events,state/sticky-services}`.
-- Status: accepted (implementer, Phase 04 Repair 1).
+- Status: accepted (implementer, Phase 04 Repair 1); the "repeated Quit goes ahead" rule is refined by D-085 (Phase 05, F04-A1): the escape covers only the one Quit that follows a canceled Quit, within 2 minutes.
 - Evidence: `docs/progress/phase-04-qa.md` QA-1, QA-2; `docs/progress/phase-04.md` Repair 1.
+
+## Phase 05 decisions
+
+Recorded by the Phase 05 planner on 2026-10-09. The implementation plan is `docs/plans/phase-05.md`; section numbers below refer to it. Probe output is in `.infinity-work/logs/phase-05/planner-probe-*.log`.
+
+### D-073 Migration 005: reminders, occurrences and alert deliveries
+- Context: D-051 gives 005 to Phase 05. ARCHITECTURE section 8 lists the fields; the delivery kind `recovery_summary` mixed what an alert is with how it was shown, and a stored `suspended` flag would have to be kept in sync with trash.
+- Decision: `005_reminders.sql` creates `reminders`, `occurrences` (UNIQUE `(reminder_id, due_at_utc)`, `alert_sequence` as the next sequence to claim, partial index on `next_alert_at_utc`) and `alert_deliveries` (UNIQUE `(occurrence_id, alert_sequence)`, `kind` initial, followup or snooze, `presentation` single or summary, `reason`, `outcome` claimed, dispatched, failed, unsupported or uncertain, `closed_at`, `clicked_at`). Suspension is derived: every scheduler and view query requires a live note and a live reminder. `enabled` exists (pack data model) and is always 1 in V1. `cancelled` marks only an occurrence that already alerted and was replaced by an edit of a one-time reminder; open occurrences that are not yet due are deleted on a schedule edit (they cannot have deliveries). Purge cascades.
+- Consequences: `LATEST = 5`; tests that hard-code 4 change to 5.
+- Status: accepted.
+- Evidence: plan section 5.
+
+### D-074 Phase 05 IPC catalogue and window roles
+- Decision:
+  - Invoke: `zones:list`, `reminder:create|update|delete|undoDelete|listForNote|open`, `reminders:listView|summary`, `occurrence:complete|snooze`, `widget:show|hide|setPinned|setCollapsed`, `autostart:get|set` (moved from Phase 08, D-082). `reminder:open` is new: the widget and stickies cannot send `app:openNote`.
+  - Events: `reminder:changed` (broadcast), `reminder:alert` (in-app fallback), `widget:state`, `app:openReminders` (main window, queued like note opens). `app:openNote` gains an optional `blockId`. `window:getState` gains the widget variant and, for the main window, `openReminders`.
+  - Roles: `main`, `sticky`, `widget`. Stickies add `reminder:listForNote` (router ownership) and `reminder:open` (handler checks the reminder's note). The widget has its own allowlist (plan section 6.4) and cannot read notes or edit reminders.
+- Consequences: ARCHITECTURE section 4 updated (67 invoke channels, 12 events); boundary tests guard Phase 06 names.
+- Status: accepted.
+- Evidence: plan section 6.
+
+### D-075 Scheduler: single timer, claims, batches and recovery
+- Decision: one `ReminderScheduler` in main with one timer set to the earliest live `next_alert_at_utc`, capped at 60 s, re-armed after every tick; a tick that made no progress with an overdue minimum backs off from 1 s to 60 s. Each due occurrence is claimed in its own transaction that increments `alert_sequence` and `revision` under `WHERE revision = ?` and inserts the delivery; dispatch happens after the commit and never inside a transaction. Done and Snooze bump the revision without a revision precondition, so the user always wins. Kind: snoozed → `snooze`, first alert → `initial`, else `followup`; `followups_sent` counts only follow-ups and increments at claim. Every tick (not only recovery ticks) applies the batch rule: up to 3 due occurrences get one notification each, more get one summary notification with a claim per occurrence. Stale `claimed` rows at startup become `uncertain` and are never re-sent. A wall-clock delta that differs from the monotonic delta by more than 120 s is a clock jump: forward → recovery batch; backward → reschedule only. Follow-ups missed during downtime, sleep or quiet hours are not replayed; the cadence restarts from the late claim.
+- Consequences: storms are bounded in every situation, including a minute with many due reminders. Recovery reasons are recorded on the delivery.
+- Status: accepted.
+- Evidence: plan section 9.5; integration tests `scheduler`, `scheduler-recovery`.
+
+### D-076 Notification adapter and capability
+- Context: probe: on Windows an unpackaged build's toast reaches the notification platform (`show` fires); on Linux without a notification server `Notification.isSupported()` is still true and `show()` emits `failed` synchronously.
+- Decision: Electron `Notification` behind `NotificationAdapter`; listeners attached before `show()`; `show` → `dispatched`, `failed` or a throw → `failed`, nothing within 3000 ms → `uncertain`. Linux capability from `NameHasOwner org.freedesktop.Notifications` (same bounded `execFile` mechanism as the tray probe): unsupported → the adapter is not called and the outcome is `unsupported`. Any outcome other than `dispatched` raises the in-app banner and `flashFrame` on the main window. Click opens the source note (summary: Reminders > Overdue); close is recorded and never completes. No actions, toast XML or reply (D-026). E2E uses a fake adapter unless `INFINITY_NOTES_TEST_NOTIFY=real`; the packaged E2E dispatches one real notification.
+- Status: accepted.
+- Evidence: `planner-probe-notify-win.log`, `planner-probe-notify-wsl.log`.
+
+### D-077 No notification daemon in WSL (Phase 00 F-8, R-02)
+- Context: WSLg has no `org.freedesktop.Notifications` owner and no StatusNotifier host (probe). Installing a daemon (apt) changes the user's WSL environment, and no Python or extra npm dependency may provide a test server.
+- Decision: nothing is installed. On WSLg the capability is `unsupported('no-notification-server')`, the in-app fallback (banner, Reminders lists, widget, taskbar attention) is the real behavior and is E2E-tested with the real capability. Native Linux toast and click cases are `not_run` for WSLg with the probe as the reason; GNOME notification cases stay `outside_validation_scope` (D-021). The Phase 09 acceptor may revisit this only with user approval.
+- Status: accepted.
+- Evidence: `planner-probe-notify-wsl.log`; D-039.
+
+### D-078 Series, edits, completion and snooze semantics
+- Decision: series generation inserts the latest due instant (if newer than any existing row) and the next future instant with `ON CONFLICT DO NOTHING`; an existing row at an instant (for example completed early) counts as that occurrence; older open occurrences become `missed`; intermediate instants are never created. Done applies to one occurrence (also ahead of time) and keeps one future open occurrence per series. Snooze is allowed only for a due open occurrence; presets 5, 10, 15, 30, 60 minutes are instant arithmetic, "Tomorrow 09:00" is calendar arithmetic in the reminder's zone; snooze replaces the next alert and never moves the series. A schedule edit deletes not-yet-due open occurrences and regenerates; a recurring series' overdue open occurrence follows the explicit choice keep (default) or complete; a one-time reminder's open occurrence is replaced (cancelled when it already alerted). Non-schedule edits keep occurrence rows. The Completed view lists completed and missed occurrences of the last 30 days.
+- Status: accepted.
+- Evidence: plan sections 8.2 and 9.2.
+
+### D-079 Time zones, resolver and display zone
+- Decision: the zone list is `Intl.supportedValuesOf('timeZone')` plus `UTC` plus the computer's zone when ICU lists it under an alias (probe: `Asia/Calcutta`, no `UTC`); zones are validated against this list, not Luxon validity (Luxon accepts `EST` and `CST`). `resolveLocal` uses the two offsets 12 h before and after the naive instant, keeps matching candidates (fold: earlier by default) and binary-searches whole minutes for a gap. The display zone is the computer's zone read on every wake and query; stored reminder zones never change. The default zone for new reminders is the `reminders.defaultZone` setting or the computer's zone, never a hard-coded zone; an unknown zone requires a choice. When the computer's zone is unknown, views disclose that days are shown in UTC. Electron main may only see a live OS zone change after a restart; this is a stated limitation and is tested through the provider seam.
+- Status: accepted.
+- Evidence: `planner-probe-resolve.log`, `planner-probe-notify-win.log`.
+
+### D-080 Block anchors and reminder chips
+- Decision: a reminder may name a block whose ID is in the stored content; otherwise main answers `blockMissing` and the renderer persists the editor's block IDs (a flush) and retries, or offers a note-level reminder when the note is read-only. Anchor state is synchronized inside every content transaction (`ContentIndexer`), so deleting a block sets `block_missing` and restoring it sets `ok`. Chips are ProseMirror widget decorations set by meta-only transactions (never saved, never copied); note-level and anchor-missing reminders show in a chip bar above the editor. Stickies show chips read-only; a chip click there opens the reminder in the main window.
+- Status: accepted.
+- Evidence: plan sections 8.3 and 9.8.
+
+### D-081 Reminder widget window
+- Decision: one optional widget window (`#/widget`, role `widget`), default off, native frame, 300x420 default, minimum 240x160, 36 px header with Keep on top (capability-checked), Collapse and Hide. Hide destroys the window and stores `open = 0` in `window_state` key `widget`; a widget open at Quit is restored at the next start. It reads `reminders:listView` and acts through `occurrence:complete|snooze` and `reminder:open`; it owns no scheduler and answers flush requests at once. The tray gains "Show widget".
+- Status: accepted.
+- Evidence: plan sections 8.8, 8.9 and 9.9.
+
+### D-082 Launch at login mechanism in Phase 05
+- Context: the Phase 05 contract says startup launch is optional; INF-DESK-03 belongs to Phase 08 (Settings completion) and moving its row would break the frozen traceability baseline.
+- Decision: Phase 05 implements the mechanism and a Settings switch, default off, packaged builds only. Windows uses login items with the argument `--launched-at-login`; Linux writes `$XDG_CONFIG_HOME/autostart/infinity-notes.desktop`; WSL and development builds report `unsupported`. A launch at login starts in the background when a tray exists, otherwise with the main window. Tests never change the host's login items or autostart folder. INF-DESK-03 stays a Phase 08 row with status `in_progress`; `autostart:get|set` move from the Phase 08 catalogue row to Phase 05.
+- Status: accepted.
+- Evidence: plan section 8.11.
+
+### D-083 Reminder settings keys
+- Decision: public settings `reminders.defaultZone` (null = computer zone), `reminders.followupDefault` (`{enabled:false, intervalMinutes:15, maxFollowups:2}`) and `reminders.quietHours` (`{enabled:false, start:'22:00', end:'07:00', zoneId:null}`, the zone stored explicitly when enabled). Phase 05 adds a Settings > Reminders section with these controls and the statement that reminders are not sent while the app is not running; INF-PREF-02..04 remain Phase 08 rows. End-of-day and date-only defaults arrive with Phase 06.
+- Status: accepted.
+- Evidence: plan section 7.
+
+### D-084 Reminder test seams
+- Decision: under test hooks only, `INFINITY_NOTES_TEST_CLOCK` freezes the reminder subsystem's clock (advance, set and wall-only jump hooks wait for the triggered tick), `INFINITY_NOTES_TEST_ZONE` fixes the computer zone (with a hook to change it), the notification adapter is a fake (shown list, click, close, failure modes) unless `INFINITY_NOTES_TEST_NOTIFY=real`, power events can be emitted, and `INFINITY_NOTES_TEST_CAPS` gains `nativeNotifications` and `launchAtLogin`. Every hook that touches the database resolves on a fresh macrotask (F04-A2), so it never runs inside a statement paused by an inspector interrupt. Packaged builds ignore all of these.
+- Status: accepted.
+- Evidence: plan section 8.13.
+
+### D-085 Quit escape covers one following Quit (F04-A1)
+- Context: D-072 let any Quit after one canceled Quit exit without the warning, for the rest of the run.
+- Decision: a canceled Quit arms the escape with a timestamp. The next Quit attempt consumes it: with unsaved text it exits only when the escape was armed within the last 2 minutes, otherwise it is canceled again and re-arms. A Quit whose flush saved everything exits and leaves the escape cleared. The renderer copy is unchanged.
+- Status: accepted.
+- Evidence: plan section 8.12; `tests/unit/window-lifecycle.test.ts`.
+
+### D-086 Two contract refinements found while building the reminder UI
+- Context: the Reminders page and the widget must say "Repeats daily" or "Repeats weekly", but the planned `OccurrenceItem.recurring` boolean cannot tell them apart. The main window must also show "Show widget" or "Hide widget" from its first frame, but a widget restored at startup announces itself with `widget:state` right after the main window's first load, which can reach the renderer before it subscribed, and no channel reads the widget state.
+- Decision: `OccurrenceItem.repeat` (`'daily' | 'weekly' | null`) replaces `recurring`. The main window's `window:getState` answer gains `widget: WidgetState` (closed without storage); later changes still arrive as `widget:state`. The catalogue stays at 67 invoke channels and 12 events.
+- Status: accepted (implementer, Phase 05).
+- Evidence: `tests/unit/contracts-phase05.test.ts`, `tests/integration/ipc-handlers-phase05.test.ts`, `docs/progress/phase-05.md`.
+
+### D-087 Follow-up edits, superseded claims and the summary total (Phase 05 Repair 1)
+- Context: Phase 05 QA (QA5-01..04) found that an edit of the follow-up settings left an already pending follow-up in place, that Done or Snooze on a claimed but not yet shown sibling of the same tick did not stop its notification, that more than 500 due alerts produced one summary per 500, and asked how quiet hours without a zone behave.
+- Decision: (1) An edit that changes the follow-up interval or maximum re-targets, in the edit's transaction, the next follow-up of every pending occurrence that already alerted: none when follow-ups are off or `followupsSent` reached the new maximum, else last alert plus the new interval (a late one fires at once). Snoozed occurrences keep their snooze alert. Every open occurrence of the reminder takes a new revision, so a claim prepared under the old settings loses. (2) The scheduler re-reads the claimed occurrences right before each notification; one that is no longer pending on a live reminder and note is not shown, and its delivery gets the new outcome `skipped` (detail `superseded-before-dispatch`), which raises no in-app alert and reports no outcome in views. `skipped` is added to the delivery outcome CHECK of migration 005 itself, because Phase 05 is not released (no profile outside development and test data has version 5); its checksum is regenerated. (3) One tick claims every due alert, reading pages of 500 with a cursor, into one batch; the presentation comes from the first page and a summary names the number still current at dispatch. Same-instant alerts go out in creation order (`rowid`). (4) Quiet hours keep D-083: switching them on requires a stored zone; a write without one is refused and a stored value without one reads as the default (off) with a warning. No read-time fallback to the computer zone, so the quiet window never moves with travel.
+- Status: accepted (implementer, Phase 05 Repair 1).
+- Evidence: `tests/integration/scheduler.test.ts` (follow-up edits, user action while a batch is shown, 1,000 overdue at a resume), `tests/integration/settings.test.ts`, `docs/progress/phase-05.md` Repair 1.
 
 ## Risks carried forward
 
 - R-01 better-sqlite3 prebuild in Electron 44: N-API should load unchanged but V8 memory-cage rules may reject external buffers; Phase 01 proves loading (dev and packaged, Windows and WSL); fallback `node:sqlite`; builder must not trigger node-gyp.
-- R-02 WSLg has no notification server or tray host by default; those native cases may be `not_run` or `fail`; installing a daemon is an environment change needing a recorded decision in Phase 05 or 09; in-app fallbacks keep reminders usable.
+- R-02 WSLg has no notification server or tray host by default; those native cases may be `not_run` or `fail`; installing a daemon is an environment change needing a recorded decision in Phase 05 or 09; in-app fallbacks keep reminders usable. Phase 05 decided not to install one (D-077).
 - R-03 WSLg window behavior differs from GNOME; positions are compositor-controlled; record actual behavior and never label it GNOME.
 - R-04 TypeScript held at 6.0.3 and vite at 7.3.7 by peer ranges.
 - R-05 Electron 44 end of life 2027-03-02.

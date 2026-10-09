@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import type { CapabilitiesType, CapabilityStatusType } from '../../shared/contracts/app';
-import type { TrayHost } from './tray-probe';
+import { autostartCapability } from './autostart';
+import type { BusNamePresence, TrayHost } from './tray-probe';
 
 export interface CapabilityInputs {
   platform: string;
+  /** Launch at login exists only for installed builds (D-082). */
+  isPackaged: boolean;
   ozonePlatform: string | null;
   xdgSessionType: string | null;
   waylandDisplay: string | null;
@@ -12,12 +15,21 @@ export interface CapabilityInputs {
   wslgVersion: string | null;
   /** Linux only: whether a StatusNotifier tray host was found on the session bus (D-067); null elsewhere. */
   statusNotifierHost: TrayHost | null;
+  /** Linux only: whether a notification server owns org.freedesktop.Notifications (D-076); null elsewhere. */
+  notificationServer: BusNamePresence | null;
 }
 
 const supported = (reason: string): CapabilityStatusType => ({ status: 'supported', reason });
 const unsupported = (reason: string): CapabilityStatusType => ({ status: 'unsupported', reason });
 const unknown = (reason: string): CapabilityStatusType => ({ status: 'unknown', reason });
 const later = (): CapabilityStatusType => unknown('detected-in-later-phase');
+
+/** Electron reports notifications as supported even without a server, so the session bus decides (D-076). */
+function linuxNotifications(server: BusNamePresence | null): CapabilityStatusType {
+  if (server === 'present') return supported('notification-server');
+  if (server === 'absent') return unsupported('no-notification-server');
+  return unknown('notification-server-unknown');
+}
 
 function linuxTray(host: TrayHost | null): CapabilityStatusType {
   if (host === 'present') return supported('status-notifier-host');
@@ -29,9 +41,8 @@ function linuxTray(host: TrayHost | null): CapabilityStatusType {
 export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
   const platform = i.platform === 'win32' ? 'win32' : i.platform === 'linux' ? 'linux' : 'other';
   const base = {
-    nativeNotifications: later(),
     notificationActions: unsupported('not-promised-on-all-desktops'),
-    launchAtLogin: later(),
+    launchAtLogin: autostartCapability({ platform: i.platform, isPackaged: i.isPackaged, wsl: i.wslDistro !== null }),
     globalShortcut: later(),
   };
 
@@ -44,6 +55,7 @@ export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
       windowPositioning: supported('native-windows'),
       alwaysOnTop: supported('native-windows'),
       tray: supported('native-windows'),
+      nativeNotifications: supported('native-windows'),
       ...base,
     };
   }
@@ -64,6 +76,7 @@ export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
         windowPositioning: unsupported('wayland-or-wslg'),
         alwaysOnTop: unsupported('wayland-or-wslg'),
         tray: linuxTray(i.statusNotifierHost),
+        nativeNotifications: linuxNotifications(i.notificationServer),
         ...base,
       };
     }
@@ -75,6 +88,7 @@ export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
       windowPositioning: x11 ? supported('window-manager-may-adjust') : unknown('session-type-unknown'),
       alwaysOnTop: unknown('window-manager-dependent'),
       tray: linuxTray(i.statusNotifierHost),
+      nativeNotifications: linuxNotifications(i.notificationServer),
       ...base,
     };
   }
@@ -87,6 +101,7 @@ export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
     windowPositioning: unknown('unsupported-platform'),
     alwaysOnTop: unknown('unsupported-platform'),
     tray: unknown('unsupported-platform'),
+    nativeNotifications: unknown('unsupported-platform'),
     ...base,
   };
 }
@@ -101,11 +116,12 @@ export function readWslgVersion(file = '/mnt/wslg/versions.txt'): string | null 
 }
 
 /** Capabilities a test run may force (unpackaged E2E only, plan section 8.9). */
-const OVERRIDABLE = ['windowPositioning', 'alwaysOnTop', 'tray'] as const;
+const OVERRIDABLE = ['windowPositioning', 'alwaysOnTop', 'tray', 'nativeNotifications', 'launchAtLogin'] as const;
 const STATUSES: ReadonlySet<string> = new Set(['supported', 'unsupported', 'unknown']);
 
 /**
- * Applies INFINITY_NOTES_TEST_CAPS, a JSON object mapping windowPositioning, alwaysOnTop and tray to a status.
+ * Applies INFINITY_NOTES_TEST_CAPS, a JSON object mapping windowPositioning, alwaysOnTop, tray, nativeNotifications and
+ * launchAtLogin to a status.
  * Unknown keys and values are ignored; invalid JSON leaves the capabilities unchanged and returns a warning.
  */
 export function applyCapabilityOverride(caps: CapabilitiesType, raw: string | undefined): { caps: CapabilitiesType; warning: string | null } {
@@ -129,17 +145,22 @@ export function applyCapabilityOverride(caps: CapabilitiesType, raw: string | un
   return { caps: next, warning: null };
 }
 
-/** Reads the live process environment. Electron's ozone switch and the tray-host probe result come from the caller. */
-export function collectCapabilityInputs(ozoneSwitch: string | null, statusNotifierHost: TrayHost | null): CapabilityInputs {
+/** Reads the live process environment. Electron's ozone switch and the session-bus probe results come from the caller. */
+export function collectCapabilityInputs(
+  ozoneSwitch: string | null,
+  probes: { statusNotifierHost: TrayHost | null; notificationServer: BusNamePresence | null },
+  isPackaged: boolean,
+): CapabilityInputs {
   const env = process.env;
   return {
     platform: process.platform,
+    isPackaged,
     ozonePlatform: ozoneSwitch && ozoneSwitch !== '' ? ozoneSwitch : null,
     xdgSessionType: env.XDG_SESSION_TYPE ?? null,
     waylandDisplay: env.WAYLAND_DISPLAY ?? null,
     display: env.DISPLAY ?? null,
     wslDistro: env.WSL_DISTRO_NAME ?? null,
     wslgVersion: process.platform === 'linux' ? readWslgVersion() : null,
-    statusNotifierHost,
+    ...probes,
   };
 }

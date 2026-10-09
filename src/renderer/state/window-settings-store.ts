@@ -1,6 +1,7 @@
-import type { CapabilityStatusType } from '../../shared/contracts/app';
+import type { CapabilitiesType, CapabilityStatusType } from '../../shared/contracts/app';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import { SETTINGS } from '../../shared/contracts/settings';
+import type { AutostartStateType } from '../../shared/contracts/widget';
 import type { CloseBehaviorType } from '../../shared/contracts/windows';
 import type { PublicSettingValues } from './core-services';
 import { createStore, failOutcome, okOutcome, type Outcome, type Store } from './store';
@@ -10,26 +11,36 @@ export interface WindowSettingsState {
   restoreOnStartup: boolean;
   /** The tray capability; null until it is known. */
   tray: CapabilityStatusType | null;
+  /** Whether this desktop has a notification service (Settings explains the in-app fallback, D-076). */
+  notifications: CapabilityStatusType | null;
+  /** Launch at login as the OS reports it (D-082); null until read. */
+  autostart: AutostartStateType | null;
 }
 
 type Key = 'app.closeBehavior' | 'stickies.restoreOnStartup';
 const FIELD = { 'app.closeBehavior': 'closeBehavior', 'stickies.restoreOnStartup': 'restoreOnStartup' } as const;
 
-/** Settings > Windows and tray (D-066, D-068): the close behavior, restoring stickies and the tray availability. */
+/**
+ * Settings > Windows and tray (D-066, D-068, D-082): the close behavior, restoring stickies, the tray and notification
+ * availability and launch at login.
+ */
 export class WindowSettingsStore {
   readonly store: Store<WindowSettingsState> = createStore<WindowSettingsState>({
     closeBehavior: SETTINGS['app.closeBehavior'].default,
     restoreOnStartup: SETTINGS['stickies.restoreOnStartup'].default,
     tray: null,
+    notifications: null,
+    autostart: null,
   });
 
   constructor(private readonly bridge: InfinityBridge) {}
 
-  hydrate(values: PublicSettingValues, tray: CapabilityStatusType | null): void {
+  hydrate(values: PublicSettingValues, caps: CapabilitiesType | null): void {
     this.store.setState({
       closeBehavior: values['app.closeBehavior'] ?? SETTINGS['app.closeBehavior'].default,
       restoreOnStartup: values['stickies.restoreOnStartup'] ?? SETTINGS['stickies.restoreOnStartup'].default,
-      tray,
+      tray: caps?.tray ?? null,
+      notifications: caps?.nativeNotifications ?? null,
     });
   }
 
@@ -47,6 +58,19 @@ export class WindowSettingsStore {
 
   setRestoreOnStartup(value: boolean): Promise<Outcome> {
     return this.write('restoreOnStartup', value, () => this.bridge.settings.set({ key: 'stickies.restoreOnStartup', value }));
+  }
+
+  /** Reads launch at login from the OS (it can change outside the app). */
+  async loadAutostart(): Promise<void> {
+    const res = await this.bridge.autostart.get();
+    if (res.ok) this.store.setState({ autostart: res.data });
+  }
+
+  async setAutostart(enabled: boolean): Promise<Outcome> {
+    const res = await this.bridge.autostart.set({ enabled });
+    if (!res.ok) return failOutcome(res.error.code, res.error.message);
+    this.store.setState({ autostart: res.data });
+    return okOutcome(undefined);
   }
 
   /** Shows the new value at once and reverts it when main refuses the write. */

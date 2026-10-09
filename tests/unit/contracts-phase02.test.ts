@@ -96,6 +96,9 @@ describe('Phase 02 request schemas', () => {
       'attachments.documentMaxMb',
       'app.closeBehavior',
       'stickies.restoreOnStartup',
+      'reminders.defaultZone',
+      'reminders.followupDefault',
+      'reminders.quietHours',
     ]);
   });
 

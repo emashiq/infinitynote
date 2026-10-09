@@ -34,6 +34,10 @@ export interface NoteControllerState {
   /** Set after a rich-to-plain conversion: the version to restore the formatting from. */
   converted: { versionId: string } | null;
   busy: Busy;
+  /** The block the editor's cursor is in, for reminders on the current paragraph (D-080). */
+  cursorBlockId: string | null;
+  /** A block to scroll to, select and highlight once (a reminder opened the note); the nonce repeats a request. */
+  reveal: { blockId: string; nonce: number } | null;
 }
 
 export type FlushResult = { ok: true } | { ok: false; code: string; message: string; details?: unknown };
@@ -104,6 +108,8 @@ export class NoteController implements EditorHost {
       conflict: null,
       converted: null,
       busy: null,
+      cursorBlockId: null,
+      reveal: null,
     });
     this.saveTimer = createDebouncer(deps.timers, SAVE_DEBOUNCE_MS, () => void this.drain());
     this.renameTimer = createDebouncer(deps.timers, SAVE_DEBOUNCE_MS, () => void this.runRename());
@@ -215,6 +221,34 @@ export class NoteController implements EditorHost {
     this.failure = null;
     this.store.setState({ save: this.state.save === 'retrying' ? 'retrying' : 'pending' });
     this.saveTimer.schedule();
+  }
+
+  setCursorBlock(blockId: string | null): void {
+    if (this.state.cursorBlockId !== blockId) this.store.setState({ cursorBlockId: blockId });
+  }
+
+  /** The text of a block in the editor (a reminder's title), or null when the editor does not show it. */
+  blockText(blockId: string): string | null {
+    return this.source?.blockText(blockId) ?? null;
+  }
+
+  /** Asks the editor to reveal a block: select its start, scroll it into view and highlight it briefly. */
+  requestReveal(blockId: string): void {
+    this.store.setState((s) => ({ ...s, reveal: { blockId, nonce: (s.reveal?.nonce ?? 0) + 1 } }));
+  }
+
+  revealDone(): void {
+    if (this.state.reveal) this.store.setState({ reveal: null });
+  }
+
+  /**
+   * Saves the editor's content as it is, so block IDs assigned when the note opened are stored and a reminder can
+   * anchor to them (D-080). False when this view cannot save (read-only) or the save failed.
+   */
+  async persistBlockIds(): Promise<boolean> {
+    if (this.state.status !== 'ready' || this.leaseToken === null || !this.source) return false;
+    this.markDirty();
+    return (await this.flush()).ok;
   }
 
   contentError(): void {

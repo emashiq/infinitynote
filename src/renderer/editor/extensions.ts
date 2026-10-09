@@ -10,6 +10,7 @@ import { createDocLimits } from './doc-limits';
 import { FileAttachment } from './file-attachment';
 import { FindExtension } from './find';
 import { ManagedImage } from './managed-image';
+import { ReminderChips } from './reminder-chips';
 import { TaskToggle } from './task-toggle';
 import type { AttachmentUploader } from './uploader';
 
@@ -18,7 +19,10 @@ export const UNDO_DEPTH = 200;
 
 const newBlockId = () => crypto.randomUUID();
 
-/** The rich-note schema (D-053): StarterKit, checklists, app image and file nodes, block IDs, find, size limits. */
+/**
+ * The rich-note schema (D-053): StarterKit, checklists, app image and file nodes, block IDs, find, size limits, and the
+ * reminder chips (decorations only, D-080).
+ */
 export function richExtensions(deps: { uploader: AttachmentUploader; notify: (message: string) => void }): Extensions {
   return [
     StarterKit.configure({
@@ -46,6 +50,7 @@ export function richExtensions(deps: { uploader: AttachmentUploader; notify: (me
     createDocLimits(deps.notify),
     Placeholder.configure({ placeholder: PLACEHOLDER }),
     FindExtension,
+    ReminderChips,
   ];
 }
 

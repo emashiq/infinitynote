@@ -20,6 +20,8 @@ export interface TestEditor {
   notices: string[];
   /** Every onUpdate transaction, for the "is this a user edit" checks. */
   updates: import('@tiptap/pm/state').Transaction[];
+  /** Reminder ids of clicked chips. */
+  chipClicks: string[];
 }
 
 /** A real Tiptap editor in jsdom with the production extensions and paste handling. */
@@ -27,6 +29,7 @@ export function makeEditor(opts: { format?: 'rich' | 'plain'; content?: Content;
   const format = opts.format ?? 'rich';
   const notices: string[] = [];
   const updates: TestEditor['updates'] = [];
+  const chipClicks: string[] = [];
   const uploader = new AttachmentUploader({
     importBytes: async (req) =>
       ok({ attachment: { id: crypto.randomUUID(), kind: req.kind, mime: 'image/png', sizeBytes: req.bytes.byteLength, originalName: req.originalName ?? null, width: 4, height: 3 } }),
@@ -45,8 +48,9 @@ export function makeEditor(opts: { format?: 'rich' | 'plain'; content?: Content;
     onUpdate: ({ transaction }) => updates.push(transaction),
   });
   uploader.bind(editor);
+  editor.view.dom.addEventListener('reminder-chip', (e) => chipClicks.push((e as CustomEvent<string>).detail));
   editors.push(editor);
-  return { editor, uploader, notices, updates };
+  return { editor, uploader, notices, updates, chipClicks };
 }
 
 /** Block IDs in document order with the node type. */

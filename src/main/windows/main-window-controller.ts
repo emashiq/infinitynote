@@ -1,3 +1,4 @@
+import type { AppOpenRemindersEventType, ReminderViewType } from '../../shared/contracts/reminders';
 import { MAX_QUEUED_OPENS, type AppOpenNoteEventType, type CloseBehaviorType } from '../../shared/contracts/windows';
 import type { CloseChoice, CloseDialogOptions } from '../services/close-dialog';
 import type { Logger } from '../services/logger';
@@ -11,6 +12,9 @@ export interface MainWindowHandle {
   focus(): void;
   restore(): void;
   isMinimized(): boolean;
+  isFocused(): boolean;
+  /** Flashes the taskbar entry (Windows) or sets the urgency hint (Linux) until cleared. */
+  flashFrame(on: boolean): void;
   close(): void;
   isDestroyed(): boolean;
 }
@@ -23,6 +27,7 @@ export interface MainWindowEvents {
   onLoadStarted(): void;
   /** The renderer document finished loading. */
   onLoaded(): void;
+  onFocus(): void;
 }
 
 export interface MainWindowFactory {
@@ -33,6 +38,7 @@ export interface MainWindowFactory {
 export interface MainWindowControllerDeps {
   factory: MainWindowFactory;
   sendOpenNote(webContentsId: number, event: AppOpenNoteEventType): void;
+  sendOpenReminders(webContentsId: number, event: AppOpenRemindersEventType): void;
   closeBehavior(): CloseBehaviorType;
   rememberCloseBehavior(value: Exclude<CloseBehaviorType, 'ask'>): void;
   closeDialogOptions(): CloseDialogOptions;
@@ -48,7 +54,7 @@ export interface MainWindowControllerDeps {
 
 interface Current {
   handle: MainWindowHandle;
-  /** The renderer asked for its state (D-071); before that, note opens are queued. */
+  /** The renderer asked for its state (D-071); before that, note and Reminders opens are queued. */
   ready: boolean;
   closeAllowed: boolean;
   deciding: boolean;
@@ -61,6 +67,7 @@ interface Current {
 export class MainWindowController {
   private current: Current | null = null;
   private queue: AppOpenNoteEventType[] = [];
+  private pendingView: ReminderViewType | null = null;
   private created = 0;
   private firstLoadSeen = false;
 
@@ -97,6 +104,9 @@ export class MainWindowController {
           this.firstLoadSeen = true;
           this.deps.onFirstLoad?.();
         },
+        onFocus: () => {
+          if (!state.handle.isDestroyed()) state.handle.flashFrame(false);
+        },
       }),
       ready: false,
       closeAllowed: false,
@@ -121,23 +131,46 @@ export class MainWindowController {
     handle.focus();
   }
 
-  /** Opens a note in a tab; queued (one entry per note, at most 50) until the renderer is ready. */
-  openNote(noteId: string, takeEdit: boolean): void {
+  /**
+   * Opens a note in a tab, revealing `blockId` when given (a reminder's anchor); queued (one entry per note, the latest
+   * block kept, at most 50) until the renderer is ready.
+   */
+  openNote(noteId: string, takeEdit: boolean, blockId: string | null = null): void {
+    this.show();
+    const live = this.live();
+    const event = { noteId, takeEdit, blockId };
+    if (live?.ready) {
+      this.deps.sendOpenNote(live.handle.webContentsId, event);
+      return;
+    }
+    this.queue = [...this.queue.filter((q) => q.noteId !== noteId), event].slice(-MAX_QUEUED_OPENS);
+  }
+
+  /** Shows the Reminders tab on a view (a summary notification click); one pending view while the window loads. */
+  openReminders(view: ReminderViewType): void {
     this.show();
     const live = this.live();
     if (live?.ready) {
-      this.deps.sendOpenNote(live.handle.webContentsId, { noteId, takeEdit });
+      this.deps.sendOpenReminders(live.handle.webContentsId, { view });
       return;
     }
-    this.queue = [...this.queue.filter((q) => q.noteId !== noteId), { noteId, takeEdit }].slice(-MAX_QUEUED_OPENS);
+    this.pendingView = view;
   }
 
-  /** The main renderer asked for its state (`window:getState`): it is ready and takes the queued opens. */
-  rendererReady(webContentsId: number): AppOpenNoteEventType[] {
+  /** Draws attention to an existing main window that is not focused; its focus clears it (in-app alert, D-076). */
+  requestAttention(): void {
     const live = this.live();
-    if (!live || live.handle.webContentsId !== webContentsId) return [];
+    if (live && !live.handle.isFocused()) live.handle.flashFrame(true);
+  }
+
+  /** The main renderer asked for its state (`window:getState`): it is ready and takes what was queued for it. */
+  rendererReady(webContentsId: number): { openNotes: AppOpenNoteEventType[]; openReminders: ReminderViewType | null } {
+    const live = this.live();
+    if (!live || live.handle.webContentsId !== webContentsId) return { openNotes: [], openReminders: null };
     live.ready = true;
-    return this.queue.splice(0);
+    const openReminders = this.pendingView;
+    this.pendingView = null;
+    return { openNotes: this.queue.splice(0), openReminders };
   }
 
   private onClose(state: Current, event: { preventDefault(): void }): void {

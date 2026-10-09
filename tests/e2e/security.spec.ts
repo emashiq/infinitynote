@@ -108,7 +108,7 @@ test('bridge surface', async () => {
     const keys = (o: unknown) => Object.keys(o as object).sort();
     let subscribeError = '';
     try {
-      window.infinity.subscribe('reminder:changed' as never, () => {});
+      window.infinity.subscribe('suggestion:dismiss' as never, () => {});
     } catch (e) {
       subscribeError = (e as Error).message;
     }
@@ -132,6 +132,7 @@ test('bridge surface', async () => {
     top: [
       'app',
       'attachment',
+      'autostart',
       'capabilities',
       'drafts',
       'folder',
@@ -139,8 +140,11 @@ test('bridge surface', async () => {
       'item',
       'lease',
       'note',
+      'occurrence',
       'palette',
       'project',
+      'reminder',
+      'reminders',
       'session',
       'settings',
       'shell',
@@ -149,11 +153,14 @@ test('bridge surface', async () => {
       'trash',
       'tree',
       'versions',
+      'widget',
       'window',
+      'zones',
     ],
     namespaces: {
       app: ['flushed', 'getInfo', 'quit', 'showDataFolder'],
       attachment: ['importBytes', 'importFromDialog'],
+      autostart: ['get', 'set'],
       capabilities: ['get'],
       drafts: ['list', 'resolve'],
       folder: ['create', 'move', 'rename', 'trash'],
@@ -161,8 +168,11 @@ test('bridge surface', async () => {
       item: ['setFavorite'],
       lease: ['acquire', 'release', 'take'],
       note: ['convertFormat', 'create', 'move', 'open', 'rename', 'save', 'setPinned', 'trash'],
+      occurrence: ['complete', 'snooze'],
       palette: ['searchTitles'],
       project: ['create', 'rename', 'trash'],
+      reminder: ['create', 'delete', 'listForNote', 'open', 'undoDelete', 'update'],
+      reminders: ['listView', 'summary'],
       session: ['get', 'set'],
       settings: ['get', 'set'],
       shell: ['openExternal'],
@@ -170,7 +180,9 @@ test('bridge surface', async () => {
       trash: ['list', 'purge', 'restore'],
       tree: ['list'],
       versions: ['list', 'restore'],
+      widget: ['hide', 'setCollapsed', 'setPinned', 'show'],
       window: ['getState'],
+      zones: ['list'],
     },
     frozen: true,
     allFrozen: true,
@@ -330,4 +342,51 @@ test('sticky windows are hardened (INF-FND-03, INF-FND-04, D-064)', async () => 
   );
   expect(answers).toEqual({ sessionSet: 'FORBIDDEN', treeList: 'FORBIDDEN', trashPurge: 'FORBIDDEN', float: 'FORBIDDEN', openOther: 'FORBIDDEN', openOwn: 'ok' });
   expect(readMainLog(h.userData)).toContain('ipc: channel not allowed for role=sticky channel=session:set');
+});
+
+test('the widget window is hardened and limited to its allowlist (INF-FND-03, D-074, D-081)', async () => {
+  const ids = await page().evaluate(async () => {
+    const make = async (title: string, sticky: boolean) => {
+      const r = await window.infinity.note.create({ location: { projectId: null, folderId: null }, sticky, title });
+      return r.ok ? r.data.note.id : '';
+    };
+    return { own: await make('Own sticky', true), other: await make('Other note', false) };
+  });
+  const theirs = await page().evaluate(async (noteId) => {
+    const r = await window.infinity.reminder.create({ noteId, blockId: null, title: 'Other reminder', zoneId: Intl.DateTimeFormat().resolvedOptions().timeZone, date: '2099-01-01', time: '09:00', recurrence: null, followup: null });
+    return r.ok ? r.data.id : '';
+  }, ids.other);
+  await page().evaluate(() => window.infinity.widget.show());
+  await expect.poll(() => app().windows().some((p) => p.url().endsWith('#/widget'))).toBe(true);
+  const widget = app().windows().find((p) => p.url().endsWith('#/widget'))!;
+  await widget.getByRole('toolbar', { name: 'Reminder widget' }).waitFor();
+  expect(widget.url()).toBe('infinity-app://renderer/index.html#/widget');
+  const prefs = await app().evaluate(({ BrowserWindow }) => {
+    const of = (suffix: string) =>
+      (BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith(suffix))!.webContents as unknown as { getLastWebPreferences(): Record<string, unknown> }).getLastWebPreferences();
+    const pick = (p: Record<string, unknown>) =>
+      Object.fromEntries(['contextIsolation', 'nodeIntegration', 'sandbox', 'webSecurity', 'webviewTag', 'allowRunningInsecureContent', 'navigateOnDragDrop', 'spellcheck'].map((k) => [k, p[k]]));
+    return { main: pick(of('#/')), widget: pick(of('#/widget')) };
+  });
+  expect(prefs.widget).toEqual(prefs.main);
+  const sandbox = await rendererSandbox(app(), '#/widget');
+  console.log(`widget renderer sandbox: ${sandbox.evidence}`);
+  expect(sandbox.osSandboxed, sandbox.evidence).toBe(true);
+  const answers = await widget.evaluate(async ([noteId]) => {
+    const code = (r: { ok: boolean; error?: { code: string } }) => (r.ok ? 'ok' : r.error!.code);
+    const b = window.infinity;
+    return {
+      noteOpen: code(await b.note.open({ noteId: noteId! })),
+      sessionSet: code(await b.session.set({ session: { version: 1, tabs: [{ id: 'home', kind: 'home' }], activeTabId: 'home' } } as never)),
+      reminderCreate: code(await b.reminder.create({ noteId: noteId!, blockId: null, title: 'x', zoneId: 'UTC', date: '2099-01-01', time: '09:00', recurrence: null, followup: null })),
+      widgetShow: code(await b.widget.show()),
+      listView: code(await b.reminders.listView({ view: 'upcoming' })),
+    };
+  }, [ids.other]);
+  expect(answers).toEqual({ noteOpen: 'FORBIDDEN', sessionSet: 'FORBIDDEN', reminderCreate: 'FORBIDDEN', widgetShow: 'FORBIDDEN', listView: 'ok' });
+  // A sticky may open only its own note's reminders.
+  await page().evaluate((id) => window.infinity.sticky.float({ noteId: id }), ids.own);
+  const sticky = await stickyPage(app(), ids.own);
+  expect(await sticky.evaluate((id) => window.infinity.reminder.open({ reminderId: id }), theirs)).toEqual({ ok: false, error: { code: 'FORBIDDEN', message: 'Not allowed' } });
+  expect(readMainLog(h.userData)).toContain('ipc: channel not allowed for role=widget channel=note:open');
 });

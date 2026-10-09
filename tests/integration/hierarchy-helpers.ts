@@ -2,20 +2,37 @@ import path from 'node:path';
 import { expect } from 'vitest';
 import type { TreeChangedEventType } from '../../src/shared/contracts/hierarchy';
 import type { NoteLeaseEventType, NoteRevisionEventType } from '../../src/shared/contracts/notes';
+import type { ReminderChangedEventType } from '../../src/shared/contracts/reminders';
 import { HierarchyRepo } from '../../src/main/db/repositories/hierarchy-repo';
 import { createMainServices, type MainServicesDeps } from '../../src/main/main-services';
 import type { OpenFilesRequest } from '../../src/main/services/dialog-adapter';
 import type { LeaseHolder } from '../../src/main/services/lease-manager';
+import type { FakeClock } from '../../src/main/services/clock';
 import { memoryLogger } from '../../src/main/services/logger';
+import { createFixedZoneProvider } from '../../src/main/services/system-zone';
 import { fixedClock, openFresh, randomIds } from './helpers';
 
 /**
  * The production service graph (createMainServices) over a fresh temp database with an injectable clock, a
  * queued fake file dialog and recorded events.
  */
-export async function setupServices(opts: { testFaults?: MainServicesDeps['testFaults']; onTreeChanged?: (e: TreeChangedEventType) => void } = {}) {
+export async function setupServices(
+  opts: {
+    testFaults?: MainServicesDeps['testFaults'];
+    onTreeChanged?: (e: TreeChangedEventType) => void;
+    now?: number;
+    zone?: string | null;
+    /** Replaces the default clock (the reminder tests move wall and monotonic time separately). */
+    clock?: FakeClock;
+  } = {},
+) {
   const t = await openFresh();
-  const clock = fixedClock(1_800_000_000_000);
+  const clock = opts.clock ?? fixedClock(opts.now ?? 1_800_000_000_000);
+  /** The computer's zone as the reminder services see it (D-084 seam). */
+  const zones = createFixedZoneProvider(opts.zone === undefined ? 'Asia/Dhaka' : opts.zone);
+  const reminderEvents: ReminderChangedEventType[] = [];
+  /** Counts committed reminder writes; `onWrite` lets a test wake its scheduler like main does. */
+  const reminderWrites: { count: number; onWrite?: () => void } = { count: 0 };
   const ids = randomIds();
   const logger = memoryLogger();
   const events: TreeChangedEventType[] = [];
@@ -47,6 +64,12 @@ export async function setupServices(opts: { testFaults?: MainServicesDeps['testF
     onNoteRevision: (e) => revisions.push(e),
     onLeaseChanged: (e) => leaseEvents.push(e),
     requestLeaseRelease: (holder, noteId) => releaseRequests.push({ holder, noteId }),
+    zones,
+    onReminderChanged: (e) => reminderEvents.push(e),
+    onRemindersWritten: () => {
+      reminderWrites.count += 1;
+      reminderWrites.onWrite?.();
+    },
     testFaults: opts.testFaults,
   });
   const { hierarchy } = services;
@@ -88,6 +111,9 @@ export async function setupServices(opts: { testFaults?: MainServicesDeps['testF
     revisions,
     leaseEvents,
     releaseRequests,
+    zones,
+    reminderEvents,
+    reminderWrites,
     dialogQueue,
     dialogCalls,
     dataDir,

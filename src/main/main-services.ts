@@ -1,5 +1,6 @@
 import type { TreeChangedEventType } from '../shared/contracts/hierarchy';
 import type { NoteLeaseEventType, NoteRevisionEventType } from '../shared/contracts/notes';
+import type { ReminderChangedEventType } from '../shared/contracts/reminders';
 import type { SettingsChangedPayload } from '../shared/contracts/settings';
 import type { Db } from './db/driver';
 import { SettingsRepo } from './db/repositories/settings-repo';
@@ -19,9 +20,13 @@ import { NoteContent } from './services/note-content';
 import { NoteReader } from './services/note-reader';
 import { NoteWriter, type SaveFaults } from './services/note-writer';
 import { PaletteService } from './services/palette-service';
+import { ReminderAnchors } from './services/reminder-anchors';
+import { ReminderService } from './services/reminder-service';
 import { SessionService } from './services/session-service';
 import { SettingsService } from './services/settings-service';
 import { StickyService } from './services/sticky-service';
+import type { SystemZoneProvider } from './services/system-zone';
+import { WidgetStateStore } from './services/widget-state';
 import { TrashService } from './services/trash-service';
 import { VersionService } from './services/version-service';
 
@@ -41,6 +46,8 @@ export interface MainServices {
   formats: FormatService;
   attachments: AttachmentService;
   stickies: StickyService;
+  reminders: ReminderService;
+  widgetState: WidgetStateStore;
   /** The single writer of note content (used by the services above and the E2E fake view). */
   content: NoteContent;
 }
@@ -59,6 +66,14 @@ export interface MainServicesDeps {
   onLeaseChanged: (event: NoteLeaseEventType) => void;
   /** Asks the holder's renderer to flush and release the lease (sent to that renderer only). */
   requestLeaseRelease: (holder: LeaseHolder, noteId: string) => void;
+  /** The reminder subsystem's clock (a frozen test clock under the E2E hooks, D-084); defaults to `clock`. */
+  reminderClock?: Clock;
+  /** The computer's time zone as reminders see it. */
+  zones: SystemZoneProvider;
+  /** `reminder:changed` after a committed reminder change, including anchor changes from content writes. */
+  onReminderChanged: (event: ReminderChangedEventType) => void;
+  /** After a committed reminder write: wakes the scheduler. */
+  onRemindersWritten?: () => void;
   /** Test-only hooks (E2E): save fault injection and an import delay. */
   testFaults?: { save?: SaveFaults; beforeImport?: () => Promise<void> };
 }
@@ -67,8 +82,14 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
   const { db, clock, ids, logger } = deps;
   const settings = new SettingsService({ repo: new SettingsRepo(db), clock, logger, emit: deps.onSettingsChanged });
   const leases = new LeaseManager({ ids, clock, requestRelease: deps.requestLeaseRelease, emit: deps.onLeaseChanged });
-  const content = new NoteContent(db, new ContentIndexer(db, logger));
-  const ops = new ContentOps({ db, leases, clock, logger, content, emit: deps.onNoteRevision });
+  const anchors = new ReminderAnchors(db);
+  const content = new NoteContent(db, new ContentIndexer(db, logger, anchors));
+  // A content write that changed a reminder anchor is followed by reminder:changed after its revision event (D-080).
+  const onNoteRevision = (event: NoteRevisionEventType): void => {
+    deps.onNoteRevision(event);
+    if (anchors.consumeChanged(event.noteId)) deps.onReminderChanged({ reason: 'anchor', noteIds: [event.noteId] });
+  };
+  const ops = new ContentOps({ db, leases, clock, logger, content, emit: onNoteRevision });
   const versions = new VersionService({ db, ids, ops });
   return {
     content,
@@ -77,10 +98,21 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     trash: new TrashService({ db, clock, ids, logger, onChange: deps.onTreeChanged }),
     stickies: new StickyService({ db, clock, logger, onChange: deps.onTreeChanged }),
     home: new HomeService(db),
+    widgetState: new WidgetStateStore({ db, clock, logger }),
+    reminders: new ReminderService({
+      db,
+      clock: deps.reminderClock ?? clock,
+      ids,
+      logger,
+      zones: deps.zones,
+      settings,
+      emit: deps.onReminderChanged,
+      onWrite: () => deps.onRemindersWritten?.(),
+    }),
     sessions: new SessionService(db, settings, clock),
     palette: new PaletteService(db),
     reader: new NoteReader(db),
-    writer: new NoteWriter({ db, leases, clock, ids, logger, content, versions, emit: deps.onNoteRevision, faults: deps.testFaults?.save }),
+    writer: new NoteWriter({ db, leases, clock, ids, logger, content, versions, emit: onNoteRevision, faults: deps.testFaults?.save }),
     leases,
     versions,
     drafts: new DraftService({ db, clock, ops, versions }),

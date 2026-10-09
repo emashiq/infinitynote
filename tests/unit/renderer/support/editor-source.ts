@@ -26,6 +26,11 @@ export class TestSource implements ContentSource {
     return this.text;
   }
 
+  /** The test source has one unnamed block: no block ids. */
+  blockText(): string | null {
+    return null;
+  }
+
   hasPendingUploads(): boolean {
     return this.uploads > 0;
   }

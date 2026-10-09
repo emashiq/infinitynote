@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { DEFAULT_DOCUMENT_MAX_MB, DEFAULT_IMAGE_MAX_MB, DOCUMENT_MAX_MB_RANGE, IMAGE_MAX_MB_RANGE } from '../attachments/limits';
+import { isKnownZone } from '../time/zones';
 import { HomeScope } from './home';
+import { FollowupInterval, FollowupMax, LocalTime, REMINDER_MESSAGES, ZoneId } from './reminders';
 import { DEFAULT_SESSION, TabSession } from './session';
 import { CloseBehavior } from './windows';
 
@@ -9,6 +11,15 @@ export const ThemeSetting = z.enum(['system', 'light', 'dark']);
 const EXPANDED_KEY_RE =
   /^(common|projects|favorites|trash|(project|folder):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 export const TreeExpandedSetting = z.array(z.string().regex(EXPANDED_KEY_RE)).max(5000);
+
+/** Follow-ups new reminders start with (D-083); off by default, 15 minutes twice when switched on. */
+export const FollowupDefaultSetting = z.strictObject({ enabled: z.boolean(), intervalMinutes: FollowupInterval, maxFollowups: FollowupMax });
+
+/** Quiet hours in an explicit zone (INF-SCHED-06); the zone is stored when they are switched on. */
+export const QuietHoursSetting = z
+  .strictObject({ enabled: z.boolean(), start: LocalTime, end: LocalTime, zoneId: ZoneId.nullable() })
+  .refine((q) => q.start !== q.end, 'Quiet hours must start and end at different times')
+  .refine((q) => !q.enabled || q.zoneId !== null, 'Quiet hours need a time zone');
 
 /** Settings registry (D-041, D-045). Stored as {"v":<version>,"value":<value>}. `public: false` keys are main-only. */
 export const SETTINGS = {
@@ -34,9 +45,32 @@ export const SETTINGS = {
   },
   'app.closeBehavior': { version: 1, schema: CloseBehavior, default: 'ask', public: true },
   'stickies.restoreOnStartup': { version: 1, schema: z.boolean(), default: false, public: true },
+  // Null follows the computer's zone (D-083).
+  'reminders.defaultZone': { version: 1, schema: ZoneId.nullable(), default: null, public: true },
+  'reminders.followupDefault': {
+    version: 1,
+    schema: FollowupDefaultSetting,
+    default: { enabled: false, intervalMinutes: 15, maxFollowups: 2 },
+    public: true,
+  },
+  'reminders.quietHours': {
+    version: 1,
+    schema: QuietHoursSetting,
+    default: { enabled: false, start: '22:00', end: '07:00', zoneId: null },
+    public: true,
+  },
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;
+
+/**
+ * Checks a schema-valid value against the runtime: a zone must be in the app's zone list (D-079). Returns the message
+ * to show, or null when the value is usable. Kept apart from the schemas so the refusal names the problem.
+ */
+export function settingValueProblem(key: SettingKey, value: unknown): string | null {
+  const zone = key === 'reminders.defaultZone' ? value : key === 'reminders.quietHours' ? (value as { zoneId?: unknown }).zoneId : null;
+  return typeof zone === 'string' && !isKnownZone(zone) ? REMINDER_MESSAGES.chooseZone : null;
+}
 export type SettingValue<K extends SettingKey> = z.infer<(typeof SETTINGS)[K]['schema']>;
 
 export const SETTING_KEYS = Object.keys(SETTINGS) as SettingKey[];

@@ -176,9 +176,14 @@ export class TabsStore {
     return true;
   }
 
-  /** Opens or activates a note tab; `takeEdit` also takes edit control (dock and "Open in app", D-065). */
-  openNote(noteId: string, opts: { takeEdit?: boolean } = {}): Promise<boolean> {
-    return this.openTabInternal({ id: noteTabId(noteId), kind: 'note', noteId }, opts.takeEdit ? 'take' : 'acquire');
+  /**
+   * Opens or activates a note tab; `takeEdit` also takes edit control (dock and "Open in app", D-065); `blockId` reveals
+   * a reminder's block once the editor shows the note (D-074).
+   */
+  async openNote(noteId: string, opts: { takeEdit?: boolean; blockId?: string | null } = {}): Promise<boolean> {
+    const opened = await this.openTabInternal({ id: noteTabId(noteId), kind: 'note', noteId }, opts.takeEdit ? 'take' : 'acquire');
+    if (opened && opts.blockId && this.controller?.noteId === noteId) this.controller.requestReveal(opts.blockId);
+    return opened;
   }
 
   openPage(kind: PageKind): Promise<boolean> {

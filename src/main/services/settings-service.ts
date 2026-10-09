@@ -1,5 +1,6 @@
 import {
   SETTINGS,
+  settingValueProblem,
   type PublicSettingKey,
   type SettingKey,
   type SettingValue,
@@ -31,7 +32,7 @@ export class SettingsService {
       const parsed: unknown = JSON.parse(row.value);
       if (parsed !== null && typeof parsed === 'object' && (parsed as { v?: unknown }).v === entry.version) {
         const result = entry.schema.safeParse((parsed as { value?: unknown }).value);
-        if (result.success) return result.data as SettingValue<K>;
+        if (result.success && settingValueProblem(key, result.data) === null) return result.data as SettingValue<K>;
       }
     } catch {
       // fall through to the default
@@ -44,6 +45,8 @@ export class SettingsService {
     const entry = SETTINGS[key];
     const parsed = entry.schema.safeParse(value);
     if (!parsed.success) throw new AppError('VALIDATION_FAILED', 'Invalid value for setting');
+    const problem = settingValueProblem(key, parsed.data);
+    if (problem) throw new AppError('VALIDATION_FAILED', problem);
     const updatedAt = this.deps.clock.now();
     this.deps.repo.upsert(key, JSON.stringify({ v: entry.version, value: parsed.data }), updatedAt);
     return { key: key as PublicSettingKey, value: parsed.data, updatedAt };

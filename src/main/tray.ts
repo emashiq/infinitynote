@@ -14,11 +14,12 @@ export interface TrayDeps {
   platform: NodeJS.Platform;
   openMainWindow(): void;
   newSticky(): Promise<void>;
+  showWidget(): void;
   quit(): void;
   logger: Logger;
 }
 
-export const TRAY_LABELS = { open: 'Open Infinity Notes', newSticky: 'New sticky', quit: 'Quit Infinity Notes' } as const;
+export const TRAY_LABELS = { open: 'Open Infinity Notes', newSticky: 'New sticky', showWidget: 'Show widget', quit: 'Quit Infinity Notes' } as const;
 
 /**
  * The notification-area icon (D-067). It exists only where the tray capability is supported, so a desktop without
@@ -37,6 +38,7 @@ export class TrayController {
           void deps.newSticky().catch((err: unknown) => deps.logger.warn(`tray: new sticky failed ${String(err)}`));
         },
       },
+      { label: TRAY_LABELS.showWidget, run: () => deps.showWidget() },
       { label: TRAY_LABELS.quit, run: () => deps.quit() },
     ];
   }

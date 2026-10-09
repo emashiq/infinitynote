@@ -13,10 +13,13 @@ import { findPrefill } from './find-core';
 import { applyLink, LINK_OPEN_FAILED, linkHrefAt, removeLink, selectedLinkHref } from './link';
 import { LinkDialog } from './LinkDialog';
 import { createPasteProps } from './paste';
+import { blockIdAtSelection, chipsMeta, findBlock, REMINDER_CHIP_EVENT, selectionAtBlockStart, type ChipInfo } from './reminder-chips';
 import { Toolbar } from './Toolbar';
 import type { EditorServices } from './editor-services';
 import { attachmentNode, AttachmentUploader, insertBlocks } from './uploader';
 
+/** How long a block a reminder opened stays highlighted. */
+export const REVEAL_MS = 2000;
 
 export interface NoteEditorProps {
   host: EditorHost;
@@ -34,6 +37,14 @@ export interface NoteEditorProps {
   onOpenVersions: () => void;
   /** Receives the editor instance (for example to move focus into it from the title). */
   editorRef?: MutableRefObject<Editor | null>;
+  /** Reminder chips of a rich note (D-080); a click calls onChipClick. */
+  chips?: readonly ChipInfo[];
+  onChipClick?: (reminderId: string) => void;
+  /** A block to select, scroll to and highlight (a reminder opened the note); onRevealDone says whether it was found. */
+  reveal?: { blockId: string; nonce: number } | null;
+  onRevealDone?: (found: boolean) => void;
+  /** Toolbar More "Add reminder…" (main window only). */
+  onAddReminder?: () => void;
 }
 
 /**
@@ -79,6 +90,7 @@ export function NoteEditor(props: NoteEditorProps) {
         if (isUserEdit(transaction)) host.markDirty();
       },
       onBlur: () => void host.flush(),
+      onSelectionUpdate: ({ editor: e }) => host.setCursorBlock(blockIdAtSelection(e.state.selection)),
     },
     [],
   );
@@ -91,6 +103,7 @@ export function NoteEditor(props: NoteEditorProps) {
     const source: ContentSource = {
       getContent: () => (format === 'rich' ? toSavable(editor.getJSON()) : docToText(editor.getJSON())),
       getPlainText: () => editor.getText({ blockSeparator: '\n' }),
+      blockText: (blockId) => findBlock(editor.state.doc, blockId)?.node.textContent ?? null,
       hasPendingUploads: () => uploader.pending() > 0,
       waitForUploads: (ms) => uploader.waitIdle(ms),
     };
@@ -110,6 +123,44 @@ export function NoteEditor(props: NoteEditorProps) {
     editor.setEditable(editable);
     editor.view.dom.setAttribute('aria-readonly', String(!editable));
   }, [editor, editable]);
+
+  // Reminder chips are decorations set by a meta-only transaction: no save, no undo step (D-080). Only a real change is
+  // dispatched, so a reminder list that loads while the user types never interrupts the typing.
+  const { chips } = props;
+  const shownChips = useRef('[]');
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || format !== 'rich') return;
+    const key = JSON.stringify(chips ?? []);
+    if (key === shownChips.current) return;
+    shownChips.current = key;
+    editor.view.dispatch(chipsMeta(editor.state, { chips: chips ?? [] }));
+  }, [editor, format, chips]);
+
+  const { onChipClick } = props;
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || !onChipClick) return undefined;
+    const dom = editor.view.dom;
+    const onChip = (e: Event) => onChipClick((e as CustomEvent<string>).detail);
+    dom.addEventListener(REMINDER_CHIP_EVENT, onChip);
+    return () => dom.removeEventListener(REMINDER_CHIP_EVENT, onChip);
+  }, [editor, onChipClick]);
+
+  // A reminder opened this note at a block: select its start, scroll to it and highlight it for 2 s.
+  const { reveal, onRevealDone } = props;
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || !reveal) return;
+    const target = findBlock(editor.state.doc, reveal.blockId);
+    if (target) {
+      editor.view.dispatch(chipsMeta(editor.state, { reveal: reveal.blockId }).setSelection(selectionAtBlockStart(editor.state.doc, target)).scrollIntoView());
+      editor.commands.focus();
+      setTimeout(() => {
+        if (!editor.isDestroyed) editor.view.dispatch(chipsMeta(editor.state, { reveal: null }));
+      }, REVEAL_MS);
+    }
+    onRevealDone?.(target !== null);
+    // Runs once per request (the nonce); the callback identity does not matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, reveal?.nonce]);
 
   // Scroll position: restored once per editor instance, reported as the user scrolls.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -167,6 +218,7 @@ export function NoteEditor(props: NoteEditorProps) {
           openFind,
           convert: props.onConvert,
           openVersions: props.onOpenVersions,
+          addReminder: props.onAddReminder,
         }}
       />
       {find ? <FindBar key={find.nonce} editor={editor} prefill={find.prefill} onClose={() => setFind(null)} /> : null}

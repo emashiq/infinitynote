@@ -29,8 +29,13 @@ export const EMPTY_WINDOW_STATE: WindowState = { bounds: null, displayId: null, 
 const COLS = 'key, note_id, bounds, display_id, open, collapsed, always_on_top, updated_at';
 
 export const stickyKey = (noteId: string): string => `sticky:${noteId}`;
+/** The reminder widget's row (D-081); the 004 CHECK reserves the key with no note. */
+export const WIDGET_KEY = 'widget';
 
-/** SQL for the `window_state` table. Sticky rows are keyed `sticky:<noteId>` and cascade away with their note. */
+/**
+ * SQL for the `window_state` table. Sticky rows are keyed `sticky:<noteId>` and cascade away with their note; the widget
+ * row is keyed `widget`.
+ */
 export class WindowStateRepo {
   /** Keys whose stored bounds were unreadable; warned about once each. */
   private readonly warned = new Set<string>();
@@ -74,15 +79,24 @@ export class WindowStateRepo {
 
   /** Writes the given fields of a sticky's row (creating it with defaults first). */
   upsertSticky(noteId: string, patch: WindowStatePatch, now: number): WindowState {
-    const next = { ...(this.get(stickyKey(noteId)) ?? EMPTY_WINDOW_STATE), ...patch };
+    return this.upsert(stickyKey(noteId), noteId, patch, now);
+  }
+
+  /** Writes the given fields of the widget's row (creating it with defaults first). */
+  upsertWidget(patch: WindowStatePatch, now: number): WindowState {
+    return this.upsert(WIDGET_KEY, null, patch, now);
+  }
+
+  private upsert(key: string, noteId: string | null, patch: WindowStatePatch, now: number): WindowState {
+    const next = { ...(this.get(key) ?? EMPTY_WINDOW_STATE), ...patch };
     this.db
-      .prepare<[string, string, string | null, number | null, number, number, number, number]>(
+      .prepare<[string, string | null, string | null, number | null, number, number, number, number]>(
         `INSERT INTO window_state(${COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(key) DO UPDATE SET bounds = excluded.bounds, display_id = excluded.display_id, open = excluded.open,
            collapsed = excluded.collapsed, always_on_top = excluded.always_on_top, updated_at = excluded.updated_at`,
       )
       .run(
-        stickyKey(noteId),
+        key,
         noteId,
         next.bounds ? JSON.stringify(next.bounds) : null,
         next.displayId,

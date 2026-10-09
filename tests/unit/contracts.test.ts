@@ -85,8 +85,21 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
     }
   });
 
-  it('event channels are the Phase 01-04 events (D-052, D-063)', () => {
-    const events = ['settings:changed', 'tree:changed', 'note:revision', 'note:lease', 'lease:release-request', 'app:flush-request', 'sticky:state', 'app:openNote'];
+  it('event channels are the Phase 01-05 events (D-052, D-063, D-074)', () => {
+    const events = [
+      'settings:changed',
+      'tree:changed',
+      'note:revision',
+      'note:lease',
+      'lease:release-request',
+      'app:flush-request',
+      'sticky:state',
+      'app:openNote',
+      'reminder:changed',
+      'reminder:alert',
+      'widget:state',
+      'app:openReminders',
+    ];
     expect([...EVENT_CHANNELS]).toEqual(events);
     expect(Object.keys(EVENT_SCHEMAS)).toEqual(events);
   });
@@ -107,7 +120,7 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
   });
 
   it('the Phase 04 channels are appended in order (D-063)', () => {
-    expect(INVOKE_CHANNELS.slice(41)).toEqual([
+    expect(INVOKE_CHANNELS.slice(41, 50)).toEqual([
       'sticky:float',
       'sticky:dock',
       'sticky:hide',
@@ -118,12 +131,11 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
       'sticky:restore',
       'window:getState',
     ]);
-    expect(INVOKE_CHANNELS).toHaveLength(50);
   });
 
-  it('no Phase 05 channel is registered in Phase 04, and note:trashed was not added (D-063)', () => {
+  it('no Phase 06 channel is registered in Phase 05, and note:trashed was not added (D-063, D-074)', () => {
     const all: string[] = [...INVOKE_CHANNELS, ...EVENT_CHANNELS];
-    for (const name of ['reminder:create', 'widget:show', 'reminder:changed', 'note:trashed', 'sticky:removeSticky', 'attachment:importImageBytes']) {
+    for (const name of ['reminder:createFromSuggestion', 'suggestion:dismiss', 'reminder:updateFromSource', 'note:trashed', 'sticky:removeSticky', 'attachment:importImageBytes']) {
       expect(all, name).not.toContain(name);
     }
     expect(all).toContain('note:save');

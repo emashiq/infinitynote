@@ -86,6 +86,39 @@ describe('settings (INF-FND-06)', () => {
     expect(t.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM settings').get()?.n).toBe(2);
   });
 
+  it('Phase 05 reminder keys: defaults, a fresh profile writes nothing, unknown zones refused by name (D-083)', async () => {
+    const { t, service, events } = await setup();
+    expect(service.get(['reminders.defaultZone', 'reminders.followupDefault', 'reminders.quietHours'])).toEqual({
+      'reminders.defaultZone': null,
+      'reminders.followupDefault': { enabled: false, intervalMinutes: 15, maxFollowups: 2 },
+      'reminders.quietHours': { enabled: false, start: '22:00', end: '07:00', zoneId: null },
+    });
+    expect(t.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM settings').get()?.n).toBe(0);
+    for (const zone of ['Mars/Base', 'CST', 'EST']) {
+      expect(() => service.set('reminders.defaultZone', zone)).toThrow('Choose a time zone from the list');
+      expect(() => service.set('reminders.quietHours', { enabled: true, start: '22:00', end: '07:00', zoneId: zone })).toThrow('Choose a time zone from the list');
+    }
+    expect(events).toHaveLength(0);
+    expect(service.set('reminders.defaultZone', 'Asia/Dhaka').value).toBe('Asia/Dhaka');
+    expect(service.set('reminders.defaultZone', null).value).toBeNull();
+    service.set('reminders.quietHours', { enabled: true, start: '22:00', end: '07:00', zoneId: 'Asia/Dhaka' });
+    expect(service.get(['reminders.quietHours'])['reminders.quietHours']).toEqual({ enabled: true, start: '22:00', end: '07:00', zoneId: 'Asia/Dhaka' });
+    // A stored zone the runtime no longer knows reads as the default.
+    t.db.prepare("UPDATE settings SET value = '{\"v\":1,\"value\":\"Mars/Base\"}' WHERE key = 'reminders.defaultZone'").run();
+    expect(service.get(['reminders.defaultZone'])).toEqual({ 'reminders.defaultZone': null });
+  });
+
+  it('quiet hours switched on need a zone: refused on write; a stored value without one reads as off (QA5-04, D-083)', async () => {
+    const { t, service, events, logger } = await setup();
+    const zoneless = { enabled: true, start: '22:00', end: '07:00', zoneId: null };
+    expect(() => service.set('reminders.quietHours', zoneless)).toThrow(AppError);
+    expect(t.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM settings').get()?.n).toBe(0);
+    expect(events).toHaveLength(0);
+    t.db.prepare<[string]>("INSERT INTO settings(key, value, updated_at) VALUES ('reminders.quietHours', ?, 0)").run(JSON.stringify({ v: 1, value: zoneless }));
+    expect(service.getInternal('reminders.quietHours')).toEqual({ enabled: false, start: '22:00', end: '07:00', zoneId: null });
+    expect(logger.lines).toContain('WARN settings: invalid stored value key=reminders.quietHours');
+  });
+
   it('persists across close and reopen', async () => {
     const { t, service } = await setup();
     service.set('appearance.theme', 'dark');

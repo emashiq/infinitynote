@@ -1,0 +1,287 @@
+/* Reminders (UX_SPEC section 5, Phase 05) */
+
+.reminder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 0 6px;
+  padding: 0 6px;
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+}
+
+.reminder-chip svg {
+  color: var(--accent);
+}
+
+.reminder-chip-overdue {
+  border-color: var(--danger);
+}
+
+.reminder-chip-overdue svg {
+  color: var(--danger);
+}
+
+.reminder-chip-done {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.reminder-chip-note {
+  margin-left: 4px;
+  color: var(--text-muted);
+}
+
+.reminder-chip-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: none;
+  margin-bottom: 8px;
+}
+
+.reminder-chip-bar .reminder-chip {
+  margin: 0;
+}
+
+.reveal-block {
+  border-radius: 4px;
+  background: var(--accent-soft);
+  transition: background 0.3s;
+}
+
+.due-time {
+  display: flex;
+  flex-direction: column;
+}
+
+.due-local {
+  font-size: 12px;
+}
+
+.badge-overdue {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.badge-done {
+  color: var(--success);
+}
+
+.reminder-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.reminder-badges .badge {
+  gap: 4px;
+  font-size: 12px;
+}
+
+.reminder-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.reminder-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.reminder-tab.is-on {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.tab-count {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  font-size: 11px;
+}
+
+.reminder-list,
+.panel-reminders {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reminder-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.reminder-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reminder-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.reminder-source {
+  font-size: 12px;
+}
+
+.reminder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.panel-reminder {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.anchor-missing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.reminders-section {
+  margin-top: 16px;
+}
+
+.home-reminder-label {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.alert-banners {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 4px 8px 0;
+  color: var(--text);
+}
+
+.alert-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.alert-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Reminder dialog */
+.reminder-dialog {
+  width: min(520px, 92vw);
+}
+
+.form-field {
+  margin-bottom: 10px;
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.date-shortcuts {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.inline-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.weekday-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.weekday-toggles .is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.reminder-preview {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-subtle);
+}
+
+.reminder-preview p {
+  margin: 0;
+}
+
+.dst-notice {
+  color: var(--warning);
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pending-policy {
+  margin: 12px 0;
+}
+
+.dialog-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  color: var(--warning);
+}
+
+.dialog-hint {
+  margin-right: auto;
+}

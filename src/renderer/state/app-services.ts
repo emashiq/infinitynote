@@ -1,6 +1,9 @@
 import type { AppInfoType } from '../../shared/contracts/app';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
+import type { ReminderViewType } from '../../shared/contracts/reminders';
+import type { WidgetStateType } from '../../shared/contracts/widget';
 import type { AppOpenNoteEventType } from '../../shared/contracts/windows';
+import { RemindersStore } from '../reminders/reminders-store';
 import type { EditorServices } from '../editor/editor-services';
 import type { AttachmentLimits } from '../editor/uploader';
 import { createCommandRunner, type CommandRunner } from './commands';
@@ -26,6 +29,10 @@ export interface AppDeps {
   lifecycle?: { onHide(cb: () => void): () => void } | null;
   /** Notes main asked this window to open while it loaded (the window:getState handshake, D-071). */
   initialOpens?: readonly AppOpenNoteEventType[];
+  /** A Reminders view main asked this window to show while it loaded (summary notification click). */
+  initialReminders?: ReminderViewType | null;
+  /** The reminder widget's state when the window opened (D-086). */
+  initialWidget?: WidgetStateType;
 }
 
 export interface MetaState {
@@ -46,6 +53,7 @@ export interface AppServices {
   notices: NoticeStore;
   commands: CommandRunner;
   windowSettings: WindowSettingsStore;
+  reminders: RemindersStore;
   /** Attachment size limits from the public settings (followed live through settings:changed). */
   attachmentLimits: Store<AttachmentLimits>;
   /** What every note editor uses from the app; one stable object. */
@@ -84,6 +92,17 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
   const ui = new UiStore();
   const commands = createCommandRunner({ bridge, tree, tabs, home, layout, ui, notices });
   const windowSettings = new WindowSettingsStore(bridge);
+  const reminders = new RemindersStore(
+    {
+      bridge,
+      notices,
+      tabs,
+      homeScope: () => home.store.getState().scope,
+      openEditor: (reminder) => ui.openDialog({ kind: 'reminder', noteId: reminder.noteId, reminder, blockId: reminder.blockId, title: reminder.title }),
+    },
+    deps.initialWidget ?? { open: false, collapsed: false, alwaysOnTop: false },
+  );
+  let lastScope = home.store.getState().scope;
   let lastActive = tabs.store.getState().session.activeTabId;
 
   async function init(): Promise<void> {
@@ -99,11 +118,11 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
       });
       if (settings['home.scope']) home.hydrate(settings['home.scope']);
       if (settings['tree.expanded']) tree.hydrate(settings['tree.expanded']);
-      windowSettings.hydrate(settings, caps.ok ? caps.data.tray : null);
+      windowSettings.hydrate(settings, caps.ok ? caps.data : null);
     }
     // Notes main was asked to open while this window loaded, for example a dock (D-071).
-    for (const open of deps.initialOpens ?? []) await tabs.openNote(open.noteId, { takeEdit: open.takeEdit });
-    await home.load();
+    for (const open of deps.initialOpens ?? []) await tabs.openNote(open.noteId, { takeEdit: open.takeEdit, blockId: open.blockId });
+    await Promise.all([home.load(), reminders.init(deps.initialReminders ?? null)]);
   }
 
   core.track(bridge.subscribe('settings:changed', ({ key, value }) => windowSettings.applyChange(key, value)));
@@ -132,7 +151,20 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
       });
     }),
   );
-  core.track(bridge.subscribe('app:openNote', ({ noteId, takeEdit }) => void tabs.openNote(noteId, { takeEdit })));
+  core.track(bridge.subscribe('app:openNote', ({ noteId, takeEdit, blockId }) => void tabs.openNote(noteId, { takeEdit, blockId })));
+  // Reminders (plan section 9.6): views re-read on every change; alerts, the widget state and Reminders opens from main.
+  core.track(bridge.subscribe('reminder:changed', () => void reminders.refresh()));
+  core.track(bridge.subscribe('reminder:alert', (event) => reminders.onAlert(event)));
+  core.track(bridge.subscribe('widget:state', (state) => reminders.onWidgetState(state)));
+  core.track(bridge.subscribe('app:openReminders', ({ view }) => void reminders.openView(view)));
+  core.track(
+    home.store.subscribe(() => {
+      const scope = home.store.getState().scope;
+      if (scope === lastScope) return;
+      lastScope = scope;
+      void reminders.refreshSummary();
+    }),
+  );
   core.track(viewport.onResize(() => layout.setViewportWidth(viewport.width())));
   // Refresh Home whenever its tab becomes active.
   core.track(
@@ -163,6 +195,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     notices,
     commands,
     windowSettings,
+    reminders,
     attachmentLimits: core.attachmentLimits,
     editor: core.editor,
     ready,

@@ -7,9 +7,9 @@ import { LATEST, MIGRATIONS } from '../../src/main/db/migrations';
 const dir = path.resolve('src/main/db/migrations');
 
 describe('migration set (INF-FND-05)', () => {
-  it('versions are contiguous from 1 and LATEST is 4', () => {
+  it('versions are contiguous from 1 and LATEST is 5', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual(MIGRATIONS.map((_, i) => i + 1));
-    expect(LATEST).toBe(4);
+    expect(LATEST).toBe(5);
   });
 
   it('checksums.json matches the LF-normalized migration files', () => {

@@ -13,6 +13,8 @@ import { createMainWindowFactory, type AppWindowFactoryOptions } from './windows
 import { MainWindowController } from './windows/main-window-controller';
 import { StickyManager, type StickyLayoutEntry } from './windows/sticky-manager';
 import { createStickyWindowFactory } from './windows/sticky-window';
+import { WidgetManager } from './windows/widget-manager';
+import { createWidgetWindowFactory } from './windows/widget-window';
 
 export interface DesktopDeps {
   logger: Logger;
@@ -26,15 +28,24 @@ export interface DesktopDeps {
   displays: DisplayProvider;
   windows: Omit<AppWindowFactoryOptions, 'windowHooks'>;
   onStickyLayout?(entry: StickyLayoutEntry): void;
+  /** Runs once the startup windows are back: after the main window's first load, or at once in a background start. */
+  afterStartup?(): void;
+  /** Started by a login item (D-082): with a tray, the app starts in the background without the main window. */
+  launchedAtLogin: boolean;
 }
 
 export interface Desktop {
   mainWindow: MainWindowController;
   stickies: StickyManager | null;
+  /** The reminder widget; absent without storage. */
+  widget: WidgetManager | null;
   tray: TrayController;
   lifecycle: WindowLifecycle;
   displays: DisplayProvider;
-  /** Starts the tray and opens the main window; open stickies come back after its first load (when enabled). */
+  /**
+   * Starts the tray and opens the main window; open stickies and the widget come back after its first load. A launch at
+   * login with a tray starts in the background: no main window, the other windows come back at once.
+   */
   start(): void;
 }
 
@@ -45,6 +56,7 @@ export interface Desktop {
 export function createDesktop(deps: DesktopDeps): Desktop {
   const { logger, services, caps } = deps;
   let stickies: StickyManager | null = null;
+  let widget: WidgetManager | null = null;
   // Closing one window waits for its renderer to confirm that its text is saved (D-055, D-072).
   const flushBeforeClose = async (webContentsIds: number[]) => allSaved(await deps.flush(webContentsIds, 'close'));
   const lifecycle = createWindowLifecycle({
@@ -53,14 +65,21 @@ export function createDesktop(deps: DesktopDeps): Desktop {
     logger,
     flush: deps.flush,
     resetLeases: (webContentsId) => services?.leases.webContentsReset(webContentsId),
-    onQuitStarting: () => stickies?.prepareQuit(),
-    onQuitCanceled: () => stickies?.cancelQuit(),
+    onQuitStarting: () => {
+      stickies?.prepareQuit();
+      widget?.prepareQuit();
+    },
+    onQuitCanceled: () => {
+      stickies?.cancelQuit();
+      widget?.cancelQuit();
+    },
   });
   const windows: AppWindowFactoryOptions = { ...deps.windows, windowHooks: lifecycle.windowHooks };
 
   const mainWindow = new MainWindowController({
     factory: createMainWindowFactory(windows),
     sendOpenNote: (webContentsId, event) => deps.eventBus.sendTo(webContentsId, 'app:openNote', event),
+    sendOpenReminders: (webContentsId, event) => deps.eventBus.sendTo(webContentsId, 'app:openReminders', event),
     // Without storage the window shows the startup error screen, and closing it quits.
     closeBehavior: () => (services ? services.settings.getInternal('app.closeBehavior') : 'quit'),
     rememberCloseBehavior: (value) => services?.settings.set('app.closeBehavior', value),
@@ -69,7 +88,7 @@ export function createDesktop(deps: DesktopDeps): Desktop {
     flush: flushBeforeClose,
     quit: () => app.quit(),
     isQuitting: lifecycle.isQuitting,
-    onFirstLoad: () => stickies?.restoreOnStartup(),
+    onFirstLoad: () => restoreStartupWindows(),
     logger,
   });
 
@@ -89,6 +108,29 @@ export function createDesktop(deps: DesktopDeps): Desktop {
       logger,
       onLayout: deps.onStickyLayout,
     });
+    widget = new WidgetManager({
+      store: services.widgetState,
+      factory: createWidgetWindowFactory(windows),
+      displays: deps.displays,
+      caps: () => caps,
+      // The main window shows Show or Hide widget; the widget follows its own state.
+      emitState: (state, widgetWebContentsId) => {
+        const mainId = mainWindow.webContentsId();
+        if (mainId !== null) deps.eventBus.sendTo(mainId, 'widget:state', state);
+        if (widgetWebContentsId !== null) deps.eventBus.sendTo(widgetWebContentsId, 'widget:state', state);
+      },
+      logger,
+    });
+  }
+
+  // Stickies and the widget open at most once per run (a main window recreated later does not restore them again).
+  let startupRestored = false;
+  function restoreStartupWindows(): void {
+    if (startupRestored) return;
+    startupRestored = true;
+    stickies?.restoreOnStartup();
+    widget?.restoreOnStartup();
+    deps.afterStartup?.();
   }
 
   const tray = new TrayController({
@@ -102,6 +144,7 @@ export function createDesktop(deps: DesktopDeps): Desktop {
       const { note } = services.hierarchy.createNote({ projectId: null, folderId: null }, true);
       await stickies.float(note.id);
     },
+    showWidget: () => widget?.show(),
     quit: () => app.quit(),
     logger,
   });
@@ -113,11 +156,17 @@ export function createDesktop(deps: DesktopDeps): Desktop {
   return {
     mainWindow,
     stickies,
+    widget,
     tray,
     lifecycle,
     displays: deps.displays,
     start() {
       tray.start();
+      if (deps.launchedAtLogin && tray.isPresent()) {
+        logger.info('startup: launched at login, starting in the background');
+        restoreStartupWindows();
+        return;
+      }
       mainWindow.ensure();
     },
   };

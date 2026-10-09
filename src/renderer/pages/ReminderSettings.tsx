@@ -1,0 +1,140 @@
+import { useEffect, useId, useState } from 'react';
+import { FOLLOWUP_INTERVALS, FOLLOWUP_MAX_COUNTS, type ZonesListResponseType } from '../../shared/contracts/reminders';
+import { SETTINGS, type SettingValue, type SettingsChangedPayload } from '../../shared/contracts/settings';
+import { useServices } from '../state/use-store';
+import { Switch } from '../ui/Switch';
+
+export const FULLY_QUIT_TEXT =
+  'Reminders only fire while Infinity Notes is running: with a window open, in the background or in the tray. After you quit, nothing is sent until you start the app again, and then overdue reminders are shown.';
+export const NO_NOTIFICATIONS_TEXT = 'This desktop has no notification service. Reminders appear inside Infinity Notes and in the reminder widget instead.';
+
+type Values = {
+  defaultZone: SettingValue<'reminders.defaultZone'>;
+  followup: SettingValue<'reminders.followupDefault'>;
+  quiet: SettingValue<'reminders.quietHours'>;
+};
+const KEYS = { defaultZone: 'reminders.defaultZone', followup: 'reminders.followupDefault', quiet: 'reminders.quietHours' } as const;
+
+function Select({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (v: string) => void }) {
+  const id = useId();
+  return (
+    <div className="form-field">
+      <label htmlFor={id} className="field-label">
+        {label}
+      </label>
+      <select id={id} className="select" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function TimeField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const id = useId();
+  return (
+    <div className="form-field">
+      <label htmlFor={id} className="field-label">
+        {label}
+      </label>
+      <input id={id} type="time" className="text-input" value={value} onChange={(e) => e.target.value && onChange(e.target.value)} />
+    </div>
+  );
+}
+
+/** Settings > Reminders (D-083): default zone, follow-up defaults, quiet hours and what happens when the app is quit. */
+export function ReminderSettings({ notificationsSupported }: { notificationsSupported: boolean }) {
+  const { bridge, notices } = useServices();
+  const [zones, setZones] = useState<ZonesListResponseType | null>(null);
+  const [values, setValues] = useState<Values | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // A change from another window (or a refused write) is followed live.
+    const apply = (key: string, value: unknown) => {
+      const field = (Object.keys(KEYS) as Array<keyof Values>).find((f) => KEYS[f] === key);
+      const parsed = field ? SETTINGS[KEYS[field]].schema.safeParse(value) : null;
+      if (field && parsed?.success) setValues((v) => (v ? { ...v, [field]: parsed.data } : v));
+    };
+    void Promise.all([bridge.zones.list(), bridge.settings.get({ keys: Object.values(KEYS) })]).then(([z, s]) => {
+      if (cancelled || !z.ok || !s.ok) return;
+      const v = s.data.values;
+      setZones(z.data);
+      setValues({
+        defaultZone: (v[KEYS.defaultZone] as Values['defaultZone'] | undefined) ?? null,
+        followup: (v[KEYS.followup] as Values['followup'] | undefined) ?? SETTINGS[KEYS.followup].default,
+        quiet: (v[KEYS.quiet] as Values['quiet'] | undefined) ?? SETTINGS[KEYS.quiet].default,
+      });
+    });
+    const off = bridge.subscribe('settings:changed', ({ key, value }: SettingsChangedPayload) => apply(key, value));
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, [bridge]);
+
+  if (!zones || !values) return null;
+  const save = (result: Promise<{ ok: boolean; error?: { message: string } }>) =>
+    void result.then((res) => {
+      if (!res.ok) notices.push(res.error?.message ?? 'Could not save the setting', 'error');
+    });
+  const setFollowup = (patch: Partial<Values['followup']>) => {
+    const value = { ...values.followup, ...patch };
+    setValues({ ...values, followup: value });
+    save(bridge.settings.set({ key: KEYS.followup, value }));
+  };
+  const setQuiet = (patch: Partial<Values['quiet']>) => {
+    const value = { ...values.quiet, ...patch };
+    // Quiet hours always name their zone; switching them on stores the computer's zone unless one was chosen.
+    if (value.enabled && value.zoneId === null) value.zoneId = zones.systemZone ?? zones.defaultZone;
+    setValues({ ...values, quiet: value });
+    save(bridge.settings.set({ key: KEYS.quiet, value }));
+  };
+  const zoneOptions = zones.zones.map((z) => ({ value: z, label: z }));
+  return (
+    <>
+      <h3 className="section-label">Reminders</h3>
+      <Select
+        label="Default time zone for new reminders"
+        value={values.defaultZone ?? ''}
+        options={[{ value: '', label: `Computer time zone (${zones.systemZone ?? 'unknown'})` }, ...zoneOptions]}
+        onChange={(v) => {
+          const defaultZone = v === '' ? null : v;
+          setValues({ ...values, defaultZone });
+          save(bridge.settings.set({ key: KEYS.defaultZone, value: defaultZone }));
+        }}
+      />
+      <Switch label="Follow up on new reminders" checked={values.followup.enabled} onChange={(enabled) => setFollowup({ enabled })} />
+      {values.followup.enabled ? (
+        <div className="form-row">
+          <Select
+            label="Every"
+            value={String(values.followup.intervalMinutes)}
+            options={FOLLOWUP_INTERVALS.map((n) => ({ value: String(n), label: `${n} minutes` }))}
+            onChange={(v) => setFollowup({ intervalMinutes: Number(v) as Values['followup']['intervalMinutes'] })}
+          />
+          <Select
+            label="At most"
+            value={String(values.followup.maxFollowups)}
+            options={FOLLOWUP_MAX_COUNTS.map((n) => ({ value: String(n), label: `${n} times` }))}
+            onChange={(v) => setFollowup({ maxFollowups: Number(v) as Values['followup']['maxFollowups'] })}
+          />
+        </div>
+      ) : null}
+      <Switch label="Quiet hours" checked={values.quiet.enabled} onChange={(enabled) => setQuiet({ enabled })} />
+      {values.quiet.enabled ? (
+        <div className="form-row">
+          <TimeField label="From" value={values.quiet.start} onChange={(start) => setQuiet({ start })} />
+          <TimeField label="To" value={values.quiet.end} onChange={(end) => setQuiet({ end })} />
+          <Select label="Time zone" value={values.quiet.zoneId ?? ''} options={zoneOptions} onChange={(zoneId) => setQuiet({ zoneId })} />
+        </div>
+      ) : null}
+      <p className="muted">{FULLY_QUIT_TEXT}</p>
+      {notificationsSupported ? null : <p className="muted">{NO_NOTIFICATIONS_TEXT}</p>}
+    </>
+  );
+}
+

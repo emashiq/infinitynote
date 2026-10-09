@@ -18,6 +18,7 @@ function setup() {
   for (const id of [1, 2]) registry.add({ webContentsId: id, role: 'main', send: () => {}, isDestroyed: () => false });
   const log: string[] = [];
   const answer = { unsaved: [] as number[] };
+  const clock = { t: 1_000_000 };
   const lifecycle = createWindowLifecycle({
     app: app as never,
     registry,
@@ -29,13 +30,20 @@ function setup() {
     resetLeases: (id) => log.push(`reset:${id}`),
     onQuitStarting: () => log.push('quit-starting'),
     onQuitCanceled: () => log.push('quit-canceled'),
+    now: () => clock.t,
   });
   const beforeQuit = () => {
     let prevented = false;
     listeners.get('before-quit')!({ preventDefault: () => (prevented = true) });
     return prevented;
   };
-  return { app, lifecycle, log, beforeQuit, answer };
+  /** One Quit attempt, run until its flush answered. */
+  const quitOnce = async () => {
+    t.beforeQuit();
+    await vi.advanceTimersByTimeAsync(0);
+  };
+  const t = { app, lifecycle, log, beforeQuit, answer, clock, quitOnce, canceled: () => log.filter((l) => l === 'quit-canceled').length };
+  return t;
 }
 
 describe('window lifecycle (plan section 8.10)', () => {
@@ -63,6 +71,53 @@ describe('window lifecycle (plan section 8.10)', () => {
     expect(t.log.slice(3)).toEqual(['quit-starting', 'flush:1,2:quit']);
     expect(t.lifecycle.isQuitting()).toBe(true);
     expect(t.app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('F04-A1 (D-085): a canceled Quit lets only the next Quit within 2 minutes go ahead', async () => {
+    const t = setup();
+    t.answer.unsaved = [2];
+    await t.quitOnce();
+    expect(t.canceled()).toBe(1);
+    t.clock.t += 119_000;
+    await t.quitOnce();
+    expect(t.canceled()).toBe(1);
+    expect(t.app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('F04-A1: after the escape expired, a Quit with unsaved text is canceled again and re-arms the escape', async () => {
+    const t = setup();
+    t.answer.unsaved = [2];
+    await t.quitOnce();
+    t.clock.t += 121_000;
+    await t.quitOnce();
+    expect(t.canceled()).toBe(2);
+    expect(t.lifecycle.isQuitting()).toBe(false);
+    expect(t.app.quit).not.toHaveBeenCalled();
+    // The second cancel armed the escape again; an immediate further Quit exits.
+    await t.quitOnce();
+    expect(t.canceled()).toBe(2);
+    expect(t.app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('F04-A1: after a canceled Quit, a Quit whose flush saved everything exits without the escape', async () => {
+    const t = setup();
+    t.answer.unsaved = [2];
+    await t.quitOnce();
+    t.answer.unsaved = [];
+    t.clock.t += 500_000;
+    await t.quitOnce();
+    expect(t.canceled()).toBe(1);
+    expect(t.lifecycle.isQuitting()).toBe(true);
+    expect(t.app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('F04-A1: a session end after a canceled Quit never waits', async () => {
+    const t = setup();
+    t.answer.unsaved = [2];
+    await t.quitOnce();
+    t.lifecycle.windowHooks().onSessionEnd();
+    expect(t.lifecycle.isQuitting()).toBe(true);
+    expect(t.beforeQuit()).toBe(false);
   });
 
   it('a session end marks quitting without a flush or a dialog', () => {

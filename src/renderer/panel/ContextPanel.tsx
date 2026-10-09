@@ -1,5 +1,6 @@
 import { useServices, useStore } from '../state/use-store';
 import { InfoSection } from './InfoSection';
+import { RemindersSection } from './RemindersSection';
 
 export function ContextPanel() {
   const { tabs } = useServices();
@@ -9,6 +10,7 @@ export function ContextPanel() {
   return (
     <aside className="context-panel" id="context-panel" aria-label="Details">
       <InfoSection key={controller?.noteId ?? 'none'} controller={controller} />
+      <RemindersSection key={`reminders:${controller?.noteId ?? 'none'}`} controller={controller} />
     </aside>
   );
 }

@@ -1,3 +1,4 @@
+import { ReminderDialog } from '../reminders/ReminderDialog';
 import { MoveDialog } from '../tree/MoveDialog';
 import { useServices, useStore } from '../state/use-store';
 import type { Outcome } from '../state/store';
@@ -7,7 +8,7 @@ import { NameDialog } from './NameDialog';
 /** Renders whichever dialog UiStore.dialog names. */
 export function DialogHost() {
   const services = useServices();
-  const { tree, ui } = services;
+  const { tree, ui, tabs } = services;
   const { dialog } = useStore(ui.store);
   const treeState = useStore(tree.store);
   if (!dialog) return null;
@@ -92,6 +93,20 @@ export function DialogHost() {
           onClose={close}
         />
       );
+    case 'reminder': {
+      const controller = tabs.activeController();
+      return (
+        <ReminderDialog
+          key={dialog.reminder?.id ?? dialog.noteId}
+          noteId={dialog.noteId}
+          reminder={dialog.reminder}
+          blockId={dialog.blockId}
+          title={dialog.title}
+          persistBlocks={controller?.noteId === dialog.noteId ? () => controller.persistBlockIds() : null}
+          onClose={close}
+        />
+      );
+    }
     default:
       return null;
   }

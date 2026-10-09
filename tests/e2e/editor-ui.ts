@@ -63,7 +63,7 @@ export async function chooseMore(page: Page, item: string): Promise<void> {
 /** Runs a command palette action by its label. */
 export async function paletteAction(page: Page, label: string): Promise<void> {
   await page.keyboard.press('Control+K');
-  await page.getByRole('combobox').fill(label);
+  await page.getByRole('combobox', { name: 'Type a command or note title' }).fill(label);
   await page.getByRole('option', { name: new RegExp(label) }).first().waitFor({ state: 'visible' });
   await page.keyboard.press('Enter');
 }
