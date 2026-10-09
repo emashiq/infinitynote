@@ -34,9 +34,9 @@ describe('attached document hand-off (INF-REF-08, D-098)', () => {
   it('opens a linked document through the OS with the stored path inside the attachments folder', async () => {
     const { s, note, pdf, fileOf } = await setup();
     expect(await s.handoff.open(note.note.id, pdf.id)).toEqual({ opened: true });
-    expect(s.shellCalls).toEqual([{ op: 'openPath', target: fs.realpathSync(fileOf(pdf.id)) }]);
+    expect(s.shellCalls).toEqual([{ op: 'openPath', target: fs.realpathSync.native(fileOf(pdf.id)) }]);
     expect(await s.handoff.showInFolder(note.note.id, pdf.id)).toEqual({ shown: true });
-    expect(s.shellCalls[1]).toEqual({ op: 'showItemInFolder', target: fs.realpathSync(fileOf(pdf.id)) });
+    expect(s.shellCalls[1]).toEqual({ op: 'showItemInFolder', target: fs.realpathSync.native(fileOf(pdf.id)) });
   });
 
   it('blocked extensions: a program is never launched, but can be shown in its folder', async () => {
@@ -44,7 +44,7 @@ describe('attached document hand-off (INF-REF-08, D-098)', () => {
     expect(await rejection(s.handoff.open(note.note.id, exe.id))).toMatchObject({ code: 'FORBIDDEN', message: HANDOFF_MESSAGES.blocked });
     expect(s.shellCalls).toEqual([]);
     await s.handoff.showInFolder(note.note.id, exe.id);
-    expect(s.shellCalls).toEqual([{ op: 'showItemInFolder', target: fs.realpathSync(fileOf(exe.id)) }]);
+    expect(s.shellCalls).toEqual([{ op: 'showItemInFolder', target: fs.realpathSync.native(fileOf(exe.id)) }]);
   });
 
   it('refuses a file the note does not link, a missing file and a file replaced by a link; reports an OS failure', async () => {
