@@ -22,6 +22,10 @@ export const RENDERER_SCHEME = 'infinity-app';
 export const RENDERER_HOST = 'renderer';
 export const ATTACHMENT_SCHEME = 'infinity-attachment';
 export const APP_VERSION = '0.1.0';
+export const AUTHOR_NAME = 'Ashiqur Rahman Emran';
+export const DEVELOPER_CREDIT = `Developed by ${AUTHOR_NAME}`;
+/** Also electron-builder's copyright field (checked by the app identity test). */
+export const COPYRIGHT = `Copyright © 2026 ${AUTHOR_NAME}`;
 
 /** The only URL form under which the renderer loads a stored image (INF-FND-08). */
 export const attachmentUrl = (attachmentId: string): string => `${ATTACHMENT_SCHEME}://${attachmentId}`;

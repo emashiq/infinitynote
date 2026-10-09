@@ -1,6 +1,6 @@
 # Release checklist
 
-Infinity Notes 0.1.0 local release. The builds are **unsigned** and are not published. Every checked item names the log that shows it ran (`.infinity-work/logs/phase-09/`). Results for each native case are in [NATIVE_OS_MATRIX.md](NATIVE_OS_MATRIX.md).
+Infinity Notes 0.1.0. The builds are **unsigned**. Sections 1-6 record the local release validation; section 7 is the GitHub publishing step (2026-10-09). Every checked item names the log that shows it ran (`.infinity-work/logs/phase-09/`). Results for each native case are in [NATIVE_OS_MATRIX.md](NATIVE_OS_MATRIX.md).
 
 ## 1. Gates before packaging
 
@@ -48,7 +48,7 @@ The Linux packages were rebuilt from the final tree at 19:07 (mirror identical, 
 2. **Distribution build hardening.** After the packaged and installed checks pass, rebuild with `electronFuses.enableNodeCliInspectArguments: false` and smoke-test it by hand (Playwright can no longer attach).
 3. **Ubuntu 24.04+ AppImage.** The `.deb` installs an AppArmor profile that allows the sandbox's user namespaces; the AppImage cannot. Either document the `.deb` as the supported package there (done in the user guide) or provide a profile for the AppImage. Never ship `--no-sandbox`.
 4. **Native validation still open.** Run manual steps M7, M9, M11 and M12 (required) and M8 (recommended) on Windows 11 (M1-M6, M10 and M13 passed on 2026-10-09; WSLg move and resize passed on 2026-10-09) and, if the scope is extended, the GNOME Wayland and X11 cases on real Ubuntu desktops; record them in NATIVE_OS_MATRIX.
-5. **Publishing.** Choose a host and checksum file (SHA-256 list from `release/artifacts.json`), release notes and a support contact. No auto-update is built in; updates are new installers.
+5. **Publishing.** Done through GitHub Releases and GitHub Pages; see section 7. No auto-update is built in; updates are new installers.
 6. **Version.** Bump `version` in `package.json` and `APP_VERSION` together for each release; the migration checksum test guards the schema.
 
 ## 6. Development machines (Windows)
@@ -59,3 +59,34 @@ Since Phase 09 Repair 1, unpackaged runs (`npm run dev`, `npm run test:e2e`) use
 - Under `HKCU\Software\Classes\CLSID`, keys named "Electron Notification Activator" whose `LocalServer32` points at `node_modules\electron\dist\electron.exe` or at a `release\win-unpacked` or removed `Infinity Notes.exe` (earlier builds registered a new random CLSID on every run).
 
 `npm run verify:install:win` backs up an existing `{16B1084D-…}` registration before it installs and puts it back afterwards.
+
+## 7. Publishing on GitHub
+
+Repository: https://github.com/emashiq/infinitynote (default branch `main`). Website: https://emashiq.github.io/infinitynote/. Nothing is ever force-pushed.
+
+One-time setup:
+
+- [ ] Settings > Pages > Source: **GitHub Actions**. `.github/workflows/pages.yml` then deploys `website/` (static, no build step) on every push to `main` that changes it, or when started by hand.
+
+For each release:
+
+1. [ ] Bump `version` in `package.json` and `APP_VERSION` in `src/shared/app-identity.ts` together, and add a `## [<version>] - <date>` section to `CHANGELOG.md` (highlights and known limitations). That section becomes the release notes, followed by the unsigned-build notice.
+2. [ ] After dependency changes, run `npm run notices` and commit `THIRD_PARTY_NOTICES.md`; `npm run check` fails while it is stale.
+3. [ ] `ci.yml` is green on `main` for the commit to release. It runs the E2E suites, which the release workflow does not repeat.
+4. [ ] Tag the commit `v<version>` and push the tag. `.github/workflows/release.yml` runs (it can also be started by hand for an existing tag):
+   - **prepare:** `node tools/release-notes.mjs <tag>` fails unless the tag is `v` plus the `package.json` version and `APP_VERSION`, and `CHANGELOG.md` has a section for it.
+   - **build** on `windows-2025` and `ubuntu-24.04`: `npm ci`, `npm run setup:electron`, the Linux sandbox prerequisites of `ci.yml`, `npm run check`, `npm run package:current` (production bundles, then the installers), `npm run verify:native -- --packaged`.
+   - **publish:** renames the installers to their stable names, writes `SHA256SUMS.txt` over every asset, and creates or updates the release "Infinity Notes v<version>" with `gh` and `GITHUB_TOKEN` (`contents: write` in this job only), marked as the latest release.
+5. [ ] On the release page: the assets below, the notes, and each website download button starts its download.
+
+Release assets. The installer names are stable and **must not change between releases**: the website links to `https://github.com/emashiq/infinitynote/releases/latest/download/<name>`, and these plain links are what makes one-click downloads work without JavaScript.
+
+| Asset | Source |
+| --- | --- |
+| `Infinity-Notes-Setup-x64.exe` | `release/Infinity-Notes-Setup-<version>-x64-unsigned.exe` |
+| `infinity-notes_amd64.deb` | `release/infinity-notes-<version>-amd64-unsigned.deb` |
+| `Infinity-Notes-x86_64.AppImage` | `release/infinity-notes-<version>-x86_64-unsigned.AppImage` |
+| `THIRD_PARTY_NOTICES.md` | repository root; also packaged in the app's `resources/` next to `LICENSE.txt` |
+| `SHA256SUMS.txt` | written by the publish job (`sha256sum` format, covers every asset above) |
+
+The license is the Infinity Notes Freeware License (`LICENSE`); the NSIS installer shows it. macOS builds are planned and are not part of the pipeline.

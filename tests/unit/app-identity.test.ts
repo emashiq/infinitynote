@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   APP_ID,
+  AUTHOR_NAME,
+  COPYRIGHT,
   DEV_APP_ID,
   DEV_TOAST_ACTIVATOR_CLSID,
   TOAST_ACTIVATOR_CLSID,
@@ -25,16 +27,22 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as {
   devDependencies: Record<string, string>;
   main: string;
   type?: string;
+  author: unknown;
+  license: string;
+  homepage: string;
+  repository: { type: string; url: string };
 };
 const builder = JSON.parse(fs.readFileSync('electron-builder.json', 'utf8')) as {
   appId: string;
   productName: string;
+  copyright: string;
+  extraResources: { from: string; to: string }[];
   npmRebuild: boolean;
   nodeGypRebuild: boolean;
   buildDependenciesFromSource: boolean;
   asarUnpack: string[];
   publish: unknown;
-  nsis: { include: string; deleteAppDataOnUninstall: boolean };
+  nsis: { include: string; deleteAppDataOnUninstall: boolean; license: string };
   electronFuses: Record<string, boolean>;
   linux: { executableName: string; syncDesktopName: boolean; maintainer: string };
 };
@@ -69,6 +77,22 @@ describe('app identity (INF-FND-11)', () => {
     expect(builder.asarUnpack).toContain('**/*.node');
     expect(builder.publish).toBeNull();
     expect(builder.linux.maintainer).toContain('@');
+  });
+
+  it('author, copyright and freeware license are declared once and shipped with the app; no email address', () => {
+    expect(pkg.author).toBe(AUTHOR_NAME);
+    expect(builder.copyright).toBe(COPYRIGHT);
+    expect(pkg.license).toBe('SEE LICENSE IN LICENSE');
+    expect(fs.readFileSync('LICENSE', 'utf8')).toMatch(/^Infinity Notes Freeware License\r?\n/);
+    expect(builder.nsis.license).toBe('LICENSE');
+    expect(builder.extraResources).toEqual([
+      { from: 'LICENSE', to: 'LICENSE.txt' },
+      { from: 'THIRD_PARTY_NOTICES.md', to: 'THIRD_PARTY_NOTICES.md' },
+    ]);
+    expect(pkg.homepage).toBe('https://emashiq.github.io/infinitynote/');
+    expect(pkg.repository.url).toBe('git+https://github.com/emashiq/infinitynote.git');
+    // The Linux maintainer stays the placeholder; no personal address is published.
+    expect(builder.linux.maintainer).toBe('Infinity Notes <noreply@infinity-notes.invalid>');
   });
 
   it('Linux window association: desktopName gives the .desktop file, WM_CLASS and app_id one name (F-01-6, F04-A3)', () => {

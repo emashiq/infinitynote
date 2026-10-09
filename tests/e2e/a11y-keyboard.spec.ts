@@ -334,7 +334,7 @@ test('getByRole coverage: Settings sections are named regions and the new contro
   const { app, page } = await h.start();
   await setContentSize(app, page, 1280, 800);
   await railGo(page, 'Settings');
-  for (const name of ['General', 'Appearance', 'Notes and attachments', 'Reminders', 'Windows and tray', 'Backup', 'Keyboard']) {
+  for (const name of ['General', 'Appearance', 'Notes and attachments', 'Reminders', 'Windows and tray', 'Backup', 'Keyboard', 'About']) {
     const region = page.getByRole('region', { name, exact: true });
     await expect(region, name).toBeVisible();
     await expect(region.getByRole('heading', { level: 3, name, exact: true }), name).toBeVisible();

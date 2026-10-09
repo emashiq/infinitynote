@@ -57,6 +57,14 @@ test('packaged binary carries the release fuses (asar integrity on, ELECTRON_RUN
   expect(state(FuseV1Options.EnableNodeCliInspectArguments)).toBe('enabled');
 });
 
+test('packaged app ships its license and the third-party notices next to app.asar @packaged', () => {
+  const resources = path.join(path.dirname(packagedExe), 'resources');
+  expect(fs.readFileSync(path.join(resources, 'LICENSE.txt'), 'utf8')).toMatch(/^Infinity Notes Freeware License/);
+  const notices = fs.readFileSync(path.join(resources, 'THIRD_PARTY_NOTICES.md'), 'utf8');
+  expect(notices).toContain('# Third-party notices');
+  expect(notices).toContain('| better-sqlite3 |');
+});
+
 test('packaged override honored and test hooks absent @packaged', async () => {
   const { app, page } = await h.start();
   const reported = await app.evaluate(({ app: a }) => a.getPath('userData'));

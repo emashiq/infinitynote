@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import type { CloseBehaviorType } from '../../shared/contracts/windows';
 import { BackupSettings } from '../settings/BackupSettings';
 import { SettingsSection } from '../settings/fields';
+import { AboutCredits } from '../shell/HelpDialogs';
 import { KeyboardSettings } from '../settings/KeyboardSettings';
 import { NotesSettings } from '../settings/NotesSettings';
 import type { ThemeSettingValue } from '../theme/theme';
@@ -21,8 +22,8 @@ function autostartHint(reason: string): string {
 }
 
 /**
- * Settings (UX_SPEC section 5): General, Appearance, Notes and attachments, Reminders, Windows and tray, Backup and
- * Keyboard, each a labelled region.
+ * Settings (UX_SPEC section 5): General, Appearance, Notes and attachments, Reminders, Windows and tray, Backup,
+ * Keyboard and About, each a labelled region.
  */
 export function SettingsPage() {
   const { theme, meta, notices, windowSettings, reminders, bridge } = useServices();
@@ -42,7 +43,6 @@ export function SettingsPage() {
     <div className="page settings-page">
       <h2 className="view-title">Settings</h2>
       <SettingsSection title="General">
-        <p>Version {info?.version ?? ''}</p>
         <p>Storage ready (SQLite {info?.sqlite?.version ?? 'unknown'})</p>
         <div className="button-row">
           <button
@@ -102,6 +102,10 @@ export function SettingsPage() {
       </SettingsSection>
       <BackupSettings />
       <KeyboardSettings />
+      <SettingsSection title="About">
+        <p>Version {info?.version ?? ''}</p>
+        <AboutCredits />
+      </SettingsSection>
     </div>
   );
 }

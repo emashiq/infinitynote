@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from '../../shared/app-identity';
+import { COPYRIGHT, DEVELOPER_CREDIT, PRODUCT_NAME } from '../../shared/app-identity';
 import { SHORTCUT_GROUPS } from '../state/shortcuts';
 import { useServices, useStore } from '../state/use-store';
 import { Dialog } from '../ui/Dialog';
@@ -39,7 +39,17 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Help → About (D-097): name, version and runtime versions. */
+/** Who made the app and under which terms: Help → About and Settings → About. */
+export function AboutCredits() {
+  return (
+    <>
+      <p>{DEVELOPER_CREDIT}</p>
+      <p className="muted">{COPYRIGHT}. Free to use under the Infinity Notes Freeware License.</p>
+    </>
+  );
+}
+
+/** Help → About (D-097): name, version, runtime versions and credits. */
 export function AboutDialog({ onClose }: { onClose: () => void }) {
   const { meta } = useServices();
   const { info } = useStore(meta);
@@ -51,6 +61,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
           Version {info.version} · Electron {info.versions.electron} · {info.platform} {info.arch}
         </p>
       ) : null}
+      <AboutCredits />
       <CloseRow onClose={onClose} />
     </Dialog>
   );

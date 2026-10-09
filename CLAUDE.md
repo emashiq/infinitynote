@@ -47,6 +47,8 @@ Never promise notifications while fully quit or guaranteed window positioning un
   - WSL runs once, in Phase 09: check, WSLg E2E, Linux packaging. Xvfb and forced-Wayland runs are dropped.
 - **Custom title bar (2026-10-09).** The main window has no OS title bar: a single FrameCapt-style top bar (icon and name, File/View/Help menus, centered search with Ctrl K, min/max/close). Sticky windows and the widget are frameless, with a × close in the corner.
 
+- **Publishing (2026-10-09).** The user explicitly asked to push to https://github.com/emashiq/infinitynote (branch `main`), add a GitHub Actions release pipeline, publish the first release (v0.1.0, unsigned builds) and a GitHub Pages website. This overrides "never push" for that repository only. Nothing is ever force-pushed.
+
 ## Host notes (Windows development machine)
 
 - Windows has no Python (`python` is the Store alias); none is needed.

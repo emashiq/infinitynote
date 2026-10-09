@@ -1,7 +1,7 @@
 {
   "appId": "com.infinitynotes.desktop",
   "productName": "Infinity Notes",
-  "copyright": "Infinity Notes local build",
+  "copyright": "Copyright © 2026 Ashiqur Rahman Emran",
   "directories": { "output": "release", "buildResources": "resources" },
   "files": [
     "out/**",
@@ -10,6 +10,10 @@
     "!**/*.map",
     "!node_modules/better-sqlite3/deps/**",
     "!node_modules/better-sqlite3/src/**"
+  ],
+  "extraResources": [
+    { "from": "LICENSE", "to": "LICENSE.txt" },
+    { "from": "THIRD_PARTY_NOTICES.md", "to": "THIRD_PARTY_NOTICES.md" }
   ],
   "asarUnpack": ["**/*.node"],
   "npmRebuild": false,
@@ -37,6 +41,7 @@
     "createStartMenuShortcut": true,
     "shortcutName": "Infinity Notes",
     "deleteAppDataOnUninstall": false,
+    "license": "LICENSE",
     "include": "resources/installer.nsh"
   },
   "linux": {

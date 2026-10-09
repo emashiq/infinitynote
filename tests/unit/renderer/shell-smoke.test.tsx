@@ -199,6 +199,8 @@ describe('Phase 02 shell (smoke)', () => {
     await click(dark);
     expect(fake.calls.some((c) => c.channel === 'settings:set')).toBe(true);
     expect(el.textContent).toContain('Version 0.1.0');
+    expect(el.textContent).toContain('Developed by Ashiqur Rahman Emran');
+    expect(el.textContent).toContain('Copyright © 2026 Ashiqur Rahman Emran');
     expect(el.textContent).toContain('Storage ready (SQLite 3.0.0)');
   });
 
