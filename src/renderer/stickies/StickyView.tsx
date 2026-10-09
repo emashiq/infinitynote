@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { displayTitle } from '../../shared/names';
 import { EditorHandle } from '../editor/editor-handle';
 import { NoteEditor } from '../editor/NoteEditor';
@@ -11,6 +11,7 @@ import { NoteTitleField } from '../notes/NoteTitleField';
 import { NoticeList } from '../shell/Notices';
 import { useStore } from '../state/use-store';
 import { ConfirmRunner, TRASH_CONFIRM } from '../ui/ConfirmDialog';
+import { applyStickyAppearance } from './sticky-appearance';
 import { useSticky } from './sticky-context';
 import { StickyHeader } from './StickyHeader';
 import { StickyTrashState } from './StickyTrashState';
@@ -161,6 +162,11 @@ export function StickyView() {
     };
   }, [actions, collapsed, trashed, canRename]);
 
+  // The sticky's colors paint the whole page and follow every change at once.
+  const color = sticky?.color;
+  const textColor = sticky?.textColor ?? null;
+  useLayoutEffect(() => (color ? applyStickyAppearance(document.documentElement, { color, textColor }) : undefined), [color, textColor]);
+
   // Float of an open sticky: bring the caret into the editor.
   useEffect(() => {
     if (focusRequest > 0) editorHandle.focus('end');
@@ -192,6 +198,7 @@ export function StickyView() {
         }
         actions={{
           setColor: (color) => void actions.setColor(color),
+          setTextColor: (color) => void actions.setTextColor(color),
           togglePinned: () => void actions.togglePinned(),
           toggleCollapsed: () => void actions.toggleCollapsed(),
           openInApp: () => void actions.dock(),

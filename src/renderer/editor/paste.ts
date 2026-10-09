@@ -1,8 +1,11 @@
-import { Slice } from '@tiptap/pm/model';
+import { Slice, type ResolvedPos } from '@tiptap/pm/model';
 import type { EditorView } from '@tiptap/pm/view';
 import { ATTACHMENT_MESSAGES } from '../../shared/attachments/limits';
+import { TABLE_PASTED_AS_TEXT_MESSAGE, TABLE_TOO_LARGE_MESSAGE } from '../../shared/editor/table-limits';
 import { textToDoc } from '../../shared/text/textarea-doc';
 import { sanitizePastedHtml } from './sanitize';
+import { tableClipboardText, tableSliceFromText } from './table-clipboard';
+import { fragmentTablesFit } from './table-size';
 import type { AttachmentUploader } from './uploader';
 
 export interface PasteDeps {
@@ -31,7 +34,8 @@ function insertPlainText(view: EditorView, text: string, at?: number): void {
  * Paste and drop handling (plan section 9.4). Everything is decided on the DOM event, before ProseMirror parses
  * the clipboard: files are captured synchronously (the DataTransfer is empty after the first await, D-054), pastes
  * over 8 MB are refused, and large pastes first save pending edits, then run (D-060). Plain-text notes take text
- * only. Rich notes sanitize pasted HTML before parsing.
+ * only. Rich notes sanitize pasted HTML before parsing, refuse a pasted table over the table limits (D-116) and read
+ * tab-separated text as a table; copying table content adds tab-separated text.
  */
 export function createPasteProps(deps: PasteDeps) {
   const { format, uploader, notify } = deps;
@@ -121,8 +125,31 @@ export function createPasteProps(deps: PasteDeps) {
       return false;
     },
 
+    /** Runs before the table plugin lays pasted cells out, so a table over the limits is never expanded (D-116). */
+    handlePaste(_view: EditorView, _event: ClipboardEvent, slice: Slice): boolean {
+      if (format !== 'rich' || fragmentTablesFit(slice.content)) return false;
+      notify(TABLE_TOO_LARGE_MESSAGE);
+      return true;
+    },
+
     transformPastedHTML(html: string): string {
       return sanitizePastedHtml(html, { onDataImage: (token, mime, base64) => uploader.queueDataImage(token, mime, base64) });
+    },
+
+    /**
+     * Tab-separated text with several rows and columns (a spreadsheet copy without HTML) becomes a table in rich notes;
+     * ProseMirror never asks inside code blocks. "Paste as plain text" keeps it text, except for a deferred large paste,
+     * which ProseMirror always marks as plain.
+     */
+    clipboardTextParser(text: string, _context: ResolvedPos, plain: boolean, view: EditorView): Slice {
+      const table = format === 'rich' && (!plain || replaying) ? tableSliceFromText(text, view.state.schema, () => notify(TABLE_PASTED_AS_TEXT_MESSAGE)) : null;
+      // Without a slice ProseMirror parses the text itself (its typing leaves out that a parser may return nothing).
+      return table as Slice;
+    },
+
+    /** A copy holding table content also puts tab-separated text on the clipboard (spreadsheets paste it as cells). */
+    clipboardTextSerializer(slice: Slice, view: EditorView): string {
+      return (format === 'rich' && tableClipboardText(slice, view.state.schema)) || '';
     },
   };
 }

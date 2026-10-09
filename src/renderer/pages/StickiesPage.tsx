@@ -1,6 +1,7 @@
 import { displayTitle } from '../../shared/names';
 import { buildPathIndex, pathOf } from '../../shared/tree/paths';
 import { useServices, useStore } from '../state/use-store';
+import { ColorDot } from '../ui/ColorDot';
 
 export function StickiesPage() {
   const { tree, tabs, commands } = useServices();
@@ -21,7 +22,7 @@ export function StickiesPage() {
         <ul className="sticky-list">
           {stickies.map((n) => (
             <li key={n.id} className="sticky-row">
-              {n.color ? <span className={`dot dot-${n.color}`} aria-hidden /> : null}
+              {n.color ? <ColorDot color={n.color} /> : null}
               <span className="sticky-title">{displayTitle(n.title)}</span>
               <span className="muted sticky-path">{pathOf(index, { projectId: n.projectId, folderId: n.folderId }).join(' › ')}</span>
               <button type="button" className="btn" aria-label={`Float ${displayTitle(n.title)}`} onClick={() => void commands.float(n.id)}>

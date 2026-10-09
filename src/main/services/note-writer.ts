@@ -8,6 +8,7 @@ import {
 import type { Db } from '../db/driver';
 import { DraftsRepo } from '../db/repositories/drafts-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
+import type { NoteVault } from '../locks/note-vault';
 import { AppError, errorDetail } from './app-error';
 import type { Clock } from './clock';
 import type { IdGenerator } from './ids';
@@ -29,6 +30,8 @@ export interface NoteWriterDeps {
   logger: Logger;
   content: NoteContent;
   versions: VersionService;
+  /** Seals the drafts of locked notes (D-111). */
+  vault: NoteVault;
   emit: (event: NoteRevisionEventType) => void;
   faults?: SaveFaults;
 }
@@ -88,7 +91,7 @@ export class NoteWriter {
     if (!row) throw new AppError('NOT_FOUND', MSG.missing);
     if (row.deleted_at !== null || row.revision !== req.baseRevision) {
       const serialized = typeof content === 'string' ? content : JSON.stringify(content);
-      const draftId = this.insertDraft(req, serialized);
+      const draftId = this.insertDraft(req, serialized, row.locked === 1);
       return { kind: 'conflict', currentRevision: row.revision, draftId, reason: row.deleted_at !== null ? 'trashed' : 'stale' };
     }
     if (row.format !== req.format) throw new AppError('VALIDATION_FAILED', 'Format conversion is not part of a plain save');
@@ -111,7 +114,8 @@ export class NoteWriter {
     return error;
   }
 
-  private insertDraft(req: NoteSaveRequestType, serialized: string): string {
+  /** A locked note's draft is sealed with its key and keeps no title (the title is not part of the lock). */
+  private insertDraft(req: NoteSaveRequestType, serialized: string, locked: boolean): string {
     const id = this.deps.ids.uuid();
     this.drafts.insert({
       id,
@@ -119,8 +123,8 @@ export class NoteWriter {
       viewId: req.viewId,
       baseRevision: req.baseRevision,
       format: req.format,
-      title: req.title,
-      content: serialized,
+      title: locked ? undefined : req.title,
+      content: this.deps.vault.draftText(req.noteId, locked, serialized),
       reason: 'conflict',
       now: this.deps.clock.now(),
     });

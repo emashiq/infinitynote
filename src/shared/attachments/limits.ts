@@ -1,11 +1,12 @@
 /**
- * Attachment limits and the exact user-facing messages (D-054). Main and renderer use the same builders so a
+ * Attachment limits and the exact user-facing messages (D-054, D-108). Main and renderer use the same builders so a
  * limit reached in either place reads the same.
  */
 export const DEFAULT_IMAGE_MAX_MB = 20;
-export const DEFAULT_DOCUMENT_MAX_MB = 50;
+/** Files up to this size are copied into Infinity Notes; larger ones can only be linked to their original (D-108). */
+export const DEFAULT_DOCUMENT_MAX_MB = 25;
 export const IMAGE_MAX_MB_RANGE = { min: 1, max: 100 } as const;
-export const DOCUMENT_MAX_MB_RANGE = { min: 1, max: 200 } as const;
+export const DOCUMENT_MAX_MB_RANGE = { min: 1, max: 25 } as const;
 
 export const MAX_MEGAPIXELS = 100;
 export const MAX_PIXELS = MAX_MEGAPIXELS * 1_000_000;
@@ -22,8 +23,12 @@ export function maxBytes(megabytes: number): number {
 }
 
 export const imageTooLarge = (mb: number): string => `This image is larger than ${mb} MB. Change the limit in Settings or use a smaller image.`;
-export const fileTooLarge = (mb: number): string => `This file is larger than ${mb} MB. Change the limit in Settings or use a smaller file.`;
+export const fileTooLarge = (mb: number): string => `This file is larger than ${mb} MB, so it is not copied into Infinity Notes. Link to the original instead.`;
 export const tooLargeMessage = (kind: AttachmentKindName, mb: number): string => (kind === 'image' ? imageTooLarge(mb) : fileTooLarge(mb));
+/** Shown next to a file in the "Add files" dialog when it is over the copy limit. */
+export const onlyLinkWarning = (mb: number): string => `Larger than ${mb} MB: can only be linked`;
+/** Shown when "Always copy" meets a file over the copy limit: it is linked instead, never dropped. */
+export const linkedInsteadMessage = (name: string, mb: number): string => `${name} is larger than ${mb} MB, so it was linked to the original instead of copied.`;
 
 export const ATTACHMENT_MESSAGES = {
   unsupportedImage: 'This image type is not supported. Use PNG, JPEG, GIF or WebP.',
@@ -37,6 +42,7 @@ export const ATTACHMENT_MESSAGES = {
   addingImage: 'Adding image…',
   addingFile: 'Adding file…',
   imageUnavailable: 'Image unavailable',
+  onlyCopy: 'Can only be copied: Infinity Notes cannot see where this file is stored',
 } as const;
 
 export const importFailedMessage = (kind: AttachmentKindName): string =>

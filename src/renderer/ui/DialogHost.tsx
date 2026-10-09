@@ -2,6 +2,7 @@ import { ReminderDialog } from '../reminders/ReminderDialog';
 import { SuggestionCard } from '../reminders/SuggestionCard';
 import { AboutDialog, ShortcutsDialog } from '../shell/HelpDialogs';
 import { MoveDialog } from '../tree/MoveDialog';
+import { LockNoteDialog, LockSettingsDialog } from '../notes/LockDialogs';
 import { useServices, useStore } from '../state/use-store';
 import type { Outcome } from '../state/store';
 import { restoreConfirmBody } from '../state/portability-commands';
@@ -133,6 +134,20 @@ export function DialogHost() {
       return <ShortcutsDialog onClose={close} />;
     case 'about':
       return <AboutDialog onClose={close} />;
+    case 'lockNote':
+    case 'lockSettings': {
+      const note = treeState.snapshot.notes.find((n) => n.id === dialog.noteId);
+      if (!note) return null;
+      const props = {
+        noteId: note.id,
+        title: note.title,
+        bridge: services.bridge,
+        flush: () => tabs.flushActive(),
+        notify: (message: string) => notices.push(message, 'info'),
+        onClose: close,
+      };
+      return dialog.kind === 'lockNote' ? <LockNoteDialog {...props} sticky={note.sticky} /> : <LockSettingsDialog {...props} />;
+    }
     case 'restoreBackup':
       return (
         <ConfirmRunner

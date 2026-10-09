@@ -8,6 +8,7 @@ import { Shell } from './shell/Shell';
 import { createAppServices, type AppServices } from './state/app-services';
 import { AppServicesContext } from './state/use-store';
 import { StartupErrorScreen } from './startup/StartupErrorScreen';
+import { dismissStartupLoader } from './startup/startup-loader';
 import { StickyApp } from './stickies/StickyApp';
 import { WidgetApp } from './widget/WidgetApp';
 import { InvalidWindow } from './stickies/StickyView';
@@ -88,6 +89,12 @@ export function App({ bridge }: { bridge?: InfinityBridge }) {
       cancelled = true;
     };
   }, [api, route]);
+
+  // The startup loader (D-109) stays while the window loads; the shell removes it once ready, any other screen at once.
+  const rendersShell = load.state === 'ready' && load.info.startup.status === 'ok' && load.identity.role === 'main' && routeMatches(route, load.identity);
+  useEffect(() => {
+    if (load.state !== 'pending' && !rendersShell) dismissStartupLoader({ fade: true });
+  }, [load.state, rendersShell]);
 
   if (route.kind === 'invalid') return <InvalidWindow />;
   if (load.state === 'pending') return <main aria-busy="true" />;

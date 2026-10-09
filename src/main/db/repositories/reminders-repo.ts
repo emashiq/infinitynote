@@ -49,6 +49,8 @@ export interface OccurrenceItemRow extends OccurrenceRow {
   followup_interval_minutes: number | null;
   max_followups: number;
   note_title: string;
+  /** 1 when the note is locked: a notification must not show the reminder's text (D-112). */
+  note_locked: number;
   project_id: string | null;
   folder_id: string | null;
   last_outcome: DeliveryRecordOutcome | null;
@@ -115,7 +117,7 @@ const OCCURRENCE_COLS =
 
 const ITEM_SELECT = `SELECT ${OCCURRENCE_COLS},
   r.note_id, r.block_id, r.anchor_state, r.title, r.zone_id, json_extract(r.recurrence, '$.freq') AS repeat, r.followup_interval_minutes, r.max_followups,
-  n.title AS note_title, n.project_id, n.folder_id,
+  n.title AS note_title, n.locked AS note_locked, n.project_id, n.folder_id,
   (SELECT d.outcome FROM alert_deliveries d WHERE d.occurrence_id = o.id ORDER BY d.alert_sequence DESC LIMIT 1) AS last_outcome
 FROM occurrences o JOIN reminders r ON r.id = o.reminder_id JOIN notes n ON n.id = r.note_id`;
 

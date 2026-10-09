@@ -47,6 +47,20 @@
   color: var(--accent);
 }
 
+/* Text color and highlight: the bar under the icon shows the current color. */
+.format-bubble .bubble-color-btn {
+  grid-template-rows: auto 3px;
+  gap: 1px;
+  align-content: center;
+}
+
+.color-bar {
+  width: 16px;
+  height: 3px;
+  border-radius: 1px;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
 .bubble-separator {
   align-self: stretch;
   width: 1px;
@@ -123,10 +137,18 @@
   overflow-y: auto;
 }
 
+/* In a tab the scrolling area is the whole pane; the text keeps the view's side padding inside it. */
+.note-editor-tab .note-editor-content {
+  padding: 8px var(--note-pad-x) 48px;
+}
+
+.note-editor-tab .find-bar {
+  margin-inline: var(--note-pad-x);
+}
+
 .note-editor-content {
   box-sizing: border-box;
   min-height: 100%;
-  max-width: 760px;
   padding: 4px 4px 48px;
   outline: none;
   color: var(--text);
@@ -324,6 +346,70 @@
   gap: 4px;
 }
 
+/* Linked files (D-108): a "Linked" badge; a missing file has a dashed outline and says where it was expected. */
+.file-chip-badge {
+  padding: 0 6px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.file-chip-detail {
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip-linked.is-missing {
+  border-style: dashed;
+}
+
+.file-chip-linked.is-missing .file-chip-detail {
+  color: var(--warning);
+}
+
+/* "Add files" dialog (D-108) */
+.dialog.add-files {
+  width: min(520px, 90vw);
+}
+
+.add-files-list {
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  margin: 0 0 12px;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.add-files-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.add-files-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.add-files-note {
+  display: inline-flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 4px;
+  padding-left: 24px;
+  color: var(--warning);
+}
+
+.add-files .checkbox {
+  margin: 0 0 4px;
+}
+
 /* Note references (Phase 07) */
 .note-ref {
   display: inline-flex;
@@ -366,6 +452,84 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* Highlighted text without its own color gets the ink that reads on its highlight (text-style.ts, shared/color.ts INK). */
+.note-editor-content [data-ink] {
+  border-radius: 2px;
+}
+
+.note-editor-content [data-ink='dark'] {
+  color: #000;
+}
+
+.note-editor-content [data-ink='light'] {
+  color: #fff;
+}
+
+/* Tables: grid lines from the text color, so they suit both themes and every sticky color. */
+.note-editor-content .tableWrapper {
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+
+.note-editor-content table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.note-editor-content td,
+.note-editor-content th {
+  position: relative;
+  min-width: 1em;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  vertical-align: top;
+  text-align: left;
+}
+
+.note-editor-content th {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  font-weight: 600;
+}
+
+.note-editor-content td > * + *,
+.note-editor-content th > * + * {
+  margin-top: 0.4em;
+}
+
+.note-editor-content .selectedCell::after {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  content: '';
+  pointer-events: none;
+}
+
+.note-editor-content .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: -1px;
+  z-index: 3;
+  width: 4px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.note-editor-content.resize-cursor {
+  cursor: col-resize;
+}
+
+.insert-table-size {
+  display: flex;
+  gap: 16px;
+}
+
+.insert-table .checkbox {
+  margin: 12px 0 4px;
 }
 
 /* Find in note */

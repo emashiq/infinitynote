@@ -17,6 +17,7 @@ const note: NoteDtoType = {
   pinnedAt: null,
   favorite: true,
   revision: 0,
+  locked: false,
   createdAt: 1,
   updatedAt: 1,
 };

@@ -193,6 +193,11 @@ dialog::backdrop {
   background: var(--scrim);
 }
 
+.about-logo {
+  display: block;
+  margin: 0 0 8px;
+}
+
 .dialog-title {
   margin: 0 0 12px;
   font-size: 15px;
@@ -254,6 +259,84 @@ dialog::backdrop {
   height: 1px;
   margin: 4px 6px;
   background: var(--border);
+}
+
+/* Popovers (ui/Popover.tsx) and the color picker in them (ui/ColorPicker.tsx). */
+.popover {
+  width: 236px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.color-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 22px);
+  gap: 5px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.swatch[aria-checked='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The choice without a color: a struck-through box. */
+.swatch-reset {
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--danger) 50%, transparent calc(50% + 1px)), var(--bg);
+}
+
+.color-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-custom input[type='color'] {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.color-custom .text-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-code);
+}
+
+.color-picker .field-error {
+  margin: 0;
+}
+
+.popover-heading {
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.popover-heading ~ .popover-heading {
+  margin-top: 12px;
 }
 
 .listbox {
@@ -653,14 +736,20 @@ dialog::backdrop {
   white-space: nowrap;
 }
 
-/* Note view */
+/*
+ * Note view: the text area fills the pane, so its scrollbar runs along the pane's right edge and the text starts at the
+ * left with the same padding as everything above it.
+ */
 .note-view {
+  --note-pad-x: 32px;
   display: flex;
   flex-direction: column;
-  max-width: 760px;
   height: 100%;
-  margin: 0 auto;
-  padding: 24px 32px;
+  padding-top: 16px;
+}
+
+.note-view > :not(.note-editor) {
+  margin-inline: var(--note-pad-x);
 }
 
 /* Only the text: the tab is the title (D-102). The save state shows up only when the note is not saved. */
@@ -1102,4 +1191,60 @@ dialog::backdrop {
   background: var(--accent-soft);
   color: inherit;
   font-weight: 600;
+}
+
+/* Locked notes (D-111) */
+.lock-mark {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.lock-screen-icon {
+  color: var(--text-muted);
+}
+
+.lock-screen-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.lock-screen-form .text-input {
+  width: 240px;
+}
+
+.lock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 460px;
+}
+
+.lock-points {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+}
+
+.lock-points li + li {
+  margin-top: 4px;
+}
+
+.lock-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.lock-section form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.info-lock {
+  margin-top: 8px;
 }

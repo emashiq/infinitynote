@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { AppFlushedRequest, AppFlushRequestEvent, ShellOpenExternalRequest } from '../../src/shared/contracts/app';
-import { AttachmentDto, AttachmentImportBytesRequest, AttachmentImportDialogResponse } from '../../src/shared/contracts/attachments';
+import { AttachmentDto, AttachmentImportBytesRequest, PickFilesResponse } from '../../src/shared/contracts/attachments';
 import { CHANNEL_SCHEMAS } from '../../src/shared/contracts/channels';
 import {
   ConflictDetails,
@@ -64,7 +64,7 @@ describe('Phase 03 contracts (plan section 6.1)', () => {
     expect(AttachmentDto.safeParse(dto).success).toBe(true);
     expect(AttachmentDto.safeParse({ ...dto, width: 0 }).success).toBe(false);
     expect(
-      AttachmentImportDialogResponse.safeParse({ canceled: false, imported: Array.from({ length: 21 }, () => dto), rejected: [] }).success,
+      PickFilesResponse.safeParse({ canceled: false, pickId: dto.id, files: Array.from({ length: 21 }, () => ({ name: 'a.pdf', sizeBytes: 1 })), truncated: true, rejected: [] }).success,
     ).toBe(false);
   });
 
@@ -89,12 +89,13 @@ describe('Phase 03 contracts (plan section 6.1)', () => {
     expect(req.safeParse({ location, sticky: false, format: 'html' }).success).toBe(false);
   });
 
-  it('attachment limit settings: public, defaults 20 and 50 MB, ranges 1-100 and 1-200', () => {
+  it('attachment limit settings: public, defaults 20 and 25 MB, ranges 1-100 and 1-25 (D-108)', () => {
     expect(SETTINGS['attachments.imageMaxMb']).toMatchObject({ default: 20, public: true });
-    expect(SETTINGS['attachments.documentMaxMb']).toMatchObject({ default: 50, public: true });
+    expect(SETTINGS['attachments.documentMaxMb']).toMatchObject({ version: 2, default: 25, public: true });
     expect(SettingsSetRequest.safeParse({ key: 'attachments.imageMaxMb', value: 100 }).success).toBe(true);
     expect(SettingsSetRequest.safeParse({ key: 'attachments.imageMaxMb', value: 101 }).success).toBe(false);
-    expect(SettingsSetRequest.safeParse({ key: 'attachments.documentMaxMb', value: 200 }).success).toBe(true);
+    expect(SettingsSetRequest.safeParse({ key: 'attachments.documentMaxMb', value: 25 }).success).toBe(true);
+    expect(SettingsSetRequest.safeParse({ key: 'attachments.documentMaxMb', value: 26 }).success).toBe(false);
     expect(SettingsSetRequest.safeParse({ key: 'attachments.documentMaxMb', value: 0 }).success).toBe(false);
     expect(SettingsSetRequest.safeParse({ key: 'attachments.documentMaxMb', value: 1.5 }).success).toBe(false);
   });

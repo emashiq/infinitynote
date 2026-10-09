@@ -6,6 +6,7 @@ import { displayTitle } from '../../shared/names';
 import { filterActions, PALETTE_ACTIONS, type PaletteAction } from '../state/palette-actions';
 import { useServices, useStore } from '../state/use-store';
 import { openModal, useReturnFocus } from '../ui/Dialog';
+import { LockMark } from '../ui/LockMark';
 import { Highlighted } from './Highlighted';
 import { quickNotes, type QuickNote } from './quick-notes';
 
@@ -106,6 +107,7 @@ function PaletteDialog() {
           <>
             <span className="option-line">
               <Highlighted segments={option.result.title} className="option-title" />
+              {option.result.note.locked ? <LockMark /> : null}
               <span className="muted option-path">{option.result.note.path.join(' › ')}</span>
             </span>
             {option.result.snippet.length > 0 ? <Highlighted segments={option.result.snippet} className="muted option-snippet" /> : null}

@@ -75,13 +75,19 @@ describe('app events reach the active note (plan section 10.3)', () => {
     expect(fake.callsTo('collab:join')).toHaveLength(joins + 1);
   });
 
-  it('attachment limits follow the public settings and their changes', async () => {
+  it('attachment settings follow the public settings and their changes; the main window remembers an add choice', async () => {
     const { services, fake } = await setupServices();
-    expect(services.editor.limits()).toEqual({ imageMaxMb: 20, documentMaxMb: 50 });
+    expect(services.editor.attachmentPrefs()).toEqual({ imageMaxMb: 20, documentMaxMb: 25, addFiles: 'ask' });
     await fake.bridge.settings.set({ key: 'attachments.imageMaxMb', value: 5 });
-    expect(services.editor.limits()).toEqual({ imageMaxMb: 5, documentMaxMb: 50 });
+    expect(services.editor.attachmentPrefs()).toEqual({ imageMaxMb: 5, documentMaxMb: 25, addFiles: 'ask' });
     fake.emit('settings:changed', { key: 'attachments.documentMaxMb', value: 'nonsense', updatedAt: 1 });
-    expect(services.editor.limits().documentMaxMb).toBe(50);
+    fake.emit('settings:changed', { key: 'attachments.documentMaxMb', value: 50, updatedAt: 1 });
+    expect(services.editor.attachmentPrefs().documentMaxMb).toBe(25);
+    fake.emit('settings:changed', { key: 'attachments.addFiles', value: 'link', updatedAt: 2 });
+    expect(services.editor.attachmentPrefs().addFiles).toBe('link');
+    services.editor.rememberAddFiles!('copy');
+    expect(services.editor.attachmentPrefs().addFiles).toBe('copy');
+    expect(fake.callsTo('settings:set').at(-1)?.req).toEqual({ key: 'attachments.addFiles', value: 'copy' });
   });
 
   it('Ctrl+F (note.find) asks the active note to open find; on Home it does nothing', async () => {

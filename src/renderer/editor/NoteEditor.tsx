@@ -1,8 +1,11 @@
 import { posToDOMRect, type JSONContent } from '@tiptap/core';
+import { isInTable } from '@tiptap/pm/tables';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ATTACHMENT_MESSAGES } from '../../shared/attachments/limits';
+import { flushSync } from 'react-dom';
+import { ATTACHMENT_MESSAGES, maxBytes } from '../../shared/attachments/limits';
 import type { AttachmentKindType } from '../../shared/contracts/attachments';
+import type { Result } from '../../shared/contracts/envelope';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
 import { docToText } from '../../shared/text/textarea-doc';
 import type { RichDocLike } from '../../shared/editor/doc-schema';
@@ -11,11 +14,15 @@ import { collabSync, receiveSteps, sendableOf, syncVersion } from './collab-sync
 import { isRemote, type ContentSource, type EditorHost } from './content';
 import type { EditorHandle } from './editor-handle';
 import { registerEditor } from './editor-registry';
+import { AddFilesDialog } from './AddFilesDialog';
 import { plainExtensions, richExtensions } from './extensions';
 import type { FileActions } from './file-attachment';
+import type { LinkActions } from './file-link';
+import { pickedSources } from './file-sources';
 import { FindBar } from './FindBar';
 import { findPrefill } from './find-core';
 import { FormatBubble } from './FormatBubble';
+import { InsertTableDialog } from './InsertTableDialog';
 import { applyLink, LINK_OPEN_FAILED, linkHrefAt, removeLink, selectedLinkHref } from './link';
 import { LinkDialog } from './LinkDialog';
 import { insertItems, noteMenuItems, type NoteActions } from './note-actions';
@@ -32,8 +39,9 @@ import { requestForLive, requestFromText } from './suggestion-requests';
 import { textOfBlock } from './block-text';
 import { candidateAt, type LiveCandidate } from './suggestions';
 import { useSlashMenu } from './SlashMenu';
+import { insertTable, tableHasHeaderRow, tableMenuItems } from './table-actions';
 import type { EditorServices } from './editor-services';
-import { attachmentNode, AttachmentUploader, insertBlocks } from './uploader';
+import { AttachmentUploader, type FileChoice, type FileChoiceRequest } from './uploader';
 
 /** How long a block a reminder opened stays highlighted. */
 export const REVEAL_MS = 2000;
@@ -80,6 +88,8 @@ export interface NoteEditorProps {
   onAddReminder?: () => void;
   /** "Float as sticky" in the context menu (tabs only). */
   onFloat?: () => void;
+  /** The lock entries of the note menu (tabs only; D-111). */
+  lock?: NoteActions['lock'];
   /** Reminder suggestions and "Create reminder from text"; absent where a note cannot get reminders. */
   suggestions?: SuggestionHost;
 }
@@ -93,19 +103,54 @@ export interface NoteEditorProps {
  */
 export function NoteEditor(props: NoteEditorProps) {
   const { host, format, content, editable, services } = props;
-  const [uploader] = useState(
-    () => new AttachmentUploader({ importBytes: (req) => services.bridge.attachment.importBytes(req), limits: services.limits, notify: services.notify }),
-  );
+  // The "Add files" question (D-108): the uploader waits for the dialog's answer.
+  const [fileChoice, setFileChoice] = useState<{ request: FileChoiceRequest; answer: (choice: FileChoice | null) => void } | null>(null);
+  const [uploader] = useState(() => {
+    const { bridge } = services;
+    return new AttachmentUploader({
+      importBytes: (req) => bridge.attachment.importBytes(req),
+      isOnDisk: (file) => bridge.fileLink.isOnDisk(file),
+      linkFile: (file) => bridge.fileLink.createFromFile(file),
+      prefs: services.attachmentPrefs,
+      notify: services.notify,
+      chooseFiles: (request) => new Promise((answer) => setFileChoice({ request, answer })),
+      rememberChoice: (action) => services.rememberAddFiles?.(action),
+    });
+  });
+  // An editor that goes away while the dialog is open cancels it.
+  const openChoice = useRef(fileChoice);
+  useEffect(() => {
+    openChoice.current = fileChoice;
+  });
+  useEffect(() => () => openChoice.current?.answer(null), []);
 
-  // Attached files open through main's validated hand-off on behalf of this note (INF-REF-08).
-  const [files] = useState<FileActions>(() => {
-    const report = (res: Promise<{ ok: boolean; error?: { message: string } }>) =>
-      void res.then((r) => {
-        if (!r.ok && r.error) services.notify(r.error.message);
-      });
+  // Attached and linked files go through main's validated hand-off on behalf of this note (INF-REF-08, D-108). The note
+  // is saved first, so a file added a moment ago is already recorded as the note's.
+  const [handoff] = useState<{ files: FileActions; links: LinkActions }>(() => {
+    const { bridge, notify } = services;
+    const settle = async <T,>(call: () => Promise<Result<T>>): Promise<T | null> => {
+      await host.flush();
+      const res = await call();
+      if (res.ok) return res.data;
+      notify(res.error.message);
+      return null;
+    };
+    const link = (linkId: string) => ({ noteId: host.noteId, linkId });
     return {
-      open: (attachmentId) => report(services.bridge.attachment.open({ noteId: host.noteId, attachmentId })),
-      showInFolder: (attachmentId) => report(services.bridge.attachment.showInFolder({ noteId: host.noteId, attachmentId })),
+      files: {
+        open: (attachmentId) => void settle(() => bridge.attachment.open({ noteId: host.noteId, attachmentId })),
+        showInFolder: (attachmentId) => void settle(() => bridge.attachment.showInFolder({ noteId: host.noteId, attachmentId })),
+      },
+      links: {
+        status: async (linkId) => {
+          const res = await bridge.fileLink.status({ linkId });
+          return res.ok ? res.data : null;
+        },
+        open: async (linkId) => (await settle(() => bridge.fileLink.open(link(linkId)))) !== null,
+        showInFolder: async (linkId) => (await settle(() => bridge.fileLink.showInFolder(link(linkId)))) !== null,
+        copyIn: async (linkId) => (await settle(() => bridge.fileLink.copyIn(link(linkId))))?.attachment ?? null,
+        copyLimitBytes: () => maxBytes(services.attachmentPrefs().documentMaxMb),
+      },
     };
   });
 
@@ -121,7 +166,7 @@ export function NoteEditor(props: NoteEditorProps) {
   const editor = useEditor(
     {
       extensions: [
-        ...(format === 'rich' ? richExtensions({ uploader, notify: services.notify, files, references: services.references ?? null }) : plainExtensions()),
+        ...(format === 'rich' ? richExtensions({ uploader, notify: services.notify, files: handoff.files, links: handoff.links, references: services.references ?? null }) : plainExtensions()),
         collabSync(props.sync.version, props.sync.clientID),
       ],
       content: content as JSONContent,
@@ -255,6 +300,7 @@ export function NoteEditor(props: NoteEditorProps) {
   });
 
   const [linkDialog, setLinkDialog] = useState<{ href: string; editing: boolean } | null>(null);
+  const [tableDialog, setTableDialog] = useState(false);
 
   // Note references (D-098): the picker inserts a chip followed by a space, so typing goes on after it.
   const canReference = format === 'rich' && editable && services.references !== undefined;
@@ -341,22 +387,35 @@ export function NoteEditor(props: NoteEditorProps) {
     else if (result.notice) services.notify(result.notice);
   };
 
+  // The native picker: main keeps the paths; the uploader copies or links each picked file by its index (D-108).
   const insertAttachment = async (kind: AttachmentKindType) => {
     if (!editor) return;
-    const res = await services.bridge.attachment.importFromDialog({ kind });
+    const res = await services.bridge.attachment.pickFiles({ kind });
     if (!res.ok) {
       services.notify(kind === 'image' ? ATTACHMENT_MESSAGES.imageFailed : ATTACHMENT_MESSAGES.fileFailed);
       return;
     }
-    for (const message of new Set(res.data.rejected.map((r) => r.message))) services.notify(message);
-    if (res.data.imported.length === 0 || editor.isDestroyed) return;
+    const { pickId, files, truncated, rejected } = res.data;
+    for (const message of new Set(rejected.map((r) => r.message))) services.notify(message);
+    if (truncated) services.notify(ATTACHMENT_MESSAGES.tooManyFiles);
+    if (pickId === null || files.length === 0 || editor.isDestroyed) return;
     const { from, to } = editor.state.selection;
-    insertBlocks(editor, { from, to }, res.data.imported.map((dto) => attachmentNode(dto, dto.originalName)));
+    uploader.addFiles(
+      pickedSources({ pickId, files }, kind, (req) => services.bridge.attachment.addPicked(req)),
+      { from, to },
+    );
+    editor.commands.focus();
+  };
+
+  const answerFileChoice = (choice: FileChoice | null) => {
+    fileChoice?.answer(choice);
+    setFileChoice(null);
     editor.commands.focus();
   };
 
   const actions: NoteActions = {
     insertAttachment: (kind) => void insertAttachment(kind),
+    insertTable: format === 'rich' && editable ? () => setTableDialog(true) : undefined,
     insertReference: canReference ? () => setPicker(true) : undefined,
     addReminder: props.onAddReminder,
     createFromText: suggestions ? () => void createFromText() : undefined,
@@ -364,6 +423,7 @@ export function NoteEditor(props: NoteEditorProps) {
     convert: props.onConvert,
     openVersions: props.onOpenVersions,
     float: props.onFloat,
+    lock: props.lock,
   };
   const slash = useSlashMenu(editor, insertItems(editor, actions), format === 'rich' && editable);
 
@@ -417,7 +477,14 @@ export function NoteEditor(props: NoteEditorProps) {
           {slash.element}
         </div>
       </div>
-      {noteMenu ? <Menu label="Note actions" anchor={noteMenu} items={noteMenuItems(actions, { format, editable })} onClose={() => setNoteMenu(null)} /> : null}
+      {noteMenu ? (
+        <Menu
+          label="Note actions"
+          anchor={noteMenu}
+          items={noteMenuItems(actions, { format, editable, table: editable && isInTable(editor.state) ? tableMenuItems(editor, tableHasHeaderRow(editor.state)) : [] })}
+          onClose={() => setNoteMenu(null)}
+        />
+      ) : null}
       {suggestions && suggestionSettings.suggestFromText ? (
         <SuggestionBar editor={editor} settings={suggestionSettings} updateInApp={suggestions.openInApp !== undefined} onCreate={(live) => openLive(live)} onUpdate={updateLive} onDismiss={dismissLive} />
       ) : null}
@@ -429,6 +496,27 @@ export function NoteEditor(props: NoteEditorProps) {
             setPicker(false);
             editor.commands.focus();
           }}
+        />
+      ) : null}
+      {tableDialog ? (
+        <InsertTableDialog
+          onClose={() => {
+            setTableDialog(false);
+            editor.commands.focus();
+          }}
+          onInsert={(size) => {
+            // The modal dialog keeps the focus out of the text until it is gone.
+            flushSync(() => setTableDialog(false));
+            insertTable(editor, size);
+          }}
+        />
+      ) : null}
+      {fileChoice ? (
+        <AddFilesDialog
+          request={fileChoice.request}
+          canRemember={services.rememberAddFiles !== undefined}
+          onChoose={answerFileChoice}
+          onCancel={() => answerFileChoice(null)}
         />
       ) : null}
       {linkDialog ? (

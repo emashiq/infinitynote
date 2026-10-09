@@ -1,22 +1,14 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ATTACHMENT_MESSAGES, importFailedMessage, maxBytes, MAX_FILES_PER_ACTION, tooLargeMessage } from '../../shared/attachments/limits';
+import { ATTACHMENT_MESSAGES, importFailedMessage, maxBytes, tooLargeMessage } from '../../shared/attachments/limits';
 import { documentMime, extensionFor, sanitizeOriginalName } from '../../shared/attachments/names';
 import { sniffImage } from '../../shared/attachments/sniff';
-import {
-  MAX_REJECTED_FILES,
-  type AttachmentDtoType,
-  type AttachmentImportBytesRequestType,
-  type AttachmentImportDialogResponseType,
-  type AttachmentKindType,
-  type RejectedFileType,
-} from '../../shared/contracts/attachments';
+import type { AttachmentDtoType, AttachmentImportBytesRequestType, AttachmentKindType } from '../../shared/contracts/attachments';
 import type { Db } from '../db/driver';
 import { AttachmentsRepo, type AttachmentRow } from '../db/repositories/attachments-repo';
 import { AppError, errorDetail } from './app-error';
 import type { Clock } from './clock';
-import type { DialogAdapter } from './dialog-adapter';
 import type { IdGenerator } from './ids';
 import type { Logger } from './logger';
 import type { SettingsService } from './settings-service';
@@ -29,7 +21,6 @@ export interface AttachmentServiceDeps {
   ids: IdGenerator;
   logger: Logger;
   settings: SettingsService;
-  dialog: Pick<DialogAdapter, 'showOpenFiles'>;
   /** `<userData>/data`; managed files live under `attachments/` inside it. */
   dataDir: string;
   /** Test-only delay before an import starts (E2E hooks), to make the "Adding image…" state observable. */
@@ -157,36 +148,20 @@ export class AttachmentService {
     }
   }
 
-  /** Native file picker import: at most 20 files; per-file problems are reported in `rejected`. */
-  async importFromDialog(kind: AttachmentKindType, ctx: { webContentsId: number }): Promise<AttachmentImportDialogResponseType> {
-    const paths = await this.deps.dialog.showOpenFiles({ webContentsId: ctx.webContentsId, kind });
-    if (paths === null) return { canceled: true, imported: [], rejected: [] };
-    const imported: AttachmentDtoType[] = [];
-    const rejected: RejectedFileType[] = [];
-    const reject = (file: string, code: string, message: string) => {
-      if (rejected.length < MAX_REJECTED_FILES) rejected.push({ name: sanitizeOriginalName(file) ?? 'file', code, message });
-    };
-    for (const [index, file] of paths.entries()) {
-      if (index >= MAX_FILES_PER_ACTION) {
-        reject(file, 'LIMIT_EXCEEDED', ATTACHMENT_MESSAGES.tooManyFiles);
-        continue;
-      }
-      try {
-        imported.push(await this.importPath(kind, file));
-      } catch (err) {
-        if (err instanceof AppError) reject(file, err.code, err.message);
-        else {
-          this.deps.logger.warn(`attachment: import from dialog failed ${errorDetail(err)}`);
-          reject(file, 'INTERNAL', importFailedMessage(kind));
-        }
-      }
+  /**
+   * Copies a file on disk that main chose (a picked file, or a linked file copied in later; D-108) with the same limits
+   * as bytes from the renderer. A file that cannot be read is reported as one that could not be added.
+   */
+  async importFile(kind: AttachmentKindType, file: string): Promise<AttachmentDtoType> {
+    let real: string;
+    let stat: fs.Stats;
+    try {
+      real = await fs.promises.realpath(file);
+      stat = await fs.promises.stat(real);
+    } catch (err) {
+      this.deps.logger.warn(`attachment: file unreadable ${errorDetail(err)}`);
+      throw new AppError('NOT_FOUND', importFailedMessage(kind));
     }
-    return { canceled: false, imported, rejected };
-  }
-
-  private async importPath(kind: AttachmentKindType, file: string): Promise<AttachmentDtoType> {
-    const real = await fs.promises.realpath(file);
-    const stat = await fs.promises.stat(real);
     if (!stat.isFile()) throw new AppError('VALIDATION_FAILED', importFailedMessage(kind));
     const limit = this.limitMb(kind);
     // Checked before reading, so an oversized file is never loaded into memory.

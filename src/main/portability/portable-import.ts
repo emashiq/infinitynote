@@ -5,11 +5,13 @@ import type { ReminderInputType } from '../../shared/contracts/reminders';
 import type { RichDocLike } from '../../shared/editor/doc-schema';
 import type { Db } from '../db/driver';
 import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
+import { LinkedFilesRepo } from '../db/repositories/linked-files-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
 import { TagsRepo } from '../db/repositories/tags-repo';
 import { AppError, errorDetail } from '../services/app-error';
 import type { AttachmentService } from '../services/attachment-service';
 import { EMPTY_DOC_JSON } from '../services/hierarchy-service';
+import { isUsableLinkPath } from '../services/linked-file';
 import type { Logger } from '../services/logger';
 import { normalizeContent, type NoteContent } from '../services/note-content';
 import type { ReminderService } from '../services/reminder-service';
@@ -55,6 +57,8 @@ function checkStructure(doc: PortableDocumentType): void {
   }
   if (doc.reminders.some((r) => !notes.has(r.noteId))) throw invalid();
   if (new Set(doc.attachments.map((a) => a.id)).size !== doc.attachments.length) throw invalid();
+  const links = doc.links ?? [];
+  if (new Set(links.map((l) => l.id)).size !== links.length) throw invalid();
 }
 
 /** Folders parents first; a cycle (no progress) is refused. */
@@ -130,12 +134,14 @@ export async function importPortable(deps: PortableImportDeps, file: string): Pr
     uuid: deps.uuid,
     blocksByNote: new Map(doc.notes.filter((n) => n.format === 'rich').map((n) => [n.id, archivedBlockIds(n.content)])),
     attachments: stored,
+    links: new Map((doc.links ?? []).map((l) => [l.id, deps.uuid()])),
   });
   const now = deps.now();
+  const refusedLinks = (doc.links ?? []).filter((l) => !isUsableLinkPath(l.path)).length;
   const result = runTx(deps.db, deps.logger, () => writeDocument(deps, doc, remap, now));
   deps.onTreeChanged({ reason: 'create', trashedNoteIds: [] });
   if (result.counts.reminders > 0) deps.reminders.announceImported(result.noteIdsWithReminders);
-  deps.logger.info(`import: portable ${JSON.stringify(result.counts)} skippedReminders=${result.skippedReminders}`);
+  deps.logger.info(`import: portable ${JSON.stringify(result.counts)} skippedReminders=${result.skippedReminders} refusedLinks=${refusedLinks}`);
   return { counts: result.counts, skippedReminders: result.skippedReminders, folderName: result.folderName };
 }
 
@@ -148,6 +154,13 @@ function writeDocument(deps: PortableImportDeps, doc: PortableDocumentType, rema
   const commonFolder = folderName ? deps.uuid() : null;
   if (commonFolder && folderName) hierarchy.insertFolder(commonFolder, null, null, folderName, now);
   const project = (id: string | null) => (id === null ? null : remap.item(id));
+  // Link records only: the files stay where they were, so on another computer the chips show the file as missing. A
+  // path that a new link could not have (a network or device path, another system's path) is not stored at all, so
+  // nothing ever touches it; its chips show the link as unavailable (D-115).
+  const links = new LinkedFilesRepo(deps.db);
+  for (const l of doc.links ?? []) {
+    if (isUsableLinkPath(l.path)) links.insert({ id: remap.link(l.id)!, path: l.path, name: l.name, sizeBytes: l.sizeBytes, now });
+  }
 
   for (const p of doc.projects) {
     hierarchy.insertProject(remap.item(p.id), p.name, now);
@@ -171,6 +184,7 @@ function writeDocument(deps: PortableImportDeps, doc: PortableDocumentType, rema
     deps.content.write({ noteId: id, format: n.format, content, title: null, expectedRevision: 0, now });
     if (n.sticky) hierarchy.setSticky(id, true);
     if (n.sticky && n.color) hierarchy.setColor(id, n.color);
+    if (n.sticky && n.textColor) hierarchy.setTextColor(id, n.textColor);
     if (n.pinned) hierarchy.setPinned(id, true, now);
     if (n.favorite) hierarchy.setFavorite('note', id, true);
     if (n.tags.length > 0) tags.replaceForNote(id, n.tags);

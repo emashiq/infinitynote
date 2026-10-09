@@ -10,7 +10,7 @@ import type { ActionResult, NoteController } from './note-controller';
 import { VersionsDialog } from './VersionsDialog';
 
 export const CONVERT_TITLE = 'Convert to plain text?';
-export const CONVERT_BODY = 'Formatting, checklists, links and images will be removed. A version of the current note is saved so you can restore it.';
+export const CONVERT_BODY = 'Formatting, fonts and colors, checklists, links and images will be removed, and tables become lines of tab-separated text. A version of the current note is saved so you can restore it.';
 export const RESTORE_VERSION_TITLE = 'Restore this version?';
 export const RESTORE_VERSION_BODY = 'The current content is saved as a version first.';
 
@@ -48,7 +48,7 @@ export function NoteDialogs({
 }) {
   const loadVersions = useCallback(() => controller.listVersions(), [controller]);
   const close = () => onDialog(null);
-  const { drafts } = useStore(controller.store);
+  const { drafts, note } = useStore(controller.store);
   const compareDraft = dialog?.kind === 'compare' ? (drafts.find((d) => d.id === dialog.draftId) ?? null) : null;
   return (
     <>
@@ -66,7 +66,7 @@ export function NoteDialogs({
         />
       ) : null}
       {dialog?.kind === 'versions' ? (
-        <VersionsDialog load={loadVersions} now={now} canRestore={!busy} onClose={close} onRestore={(version) => onDialog({ kind: 'restoreVersion', version })} />
+        <VersionsDialog load={loadVersions} now={now} canRestore={!busy} locked={note?.locked ?? false} onClose={close} onRestore={(version) => onDialog({ kind: 'restoreVersion', version })} />
       ) : null}
       {dialog?.kind === 'restoreVersion' ? (
         <ConfirmDialog

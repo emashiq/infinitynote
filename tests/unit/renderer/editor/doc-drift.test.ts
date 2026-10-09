@@ -19,7 +19,7 @@ function rangeOf(editor: Editor, text: string): { from: number; to: number } {
 
 const SOURCE = [
   '<h1>Heading one</h1><h2>Heading two</h2><h3>Heading three</h3>',
-  '<p>styled words</p><p>code words</p><p>a link here</p>',
+  '<p>styled words</p><p>code words</p><p>a link here</p><p>colored words</p>',
   '<ul><li><p>bullet</p><ul><li><p>nested</p></li></ul></li></ul>',
   '<ol start="3"><li><p>numbered</p></li></ol>',
   '<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>task</p></li></ul>',
@@ -41,18 +41,35 @@ describe('editor output and normalizeRichDoc stay in step (D-053)', () => {
     editor.chain().setTextSelection(rangeOf(editor, 'styled')).toggleBold().toggleItalic().toggleStrike().toggleUnderline().run();
     editor.chain().setTextSelection(rangeOf(editor, 'code')).toggleCode().run();
     editor.chain().setTextSelection(rangeOf(editor, 'link')).setLink({ href: 'https://example.com/docs' }).run();
+    editor.chain().setTextSelection(rangeOf(editor, 'colored')).setColor('#e03131').setBackgroundColor('#fff3a3').setFontFamily('mono').setFontSize('18px').run();
     editor.chain().setTextSelection(rangeOf(editor, 'task').from).run();
     editor.commands.keyboardShortcut('Mod-Enter');
     editor.commands.insertContentAt(editor.state.doc.content.size, [
       { type: 'image', attrs: { attachmentId: crypto.randomUUID(), alt: 'chart', size: 'small', width: 640, height: 480 } },
       { type: 'fileAttachment', attrs: { attachmentId: crypto.randomUUID(), name: 'report final.pdf', sizeBytes: 2048, mime: 'application/pdf' } },
       { type: 'paragraph', content: [{ type: 'text', text: 'see ' }, { type: 'noteRef', attrs: { noteId: crypto.randomUUID(), blockId: crypto.randomUUID(), label: 'Design', excerpt: 'Goals' } }] },
+      {
+        type: 'table',
+        content: [
+          { type: 'tableRow', content: [{ type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Head' }] }] }, { type: 'tableHeader', attrs: { align: 'right' }, content: [{ type: 'paragraph' }] }] },
+          {
+            type: 'tableRow',
+            content: [
+              { type: 'tableCell', attrs: { colwidth: [120] }, content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'in cell' }] }] }] }] },
+              { type: 'tableCell', content: [{ type: 'paragraph' }] },
+            ],
+          },
+        ],
+      },
       { type: 'paragraph', content: [{ type: 'text', text: 'বাংলা 😀 é' }] },
     ]);
 
     const json = editor.getJSON();
     const used = new Set(JSON.stringify(json).match(/"type":"[a-zA-Z]+"/g)!.map((t) => t.slice(8, -1)));
-    for (const type of ['heading', 'paragraph', 'bold', 'italic', 'strike', 'underline', 'code', 'link', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'blockquote', 'hardBreak', 'codeBlock', 'horizontalRule', 'image', 'fileAttachment', 'noteRef']) {
+    for (const type of [
+      'heading', 'paragraph', 'bold', 'italic', 'strike', 'underline', 'code', 'link', 'textStyle', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem',
+      'blockquote', 'hardBreak', 'codeBlock', 'horizontalRule', 'image', 'fileAttachment', 'noteRef', 'table', 'tableRow', 'tableHeader', 'tableCell',
+    ]) {
       expect(used, type).toContain(type);
     }
     expect(JSON.stringify(json)).toContain('"checked":true');

@@ -1,6 +1,7 @@
 import { COPYRIGHT, DEVELOPER_CREDIT, PRODUCT_NAME } from '../../shared/app-identity';
 import { SHORTCUT_GROUPS } from '../state/shortcuts';
 import { useServices, useStore } from '../state/use-store';
+import { AppLogo } from '../ui/AppLogo';
 import { Dialog } from '../ui/Dialog';
 
 function CloseRow({ onClose }: { onClose: () => void }) {
@@ -49,12 +50,13 @@ export function AboutCredits() {
   );
 }
 
-/** Help → About (D-097): name, version, runtime versions and credits. */
+/** Help → About (D-097, D-109): logo, name, version, runtime versions and credits. */
 export function AboutDialog({ onClose }: { onClose: () => void }) {
   const { meta } = useServices();
   const { info } = useStore(meta);
   return (
     <Dialog title={`About ${PRODUCT_NAME}`} onClose={onClose}>
+      <AppLogo size={64} className="about-logo" />
       <p>Offline notes, stickies and reminders.</p>
       {info ? (
         <p className="muted">

@@ -4,6 +4,7 @@ import { textToDoc } from '../shared/text/textarea-doc';
 import type { Db } from './db/driver';
 import type { Desktop } from './desktop';
 import { NotesRepo } from './db/repositories/notes-repo';
+import { createFakeOsKeyVerifier, createMemoryKeyProtector, type KeyProtector, type OsKeyVerifier } from './locks/os-key';
 import type { MainServices } from './main-services';
 import { AppError } from './services/app-error';
 import type { CloseChoice, CloseDialogOptions } from './services/close-dialog';
@@ -55,6 +56,8 @@ export interface TestState {
   failSaves: number;
   /** Delay before each attachment import starts. */
   importDelayMs: number;
+  /** Delay before app:getInfo answers (the startup loader stays up meanwhile). */
+  startupDelayMs: number;
   flushLog: FlushOutcome[];
   externalWrite: ExternalWrite | null;
   /** Each main-window close question takes the next answer; an empty queue means Cancel. No real dialog is shown. */
@@ -85,6 +88,11 @@ export interface TestState {
   autostart: { enabled: boolean; calls: boolean[] };
   /** Raw reminder, occurrence, delivery, source and dismissal rows (a fresh task, F04-A2). */
   reminders(): Promise<ReminderRows>;
+  /**
+   * The fake Windows Hello of locked notes (D-113): its availability, the next answers (an empty queue answers
+   * Verified) and the prompts it showed. Real Windows Hello is never called under the hooks.
+   */
+  hello: ReturnType<typeof createFakeOsKeyVerifier>['state'];
 }
 
 export interface ReminderRows {
@@ -137,6 +145,8 @@ export interface TestHooks {
   globalShortcut: GlobalShortcutAdapter;
   /** Replaces app.relaunch under the hooks: counts the request and quits. */
   restart(quit: () => void): void;
+  /** The fake Windows Hello and a key protector bound to this process (never DPAPI or a real prompt in tests). */
+  osKey: { verifier: OsKeyVerifier; protector: KeyProtector };
   /** Exposes the scheduler once it exists (storage is up). */
   attachReminders(deps: { scheduler: ReminderScheduler; db: Db }): void;
 }
@@ -196,6 +206,7 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
   const fakeDisplays = parseTestDisplays(env.INFINITY_NOTES_TEST_DISPLAYS);
   const displays = fakeDisplays ? createFakeDisplayProvider(fakeDisplays) : null;
   const reminderSeams = createReminderSeams(env);
+  const hello = createFakeOsKeyVerifier();
   const state: TestState = {
     blockedRequests: [],
     shellCalls: [],
@@ -208,6 +219,7 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     autoBackup: async () => undefined,
     failSaves: 0,
     importDelayMs: 0,
+    startupDelayMs: 0,
     flushLog: [],
     externalWrite: null,
     closeChoices: [],
@@ -226,10 +238,12 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     widget: async () => null,
     autostart: { enabled: false, calls: [] },
     reminders: async () => ({ reminders: [], occurrences: [], deliveries: [], sources: [], dismissals: [] }),
+    hello: hello.state,
   };
   globalThis.__infinityTest = state;
   return {
     state,
+    osKey: { verifier: hello.verifier, protector: createMemoryKeyProtector() },
     shell: {
       openPath: async (p) => {
         state.shellCalls.push({ op: 'openPath', path: p });

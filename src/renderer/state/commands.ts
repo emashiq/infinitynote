@@ -27,7 +27,10 @@ export type CommandId =
   | 'note.exportMarkdown'
   | 'note.exportText'
   | 'notes.exportAll'
-  | 'notes.import';
+  | 'notes.import'
+  | 'note.lock'
+  | 'note.lockNow'
+  | 'notes.lockAll';
 
 export interface CommandRunner {
   run(id: CommandId): Promise<void>;
@@ -37,6 +40,12 @@ export interface CommandRunner {
   float(noteId: string): Promise<void>;
   /** Creates a sticky at the location (the current one by default) and floats it; no tab opens (D-069). */
   newSticky(location?: LocationType): Promise<void>;
+  /** "Lock note…", or the lock settings of a locked note (D-111). */
+  openLock(noteId: string): void;
+  /** Locks an unlocked note again; its open tab is saved first. */
+  lockNow(noteId: string): Promise<void>;
+  /** Locks every unlocked note again. */
+  lockAll(): Promise<void>;
 }
 
 export function createCommandRunner(
@@ -91,10 +100,31 @@ export function createCommandRunner(
     await float(res.data.note.id);
   };
 
+  const openLock = (noteId: string): void => {
+    const locked = tree.store.getState().snapshot.notes.find((n) => n.id === noteId)?.locked ?? false;
+    ui.openDialog({ kind: locked ? 'lockSettings' : 'lockNote', noteId });
+  };
+
+  const lockNow = async (noteId: string): Promise<void> => {
+    if (tabs.activeController()?.noteId === noteId) await tabs.flushActive();
+    const res = await bridge.lock.lockNow({ noteId });
+    if (!res.ok) notices.push(res.error.message, 'error');
+  };
+
+  const lockAll = async (): Promise<void> => {
+    await tabs.flushActive();
+    const res = await bridge.lock.lockAll();
+    if (!res.ok) notices.push(res.error.message, 'error');
+    else notices.push(res.data.locked === 0 ? 'No note was unlocked' : `Locked ${res.data.locked === 1 ? '1 note' : `${res.data.locked} notes`} again`, 'info');
+  };
+
   return {
     currentLocation,
     float,
     newSticky,
+    openLock,
+    lockNow,
+    lockAll,
     async run(id) {
       switch (id) {
         case 'note.new':
@@ -175,6 +205,18 @@ export function createCommandRunner(
           return portability.exportAll();
         case 'notes.import':
           return portability.importNotes();
+        case 'note.lock': {
+          const noteId = activeNoteId();
+          if (noteId) openLock(noteId);
+          return;
+        }
+        case 'note.lockNow': {
+          const noteId = activeNoteId();
+          if (noteId) await lockNow(noteId);
+          return;
+        }
+        case 'notes.lockAll':
+          return lockAll();
       }
     },
   };

@@ -12,6 +12,8 @@ export interface TreeNode {
   label: string;
   sticky?: boolean;
   color?: NoteColorType | null;
+  /** A locked note (D-111). */
+  locked?: boolean;
   pinned?: boolean;
   favorite?: boolean;
   /** For favorite entries: the kind of the underlying item. */
@@ -116,6 +118,7 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
       label,
       sticky: n.sticky,
       color: n.color,
+      locked: n.locked,
       pinned: n.pinnedAt !== null,
       favorite: n.favorite,
       parentKey,

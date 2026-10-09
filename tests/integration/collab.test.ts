@@ -1,12 +1,14 @@
 import { collab, getVersion, receiveTransaction, sendableSteps } from 'prosemirror-collab';
-import { EditorState, TextSelection } from '@tiptap/pm/state';
+import { EditorState, TextSelection, type Transaction } from '@tiptap/pm/state';
 import { Step } from '@tiptap/pm/transform';
 import { randomUUID } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CollabResetEventType, CollabStepsEventType } from '../../src/shared/contracts/collab';
 import { noteSchema } from '../../src/shared/editor/schema';
 import { docToText } from '../../src/shared/text/textarea-doc';
 import { AppError } from '../../src/main/services/app-error';
+import { HUB_SAVE_DELAY_MS } from '../../src/main/services/collab-hub';
+import { SAVE_RETRIES, SAVE_RETRY_DELAY_MS } from '../../src/shared/contracts/notes';
 import { setupServices } from './hierarchy-helpers';
 
 type Services = Awaited<ReturnType<typeof setupServices>>;
@@ -16,8 +18,8 @@ afterEach(() => {
   for (const s of opened.splice(0)) s.collab.closeAll();
 });
 
-async function services(): Promise<Services> {
-  const s = await setupServices();
+async function services(opts: Parameters<typeof setupServices>[0] = {}): Promise<Services> {
+  const s = await setupServices(opts);
   opened.push(s);
   return s;
 }
@@ -49,6 +51,11 @@ class Client {
   type(text: string, at: 'start' | 'end'): void {
     const pos = at === 'start' ? 1 : this.state.doc.content.size - 1;
     this.state = this.state.apply(this.state.tr.setSelection(TextSelection.create(this.state.doc, pos)).insertText(text));
+  }
+
+  /** Any edit, as a transaction on this view's state. */
+  edit(change: (tr: Transaction) => Transaction): void {
+    this.state = this.state.apply(change(this.state.tr));
   }
 
   /** Sends the unconfirmed steps; returns the hub's answer. */
@@ -140,6 +147,35 @@ describe('live sync of one note between views (D-103)', () => {
     expect(noteSchema('rich').nodeFromJSON(JSON.parse(row.content_json!)).eq(authority)).toBe(true);
     expect(row.plain_text).toBe(authority.textContent);
     expect(s.revisions.at(-1)).toMatchObject({ noteId, revision });
+  });
+
+  it('tables and character formatting sync and save through the shared schema; cell text is indexed (v0.2.0)', async () => {
+    const s = await services();
+    const noteId = textNote(s, 'colored');
+    const a = new Client(s, noteId, 1);
+    const b = new Client(s, noteId, 2);
+    a.edit((tr) => tr.addMark(1, 8, a.state.schema.marks.textStyle!.create({ color: '#e03131', fontFamily: 'mono', fontSize: '18px', backgroundColor: '#fff3a3' })));
+    const { table, tableRow, tableHeader, tableCell, paragraph } = b.state.schema.nodes;
+    const cell = (type: typeof tableCell, text: string) => type!.create(null, paragraph!.create({ id: randomUUID() }, b.state.schema.text(text)));
+    const grid = table!.create({ id: randomUUID() }, [
+      tableRow!.create(null, [cell(tableHeader, 'Region'), cell(tableHeader, 'Owner')]),
+      tableRow!.create(null, [cell(tableCell, 'Frankfurt'), tableCell!.create({ colwidth: [140] }, paragraph!.create({ id: randomUUID() }, b.state.schema.text('Quokkateam')))]),
+    ]);
+    b.edit((tr) => tr.insert(b.state.doc.content.size, grid));
+    a.sync();
+    b.receive();
+    b.sync();
+    a.receive();
+    const authority = s.collab.documentOf(noteId)!;
+    expect(a.state.doc.eq(authority) && b.state.doc.eq(authority)).toBe(true);
+
+    await s.collab.flush({ noteId, viewId: a.viewId }, 1);
+    const row = storedRow(s, noteId);
+    expect(noteSchema('rich').nodeFromJSON(JSON.parse(row.content_json!)).eq(authority)).toBe(true);
+    expect(row.content_json).toContain('"colwidth":[140]');
+    expect(row.content_json).toContain('"fontFamily":"mono"');
+    expect(row.plain_text).toBe('colored\nRegion\tOwner\nFrankfurt\tQuokkateam');
+    expect(s.search.query({ query: 'quokka' }).results.map((r) => r.note.id)).toEqual([noteId]);
   });
 
   it('plain-text notes sync the same way and are saved as text', async () => {
@@ -258,5 +294,75 @@ describe('live sync of one note between views (D-103)', () => {
     s.collab.leave(noteId, b.viewId, 2);
     expect(storedRow(s, noteId).plain_text).toBe('base a b');
     expect(s.collab.documentOf(noteId)).toBeNull();
+  });
+});
+
+describe('a flush while main retries a failed save (D-072)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Services whose next `failing` saves fail with INTERNAL; `attempts` counts every save attempt. */
+  async function failingSaves() {
+    const faults = { failing: 0, attempts: 0 };
+    const s = await services({
+      testFaults: {
+        save: {
+          beforeSave: () => {
+            faults.attempts += 1;
+            if (faults.failing <= 0) return;
+            faults.failing -= 1;
+            throw new AppError('INTERNAL', 'Could not save the note');
+          },
+        },
+      },
+    });
+    const noteId = textNote(s, 'base');
+    vi.useFakeTimers();
+    const view = new Client(s, noteId, 1);
+    faults.attempts = 0;
+    return { s, noteId, view, faults };
+  }
+
+  /** Starts a flush and records how it settled, without awaiting it. */
+  function flushOf(s: Services, view: Client) {
+    const result: { outcome: 'pending' | 'saved' | AppError } = { outcome: 'pending' };
+    void s.collab.flush({ noteId: view.noteId, viewId: view.viewId }, view.webContentsId).then(
+      () => (result.outcome = 'saved'),
+      (err: AppError) => (result.outcome = err),
+    );
+    return result;
+  }
+
+  it('joins the retrying save and fails within one retry window instead of starting the retries again', async () => {
+    const { s, noteId, view, faults } = await failingSaves();
+    faults.failing = Number.POSITIVE_INFINITY;
+    view.type(' typed', 'end');
+    view.sync();
+    await vi.advanceTimersByTimeAsync(HUB_SAVE_DELAY_MS);
+    expect(faults.attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(SAVE_RETRY_DELAY_MS / 2);
+
+    const flushed = flushOf(s, view);
+    await vi.advanceTimersByTimeAsync(SAVE_RETRIES * SAVE_RETRY_DELAY_MS - SAVE_RETRY_DELAY_MS / 2);
+    expect(flushed.outcome).toMatchObject({ code: 'INTERNAL' });
+    expect(faults.attempts).toBe(SAVE_RETRIES + 1);
+    expect(storedRow(s, noteId).plain_text).toBe('base');
+  });
+
+  it('joins a retrying save that then succeeds: one stored revision with every edit made before the retry', async () => {
+    const { s, noteId, view, faults } = await failingSaves();
+    faults.failing = 1;
+    view.type(' one', 'end');
+    view.sync();
+    await vi.advanceTimersByTimeAsync(HUB_SAVE_DELAY_MS);
+    view.type(' two', 'end');
+    view.sync();
+
+    const flushed = flushOf(s, view);
+    await vi.advanceTimersByTimeAsync(SAVE_RETRY_DELAY_MS);
+    expect(flushed.outcome).toBe('saved');
+    expect(faults.attempts).toBe(2);
+    expect(storedRow(s, noteId)).toMatchObject({ plain_text: 'base one two', revision: 2 });
   });
 });

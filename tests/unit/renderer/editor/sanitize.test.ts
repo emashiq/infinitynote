@@ -91,6 +91,32 @@ describe('sanitizePastedHtml (INF-EDIT-07)', () => {
     expect(img.getAttribute('src')).toBeNull();
   });
 
+  it('inline styles keep only the formatting a note stores, rewritten from validated values', () => {
+    const { doc } = clean(
+      '<p style="color:#e03131">p</p><span style="color: #E03131; background-color: rgb(255, 243, 163); font-family: \'Times New Roman\', serif; font-size: 12pt; position: fixed; background-image: url(https://evil.example/x)">s</span>' +
+        '<span style="color: red; font-family: Papyrus; font-size: 13px; behavior: url(x.htc)">gone</span><span style="color:#000000;background-color:#FFFFFF">doc</span>' +
+        '<table><tr><td style="text-align: right; color: red" colspan="2" rowspan="1">c</td><td style="text-align: justify">j</td></tr></table>',
+    );
+    const [kept, gone, defaults] = [...doc.querySelectorAll('span')];
+    expect(doc.querySelector('p')!.hasAttribute('style')).toBe(false);
+    expect(kept!.style.cssText).not.toMatch(/position|url|evil/);
+    expect(kept!.style.fontSize).toBe('16px');
+    expect(kept!.style.fontFamily).toContain('Times New Roman');
+    expect(kept!.getAttribute('style')).toMatch(/color: #e03131/);
+    expect(kept!.getAttribute('style')).toMatch(/background-color: #fff3a3/);
+    expect(gone!.hasAttribute('style')).toBe(false);
+    expect(defaults!.hasAttribute('style')).toBe(false);
+    const [c, j] = [...doc.querySelectorAll('td')];
+    expect(c!.getAttribute('style')).toBe('text-align: right');
+    expect(c!.getAttribute('colspan')).toBe('2');
+    expect(j!.hasAttribute('style')).toBe(false);
+  });
+
+  it('keeps table structure: header cells, spans and column widths', () => {
+    const { out } = clean('<table><colgroup><col width="120"></colgroup><tr><th colspan="2">h</th></tr><tr><td colwidth="80" rowspan="2">a</td><td>b</td></tr></table>');
+    for (const part of ['<th colspan="2">', 'colwidth="80"', 'rowspan="2"', '<col width="120">']) expect(out).toContain(part);
+  });
+
   it('keeps the data attributes the schema parses', () => {
     const { out } = clean('<ul data-type="taskList"><li data-type="taskItem" data-checked="true"><p data-id="x">t</p></li></ul><div data-file-attachment-id="y">f</div>');
     for (const attr of ['data-type="taskList"', 'data-type="taskItem"', 'data-checked="true"', 'data-id="x"', 'data-file-attachment-id="y"']) expect(out).toContain(attr);

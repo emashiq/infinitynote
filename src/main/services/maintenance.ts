@@ -4,6 +4,7 @@ import { DAY_MS } from '../../shared/versions/retention';
 import type { Db } from '../db/driver';
 import { AttachmentsRepo } from '../db/repositories/attachments-repo';
 import { DraftsRepo } from '../db/repositories/drafts-repo';
+import { LinkedFilesRepo } from '../db/repositories/linked-files-repo';
 import { VersionsRepo } from '../db/repositories/versions-repo';
 import { errorDetail } from './app-error';
 import { containedAttachmentFile } from './attachment-files';
@@ -33,21 +34,26 @@ export interface MaintenanceReport {
   draftsCapped: number;
   draftsDeleted: number;
   attachmentsDeleted: number;
+  /** Link records (D-108) that nothing used for the grace period; the linked files themselves are never touched. */
+  linkedFilesDeleted: number;
 }
 
 /**
  * Retention and garbage collection (INF-PORT-07, INF-PORT-08, F-03-4), run at startup and every few hours: empties
  * Trash after the configured days (never by default), prunes automatic versions to the configured age and count,
- * caps open `lease_lost` drafts, deletes old resolved drafts and deletes attachment files nobody uses any more.
+ * caps open `lease_lost` drafts, deletes old resolved drafts and deletes attachment files and link records nobody uses
+ * any more.
  * Each step is independent; a failure is logged and the others still run.
  */
 export class MaintenanceService {
   private readonly attachments: AttachmentsRepo;
   private readonly drafts: DraftsRepo;
   private readonly versionRows: VersionsRepo;
+  private readonly links: LinkedFilesRepo;
 
   constructor(private readonly deps: MaintenanceDeps) {
     this.attachments = new AttachmentsRepo(deps.db);
+    this.links = new LinkedFilesRepo(deps.db);
     this.drafts = new DraftsRepo(deps.db);
     this.versionRows = new VersionsRepo(deps.db);
   }
@@ -70,6 +76,7 @@ export class MaintenanceService {
       draftsCapped: this.step('drafts', 0, () => this.drafts.capOpenLeaseLost(MAX_OPEN_LEASE_LOST_DRAFTS, now)),
       draftsDeleted: this.step('drafts', 0, () => this.drafts.deleteResolvedBefore(now - RESOLVED_DRAFT_KEEP_MS)),
       attachmentsDeleted: 0,
+      linkedFilesDeleted: this.step('links', 0, () => this.links.deleteUnreferencedSince(now - ATTACHMENT_GC_GRACE_MS, now)),
     };
     try {
       report.attachmentsDeleted = await this.collectAttachments(now);

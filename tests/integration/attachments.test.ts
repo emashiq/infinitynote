@@ -95,9 +95,9 @@ describe('attachment import (INF-EDIT-08, INF-EDIT-10, INF-EDIT-14)', () => {
       code: 'LIMIT_EXCEEDED',
       message: 'This image is larger than 1 MB. Change the limit in Settings or use a smaller image.',
     });
-    expect(await rejection(s.attachments.importBytes({ kind: 'document', bytes: new Uint8Array(50 * MB + 1) }))).toMatchObject({
+    expect(await rejection(s.attachments.importBytes({ kind: 'document', bytes: new Uint8Array(25 * MB + 1) }))).toMatchObject({
       code: 'LIMIT_EXCEEDED',
-      message: 'This file is larger than 50 MB. Change the limit in Settings or use a smaller file.',
+      message: 'This file is larger than 25 MB, so it is not copied into Infinity Notes. Link to the original instead.',
     });
     const enc = (t: string) => new TextEncoder().encode(t);
     for (const bytes of [enc('<svg xmlns="http://www.w3.org/2000/svg"/>'), enc('<html><script>x</script></html>'), makePng(4, 4).subarray(0, 40)]) {
@@ -142,29 +142,31 @@ describe('attachment import (INF-EDIT-08, INF-EDIT-10, INF-EDIT-14)', () => {
     }
   });
 
-  it('dialog import copies: the original can be removed and the protocol still serves the managed copy', async () => {
+  it('a picked file is copied: the original can be removed and the protocol still serves the managed copy', async () => {
     const s = await setupServices();
     const dir = mkTmp('infinity-originals-');
     const original = path.join(dir, 'photo.png');
     const png = makePng(10, 7);
     fs.writeFileSync(original, png);
     s.dialogQueue.push([original]);
-    const res = await s.attachments.importFromDialog('image', { webContentsId: 42 });
+    const pick = await s.picker.pick('image', { webContentsId: 42 });
     expect(s.dialogCalls).toEqual([{ webContentsId: 42, kind: 'image' }]);
-    expect(res).toMatchObject({ canceled: false, rejected: [] });
-    expect(res.imported).toEqual([expect.objectContaining({ kind: 'image', originalName: 'photo.png', width: 10, height: 7 })]);
+    expect(pick).toMatchObject({ canceled: false, files: [{ name: 'photo.png', sizeBytes: png.length }], truncated: false, rejected: [] });
+    const added = await s.picker.add({ pickId: pick.pickId!, index: 0, action: 'copy' }, { webContentsId: 42 });
+    if (added.type !== 'attachment') throw new Error('expected a copy');
+    expect(added.attachment).toEqual(expect.objectContaining({ kind: 'image', originalName: 'photo.png', width: 10, height: 7 }));
     fs.rmSync(original);
     const handler = createAttachmentHandler({ db: s.t.db, dataDir: s.dataDir });
-    const served = await handler(new Request(`infinity-attachment://${res.imported[0]!.id}`));
+    const served = await handler(new Request(`infinity-attachment://${added.attachment.id}`));
     expect(served.status).toBe(200);
     expect(Buffer.from(await served.arrayBuffer()).equals(png)).toBe(true);
   });
 
-  it('dialog import reports per-file problems, caps at 20 files and handles cancel', async () => {
+  it('a pick reports unreadable entries, keeps 20 files, handles cancel; each picked file is added once and checked as a copy', async () => {
     const s = await setupServices();
-    expect(await s.attachments.importFromDialog('image', { webContentsId: 1 })).toEqual({ canceled: true, imported: [], rejected: [] });
+    expect(await s.picker.pick('image', { webContentsId: 1 })).toEqual({ canceled: true, pickId: null, files: [], truncated: false, rejected: [] });
     const dir = mkTmp('infinity-originals-');
-    const files = Array.from({ length: 21 }, (_, i) => {
+    const files = Array.from({ length: 19 }, (_, i) => {
       const file = path.join(dir, `img${i}.png`);
       fs.writeFileSync(file, makePng(i + 1, 1));
       return file;
@@ -176,14 +178,22 @@ describe('attachment import (INF-EDIT-08, INF-EDIT-10, INF-EDIT-14)', () => {
     const folder = path.join(dir, 'folder.png');
     fs.mkdirSync(folder);
     s.dialogQueue.push([svg, big, folder, ...files]);
-    const res = await s.attachments.importFromDialog('image', { webContentsId: 1 });
-    expect(res.imported).toHaveLength(17);
-    expect(res.rejected).toEqual([
-      { name: 'drawing.svg', code: 'UNSUPPORTED', message: UNSUPPORTED },
-      { name: 'big.png', code: 'LIMIT_EXCEEDED', message: 'This image is larger than 20 MB. Change the limit in Settings or use a smaller image.' },
-      { name: 'folder.png', code: 'VALIDATION_FAILED', message: 'The image could not be added.' },
-      ...files.slice(17).map((f) => ({ name: path.basename(f), code: 'LIMIT_EXCEEDED', message: 'Only the first 20 files were added.' })),
-    ]);
+    const pick = await s.picker.pick('image', { webContentsId: 1 });
+    // 22 picked: the first 20 are kept and the folder among them is reported.
+    expect(pick.truncated).toBe(true);
+    expect(pick.rejected).toEqual([{ name: 'folder.png', code: 'NOT_FOUND', message: 'The image could not be added.' }]);
+    expect(pick.files.map((f) => f.name)).toEqual(['drawing.svg', 'big.png', ...files.slice(0, 17).map((f) => path.basename(f))]);
+    const add = (index: number, action: 'copy' | 'link' = 'copy') => s.picker.add({ pickId: pick.pickId!, index, action }, { webContentsId: 1 });
+    expect(await rejection(add(0))).toMatchObject({ code: 'UNSUPPORTED', message: UNSUPPORTED });
+    expect(await rejection(add(1))).toMatchObject({ code: 'LIMIT_EXCEEDED', message: 'This image is larger than 20 MB. Change the limit in Settings or use a smaller image.' });
+    expect(await rejection(add(2, 'link'))).toMatchObject({ code: 'VALIDATION_FAILED', message: 'Images are always copied into Infinity Notes.' });
+    // Each file is added once.
+    expect(await rejection(add(2))).toMatchObject({ code: 'NOT_FOUND' });
+    expect(await add(3)).toMatchObject({ type: 'attachment', attachment: { kind: 'image', originalName: 'img1.png' } });
+    // Another window, or a pick ID that is not the current one, adds nothing.
+    expect(await rejection(s.picker.add({ pickId: pick.pickId!, index: 4, action: 'copy' }, { webContentsId: 2 }))).toMatchObject({ code: 'NOT_FOUND' });
+    expect(await rejection(s.picker.add({ pickId: randomUUID(), index: 4, action: 'copy' }, { webContentsId: 1 }))).toMatchObject({ code: 'NOT_FOUND' });
+    expect(rowCount(s)).toBe(1);
   });
 
   it('sweepTmp removes leftovers older than an hour only', async () => {

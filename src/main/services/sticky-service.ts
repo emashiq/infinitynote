@@ -1,4 +1,6 @@
-import type { NoteColorType, TreeChangedEventType } from '../../shared/contracts/hierarchy';
+import type { HexColor as HexColorValue } from '../../shared/color';
+import { HexColor, NoteColor, type NoteColorType, type TreeChangedEventType } from '../../shared/contracts/hierarchy';
+import { LOCK_MESSAGES } from '../../shared/contracts/locks';
 import { STICKY_MESSAGES, type StoredBoundsType } from '../../shared/contracts/stickies';
 import { DEFAULT_STICKY_COLOR } from '../../shared/sticky-colors';
 import { pathOf, type PathIndex } from '../../shared/tree/paths';
@@ -16,6 +18,8 @@ import { runTx } from './transaction';
 export interface StickyMeta {
   title: string;
   color: NoteColorType;
+  /** The default text color; null is Automatic. */
+  textColor: HexColorValue | null;
   path: string[];
   trashed: { batchId: string | null } | null;
 }
@@ -60,6 +64,8 @@ export class StickyService {
   enable(noteId: string): void {
     const changed = this.tx(() => {
       const row = this.liveNote(noteId);
+      // A locked note never floats: a sticky window would show its text outside the lock screen (D-111).
+      if (row.locked === 1) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.noFloat);
       this.hierarchy.setSticky(noteId, true);
       this.windows.upsertSticky(noteId, { open: true }, this.deps.clock.now());
       return row.sticky_enabled !== 1 || row.color === null;
@@ -78,11 +84,20 @@ export class StickyService {
   }
 
   setColor(noteId: string, color: NoteColorType): void {
+    this.updateSticky(noteId, () => this.hierarchy.setColor(noteId, color));
+  }
+
+  setTextColor(noteId: string, textColor: HexColorValue | null): void {
+    this.updateSticky(noteId, () => this.hierarchy.setTextColor(noteId, textColor));
+  }
+
+  /** Changes how a sticky looks; the note must exist and be a sticky. */
+  private updateSticky(noteId: string, update: () => void): void {
     this.tx(() => {
       const row = this.hierarchy.getNoteMeta(noteId);
       if (!row) throw new AppError('NOT_FOUND', STICKY_MESSAGES.missing);
       if (row.sticky_enabled !== 1) throw new AppError('VALIDATION_FAILED', STICKY_MESSAGES.notSticky);
-      this.hierarchy.setColor(noteId, color);
+      update();
     });
     this.changed();
   }
@@ -108,7 +123,8 @@ export class StickyService {
         : (live ??= livePathIndex(this.hierarchy));
       out.set(id, {
         title: row.title,
-        color: (row.color as NoteColorType | null) ?? DEFAULT_STICKY_COLOR,
+        color: NoteColor.safeParse(row.color).data ?? DEFAULT_STICKY_COLOR,
+        textColor: HexColor.safeParse(row.text_color).data ?? null,
         path: pathOf(index, { projectId: row.project_id, folderId: row.folder_id }),
         trashed: trashed ? { batchId: row.trash_batch_id } : null,
       });

@@ -1,31 +1,56 @@
 name: pages
-# Publishes the static website in website/ (no build step) to GitHub Pages.
+# Deploys the static website in website/ to GitHub Pages. The download links point at the newest
+# published release: releases.json is regenerated on every deploy, and a deploy runs whenever a
+# release is published, edited or deleted, so the site follows new releases without a commit.
+# Without releases.json the page still works: every link targets releases/latest/download/<name>.
+#
+# One-time setup: Settings > Pages > Build and deployment > Source: "GitHub Actions".
 on:
   push:
     branches: [main]
     paths:
       - 'website/**'
+      - '.github/scripts/pages-releases.mjs'
       - '.github/workflows/pages.yml'
+  release:
+    types: [published, edited, deleted]
   workflow_dispatch:
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: {}
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
-  deploy:
+  build:
+    name: Build the site
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Resolve the newest download links
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/pages-releases.mjs website
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: website
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

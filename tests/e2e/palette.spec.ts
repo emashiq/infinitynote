@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { useApp } from './harness';
 import { editorText, focusEditorEnd } from './editor-ui';
-import { COMMON, createFolder, createNote, createProject, reloadUi } from './seed';
+import { COMMON, createFolder, createNote, createProject, reloadUi, saveText } from './seed';
 import { activeTabLabel, dialogByName, openByPalette, primaryNav, tabs } from './ui';
 
 const h = useApp();
@@ -11,8 +11,10 @@ test('actions and titles', async () => {
   const alpha = await createProject(page, 'Alpha');
   const beta = await createProject(page, 'Beta');
   const specs = await createFolder(page, { projectId: alpha, parentId: null }, 'Specs');
-  await createNote(page, { projectId: alpha, folderId: specs }, 'Plan');
-  await createNote(page, { projectId: beta, folderId: null }, 'Plan');
+  // Same title, different text: the note view shows only the text (D-102), so the text tells which note opened.
+  const bodies = { 'Alpha › Specs': 'Written in Specs', Beta: 'Written in Beta' };
+  await saveText(page, await createNote(page, { projectId: alpha, folderId: specs }, 'Plan'), bodies['Alpha › Specs']);
+  await saveText(page, await createNote(page, { projectId: beta, folderId: null }, 'Plan'), bodies.Beta);
   await reloadUi(page);
 
   // Focus returns to the element that had it before the palette opened.
@@ -53,7 +55,7 @@ test('actions and titles', async () => {
   await expect.poll(() => activeTabLabel(page)).toBe('Plan');
   await expect(tabs(page)).toHaveCount(2);
   const secondPath = second!.includes('Alpha') ? 'Alpha › Specs' : 'Beta';
-  await expect(page.getByRole('main').getByText(secondPath, { exact: true }).first()).toBeVisible();
+  await expect.poll(() => editorText(page)).toBe(bodies[secondPath]);
 
   // Choosing the already-open note again keeps one tab.
   await page.keyboard.press('Control+K');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileTooLarge, imageTooLarge, tooLargeMessage } from '../../src/shared/attachments/limits';
+import { fileTooLarge, imageTooLarge, linkedInsteadMessage, onlyLinkWarning, tooLargeMessage } from '../../src/shared/attachments/limits';
 import { documentMime, extensionFor, formatBytes, sanitizeOriginalName } from '../../src/shared/attachments/names';
 
 describe('attachment names', () => {
@@ -34,8 +34,10 @@ describe('attachment names', () => {
 
   it('builds the exact size-limit messages', () => {
     expect(imageTooLarge(20)).toBe('This image is larger than 20 MB. Change the limit in Settings or use a smaller image.');
-    expect(fileTooLarge(50)).toBe('This file is larger than 50 MB. Change the limit in Settings or use a smaller file.');
+    expect(fileTooLarge(25)).toBe('This file is larger than 25 MB, so it is not copied into Infinity Notes. Link to the original instead.');
     expect(tooLargeMessage('image', 1)).toBe('This image is larger than 1 MB. Change the limit in Settings or use a smaller image.');
-    expect(tooLargeMessage('document', 2)).toBe('This file is larger than 2 MB. Change the limit in Settings or use a smaller file.');
+    expect(tooLargeMessage('document', 2)).toBe('This file is larger than 2 MB, so it is not copied into Infinity Notes. Link to the original instead.');
+    expect(onlyLinkWarning(25)).toBe('Larger than 25 MB: can only be linked');
+    expect(linkedInsteadMessage('film.mov', 25)).toBe('film.mov is larger than 25 MB, so it was linked to the original instead of copied.');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectAttachmentRefs, collectNoteRefs, DocSchemaError, MAX_DOC_DEPTH, normalizeRichDoc } from '../../src/shared/editor/doc-schema';
+import { collectAttachmentRefs, collectBlockIds, collectNoteRefs, DocSchemaError, MAX_DOC_DEPTH, normalizeRichDoc } from '../../src/shared/editor/doc-schema';
 
 const ID1 = '11111111-1111-4111-8111-111111111111';
 const ID2 = '22222222-2222-4222-8222-222222222222';
@@ -172,5 +172,82 @@ describe('note references in documents (INF-REF-02, INF-REF-07, D-098)', () => {
       { sourceBlockId: ID1, targetNoteId: ATT, targetBlockId: null, label: 'A' },
       { sourceBlockId: ID2, targetNoteId: ATT, targetBlockId: ID1, label: 'B' },
     ]);
+  });
+});
+
+describe('tables and text styles in documents (v0.2.0)', () => {
+  const cell = (type: 'tableCell' | 'tableHeader', attrs: Record<string, unknown>, ...content: unknown[]) => ({ type, attrs, content: content.length ? content : [{ type: 'paragraph' }] });
+  const table = (...rows: unknown[][]) => ({ type: 'table', attrs: { id: ID2 }, content: rows.map((cells) => ({ type: 'tableRow', content: cells })) });
+
+  it('keeps a table with header cells, spans, widths and alignment; a cell holds blocks', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        table(
+          [cell('tableHeader', { colspan: 2, rowspan: 1, colwidth: [100, 140], align: 'center' }, para(text('Head')))],
+          [
+            cell('tableCell', { colspan: 1, rowspan: 1, colwidth: null, align: null }, { type: 'bulletList', content: [{ type: 'listItem', attrs: { id: nextId() }, content: [{ type: 'paragraph', attrs: { id: nextId() }, content: [text('x')] }] }] }),
+            cell('tableCell', { colspan: 1, rowspan: 1, colwidth: null, align: 'right' }),
+          ],
+        ),
+      ],
+    };
+    expect(normalizeRichDoc(doc)).toEqual(doc);
+  });
+
+  it('cell attributes out of range fall back to their defaults', () => {
+    const doc = { type: 'doc', content: [table([cell('tableCell', { colspan: 0, rowspan: 'x', colwidth: [100, 200], align: 'justify', style: 'color:red' })])] };
+    const out = normalizeRichDoc(doc) as { content: Array<{ content: Array<{ content: Array<{ attrs: unknown }> }> }> };
+    expect(out.content[0]!.content[0]!.content[0]!.attrs).toEqual({ colspan: 1, rowspan: 1, colwidth: null, align: null });
+    const widths = normalizeRichDoc({ type: 'doc', content: [table([cell('tableCell', { colspan: 1, colwidth: [0] })])] });
+    expect(JSON.stringify(widths)).toContain('"colwidth":null');
+  });
+
+  it('refuses a cell spanning over 50 columns or rows and a table over 10,000 grid cells (D-116)', () => {
+    rejects({ type: 'doc', content: [table([cell('tableCell', { colspan: 51 })])] }, /spans too many columns or rows/);
+    rejects({ type: 'doc', content: [table([cell('tableCell', { rowspan: 51 })])] }, /spans too many columns or rows/);
+    expect(() => normalizeRichDoc({ type: 'doc', content: [table([cell('tableCell', { colspan: 50, rowspan: 50 })])] })).not.toThrow();
+    const row = (n: number) => Array.from({ length: n }, () => cell('tableCell', {}));
+    expect(() => normalizeRichDoc({ type: 'doc', content: [table(...Array.from({ length: 100 }, () => row(100)))] })).not.toThrow();
+    rejects({ type: 'doc', content: [table(...Array.from({ length: 101 }, () => row(100)))] }, /table has too many cells/);
+    // A table inside a cell is measured too.
+    const nested = table(...Array.from({ length: 101 }, () => row(100)));
+    rejects({ type: 'doc', content: [table([cell('tableCell', {}, nested)])] }, /table has too many cells/);
+  });
+
+  it("refuses the acceptor's ~2,200-node table (100 cells spanning 1,000 columns, then 1,000 one-cell rows) quickly", () => {
+    const doc = {
+      type: 'doc',
+      content: [table(Array.from({ length: 100 }, () => cell('tableCell', { colspan: 1000 })), ...Array.from({ length: 1000 }, () => [cell('tableCell', {})]))],
+    };
+    const started = performance.now();
+    rejects(doc, /spans too many columns or rows/);
+    // With spans of 50 it still describes a 5,000 x 1,001 grid.
+    const capped = JSON.parse(JSON.stringify(doc).replaceAll('"colspan":1000', '"colspan":50')) as unknown;
+    rejects(capped, /table has too many cells/);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('refuses table parts outside a table and rows outside their place', () => {
+    rejects({ type: 'doc', content: [{ type: 'tableRow', content: [] }] }, /tableRow node is not allowed here/);
+    rejects({ type: 'doc', content: [{ type: 'table', content: [para(text('x'))] }] }, /paragraph node is not allowed here/);
+    rejects({ type: 'doc', content: [para({ type: 'tableCell', content: [] })] }, /tableCell node is not allowed here/);
+  });
+
+  it('the table carries a block ID like other blocks; the paragraphs in its cells keep theirs', () => {
+    const doc = { type: 'doc', content: [table([cell('tableCell', {}, { type: 'paragraph', attrs: { id: ID1 }, content: [text('in cell')] })])] };
+    expect([...collectBlockIds(normalizeRichDoc(doc))].sort()).toEqual([ID1, ID2].sort());
+  });
+
+  it('a text style keeps valid colors, listed fonts and sizes; it is dropped when nothing valid is left', () => {
+    const styled = (attrs: Record<string, unknown>) => ({ type: 'doc', content: [para(text('x', [{ type: 'textStyle', attrs }]))] });
+    expect(normalizeRichDoc(styled({ color: '#E03131', backgroundColor: '#fff3a3', fontFamily: 'times', fontSize: '24px' }))).toEqual(
+      styled({ color: '#e03131', backgroundColor: '#fff3a3', fontFamily: 'times', fontSize: '24px' }),
+    );
+    expect(normalizeRichDoc(styled({ color: 'red; background: url(x)', backgroundColor: null, fontFamily: 'Papyrus', fontSize: '15px' }))).toEqual({
+      type: 'doc',
+      content: [para(text('x'))],
+    });
+    expect(JSON.stringify(normalizeRichDoc(styled({ color: 'expression(alert(1))', fontSize: '18px' })))).not.toContain('expression');
   });
 });

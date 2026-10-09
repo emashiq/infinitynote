@@ -1,8 +1,16 @@
 import { z } from 'zod';
+import { HEX_COLOR_RE, type HexColor as HexColorValue } from '../color';
 import { NameInput, TitleInput } from '../names';
 import { Uuid } from './ids';
 
-export const NoteColor = z.enum(['yellow', 'green', 'blue', 'pink', 'violet', 'gray']);
+/** A stored color: lowercase `#rrggbb` only. */
+export const HexColor = z.custom<HexColorValue>((v) => typeof v === 'string' && HEX_COLOR_RE.test(v), 'Use a color written as #rrggbb');
+
+export const StickyColorPreset = z.enum(['yellow', 'green', 'blue', 'pink', 'violet', 'gray']);
+export type StickyColorPresetType = z.infer<typeof StickyColorPreset>;
+
+/** A sticky's color: a named preset (light and dark variants) or a custom color shown as is. */
+export const NoteColor = z.union([StickyColorPreset, HexColor]);
 export type NoteColorType = z.infer<typeof NoteColor>;
 
 const Ms = z.number().int();
@@ -31,6 +39,8 @@ export const NoteDto = z.strictObject({
   pinnedAt: Ms.nullable(),
   favorite: z.boolean(),
   revision: z.number().int().min(0),
+  /** The note's content is encrypted at rest (D-111); its title stays visible. */
+  locked: z.boolean(),
   createdAt: Ms,
   updatedAt: Ms,
 });
@@ -68,7 +78,7 @@ export const TrashItem = z.strictObject({
 });
 export type TrashItemType = z.infer<typeof TrashItem>;
 
-export const TreeChangedReasons = ['create', 'rename', 'move', 'trash', 'restore', 'purge', 'pin', 'favorite', 'sticky'] as const;
+export const TreeChangedReasons = ['create', 'rename', 'move', 'trash', 'restore', 'purge', 'pin', 'favorite', 'sticky', 'lock'] as const;
 export const TreeChangedEvent = z.strictObject({
   reason: z.enum(TreeChangedReasons),
   trashedNoteIds: z.array(Uuid),

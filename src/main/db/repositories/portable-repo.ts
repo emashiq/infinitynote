@@ -11,6 +11,7 @@ export interface PortableNoteRow {
   content_text: string | null;
   sticky_enabled: number;
   color: string | null;
+  text_color: string | null;
   pinned_at: number | null;
   favorite: number;
 }
@@ -24,14 +25,14 @@ export interface PortableAttachmentRow {
   original_name: string | null;
 }
 
-/** Reads for the portable export (live items only). */
+/** Reads for the portable export: live items only, and no locked note or anything only a locked note uses (D-111). */
 export class PortableRepo {
   constructor(private readonly db: Db) {}
 
   liveNotes(): PortableNoteRow[] {
     return this.db
       .prepare<[], PortableNoteRow>(
-        'SELECT id, project_id, folder_id, title, format, content_json, content_text, sticky_enabled, color, pinned_at, favorite FROM notes WHERE deleted_at IS NULL ORDER BY doc_key',
+        'SELECT id, project_id, folder_id, title, format, content_json, content_text, sticky_enabled, color, text_color, pinned_at, favorite FROM notes WHERE deleted_at IS NULL AND locked = 0 ORDER BY doc_key',
       )
       .all();
   }
@@ -55,7 +56,7 @@ export class PortableRepo {
   activeReminders(): ReminderRow[] {
     return this.db
       .prepare<[], ReminderRow>(
-        `SELECT r.* FROM reminders r JOIN notes n ON n.id = r.note_id AND n.deleted_at IS NULL
+        `SELECT r.* FROM reminders r JOIN notes n ON n.id = r.note_id AND n.deleted_at IS NULL AND n.locked = 0
          WHERE r.deleted_at IS NULL
            AND (r.recurrence IS NOT NULL OR EXISTS (SELECT 1 FROM occurrences o WHERE o.reminder_id = r.id AND o.state IN ('pending', 'snoozed')))
          ORDER BY r.created_at, r.id`,
@@ -63,12 +64,17 @@ export class PortableRepo {
       .all();
   }
 
-  /** Attachments linked from live notes. */
+  /** Live locked notes, which the export leaves out. */
+  countLockedNotes(): number {
+    return this.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM notes WHERE deleted_at IS NULL AND locked = 1').get()!.n;
+  }
+
+  /** Attachments linked from exported notes. */
   liveAttachments(): PortableAttachmentRow[] {
     return this.db
       .prepare<[], PortableAttachmentRow>(
         `SELECT a.id, a.managed_relative_path, a.sha256, a.size_bytes, a.kind, a.original_name FROM attachments a
-         WHERE EXISTS (SELECT 1 FROM note_attachments na JOIN notes n ON n.id = na.note_id AND n.deleted_at IS NULL WHERE na.attachment_id = a.id)
+         WHERE EXISTS (SELECT 1 FROM note_attachments na JOIN notes n ON n.id = na.note_id AND n.deleted_at IS NULL AND n.locked = 0 WHERE na.attachment_id = a.id)
          ORDER BY a.id`,
       )
       .all();

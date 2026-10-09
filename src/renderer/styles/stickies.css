@@ -1,48 +1,70 @@
-/* Sticky windows (D-070, UX_SPEC sections 5 and 10). The native frame stays; there are no drag regions. */
+/* Sticky windows (D-070, D-097, UX_SPEC sections 5 and 10): frameless, the header is the title bar and drag region. */
+
+/*
+ * The sticky's colors are set on the page root (sticky-appearance.ts), so html and body show the sticky color too.
+ * Presets have a light and a dark variant; a custom color comes inline with the ink that reads on it; a default text
+ * color replaces the ink. The ink is black or white, whichever reads better (shared/color.ts INK).
+ */
+:root[data-sticky-color] {
+  --sticky-bg: #fff4b8;
+  --sticky-text: var(--text);
+  --sticky-text-muted: color-mix(in srgb, var(--sticky-text) 72%, var(--sticky-bg));
+  --sticky-line: color-mix(in srgb, var(--sticky-text) 14%, transparent);
+}
+:root[data-sticky-color='green'] {
+  --sticky-bg: #ddf5d8;
+}
+:root[data-sticky-color='blue'] {
+  --sticky-bg: #dcebff;
+}
+:root[data-sticky-color='pink'] {
+  --sticky-bg: #ffe0ec;
+}
+:root[data-sticky-color='violet'] {
+  --sticky-bg: #ece6ff;
+}
+:root[data-sticky-color='gray'] {
+  --sticky-bg: #ecedf1;
+}
+
+:root[data-theme='dark'][data-sticky-color] {
+  --sticky-bg: #4a4320;
+}
+:root[data-theme='dark'][data-sticky-color='green'] {
+  --sticky-bg: #24402a;
+}
+:root[data-theme='dark'][data-sticky-color='blue'] {
+  --sticky-bg: #22344f;
+}
+:root[data-theme='dark'][data-sticky-color='pink'] {
+  --sticky-bg: #4a2634;
+}
+:root[data-theme='dark'][data-sticky-color='violet'] {
+  --sticky-bg: #342c52;
+}
+:root[data-theme='dark'][data-sticky-color='gray'] {
+  --sticky-bg: #2e3038;
+}
+
+:root[data-sticky-ink='dark'] {
+  --sticky-text: #000;
+}
+:root[data-sticky-ink='light'] {
+  --sticky-text: #fff;
+}
+
+:root[data-sticky-color] body {
+  background: var(--sticky-bg);
+}
 
 .sticky-window {
-  --sticky-bg: #fff4b8;
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-width: 0;
-  background: var(--sticky-bg);
-}
-
-.sticky-window[data-sticky-color='green'] {
-  --sticky-bg: #ddf5d8;
-}
-.sticky-window[data-sticky-color='blue'] {
-  --sticky-bg: #dcebff;
-}
-.sticky-window[data-sticky-color='pink'] {
-  --sticky-bg: #ffe0ec;
-}
-.sticky-window[data-sticky-color='violet'] {
-  --sticky-bg: #ece6ff;
-}
-.sticky-window[data-sticky-color='gray'] {
-  --sticky-bg: #ecedf1;
-}
-
-:root[data-theme='dark'] .sticky-window {
-  --sticky-bg: #4a4320;
-}
-:root[data-theme='dark'] .sticky-window[data-sticky-color='green'] {
-  --sticky-bg: #24402a;
-}
-:root[data-theme='dark'] .sticky-window[data-sticky-color='blue'] {
-  --sticky-bg: #22344f;
-}
-:root[data-theme='dark'] .sticky-window[data-sticky-color='pink'] {
-  --sticky-bg: #4a2634;
-}
-:root[data-theme='dark'] .sticky-window[data-sticky-color='violet'] {
-  --sticky-bg: #342c52;
-}
-:root[data-theme='dark'] .sticky-window[data-sticky-color='gray'] {
-  --sticky-bg: #2e3038;
+  background: var(--sticky-bg, var(--bg));
+  color: var(--sticky-text, var(--text));
 }
 
 /* Header: 36 px, usable down to the 220 px minimum width. */
@@ -53,12 +75,18 @@
   gap: 2px;
   height: 36px;
   padding: 0 4px;
-  border-bottom: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  border-bottom: 1px solid var(--sticky-line);
 }
 
 .sticky-header .icon-btn {
   width: 24px;
   height: 24px;
+  color: var(--sticky-text-muted);
+}
+
+.sticky-header .icon-btn:hover {
+  background: color-mix(in srgb, var(--sticky-text) 12%, transparent);
+  color: var(--sticky-text);
 }
 
 .sticky-header .icon-btn:focus-visible,
@@ -71,7 +99,21 @@
   width: 12px;
   height: 12px;
   margin: 0;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 25%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sticky-text) 35%, transparent);
+}
+
+/*
+ * The title and the source badge on one center line, 6 px apart. The badge gives way first (it shrinks to nothing
+ * before the title does) and ends with an ellipsis; the title ends with one when even it does not fit.
+ */
+.sticky-heading {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  margin-left: 2px;
 }
 
 /* As wide as its text (D-102), so the rest of the header stays a drag region. */
@@ -79,30 +121,32 @@
   flex: 0 1 auto;
   field-sizing: content;
   min-width: 4ch;
-  max-width: 60%;
+  max-width: 100%;
   height: 26px;
   padding: 0 4px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--text);
+  color: var(--sticky-text);
   font: inherit;
   font-weight: 600;
+  line-height: 24px;
+  text-overflow: ellipsis;
 }
 
 .sticky-title-input:hover,
 .sticky-title-input:focus {
-  border-color: var(--border);
-  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  border-color: color-mix(in srgb, var(--sticky-text) 30%, transparent);
+  background: color-mix(in srgb, var(--sticky-text) 6%, transparent);
 }
 
 .sticky-badge {
-  flex: 0 1 auto;
+  flex: 0 1000 auto;
   min-width: 0;
-  max-width: 40%;
   overflow: hidden;
-  color: var(--text-muted);
+  color: var(--sticky-text-muted);
   font-size: 11px;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -119,7 +163,7 @@
 
 .sticky-pin[aria-disabled='true']:hover {
   background: transparent;
-  color: var(--text-muted);
+  color: var(--sticky-text-muted);
 }
 
 /* Body: hidden (editor kept mounted) while collapsed. */
@@ -144,8 +188,25 @@
   height: 26px;
 }
 
+/* The note's text in the sticky's ink (or its default text color); the theme's tints would not suit every color. */
 .note-editor-sticky .note-editor-content {
   padding-bottom: 16px;
+  color: var(--sticky-text);
+}
+
+.note-editor-sticky .note-editor-content p.is-editor-empty:first-child::before,
+.note-editor-sticky .note-editor-content ul[data-type='taskList'] > li[data-checked='true'] > div {
+  color: var(--sticky-text-muted);
+}
+
+.note-editor-sticky .note-editor-content code,
+.note-editor-sticky .note-editor-content pre {
+  background: color-mix(in srgb, var(--sticky-text) 8%, transparent);
+}
+
+.note-editor-sticky .note-editor-content blockquote {
+  border-left-color: var(--sticky-line);
+  color: var(--sticky-text-muted);
 }
 
 .sticky-trash {
@@ -167,6 +228,7 @@
  * the small controls and the title field (as wide as its text) do not.
  */
 .sticky-header,
+.sticky-heading,
 .sticky-badge {
   -webkit-app-region: drag;
 }

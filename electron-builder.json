@@ -6,6 +6,7 @@
   "files": [
     "out/**",
     "resources/icon.png",
+    "resources/brand/tray-*.png",
     "package.json",
     "!**/*.map",
     "!node_modules/better-sqlite3/deps/**",
@@ -51,7 +52,7 @@
     ],
     "executableName": "infinity-notes",
     "syncDesktopName": true,
-    "icon": "resources/icon.png",
+    "icon": "resources/icons",
     "category": "Office",
     "synopsis": "Offline notes, stickies and reminders",
     "maintainer": "Infinity Notes <noreply@infinity-notes.invalid>",

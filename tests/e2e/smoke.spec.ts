@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { appArgs, appEnv, appExecutable, closeApp, dbFileOf, readMainLog, spawnAndWait, waitForExit } from './fixtures';
+import { appArgs, appEnv, appExecutable, closeApp, dbFileOf, latestSchemaVersion, readMainLog, spawnAndWait, waitForExit } from './fixtures';
 import { useApp } from './harness';
 import { activate, railGo } from './ui';
 
@@ -12,7 +12,7 @@ test('starts a real window with temp userData', async () => {
   expect(await page.title()).toBe('Infinity Notes');
   await expect(page.locator('h1')).toHaveText('Infinity Notes');
   await railGo(page, 'Settings');
-  await expect(page.getByText('Version 0.1.0')).toBeVisible();
+  await expect(page.getByText('Version 0.2.0')).toBeVisible();
   const windows = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
   expect(windows).toBe(1);
   const nativeTitle = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.getTitle());
@@ -54,7 +54,7 @@ test('db diagnostics', async () => {
   expect(info).not.toBeNull();
   expect(info!.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
   expect(info!.sqlite!.version).toMatch(/^3\.\d+\.\d+$/);
-  expect(info!.schemaVersion).toBe(7);
+  expect(info!.schemaVersion).toBe(latestSchemaVersion());
   expect(info!.startup).toEqual({ status: 'ok' });
   expect(info!.isPackaged).toBe(false);
   expect(info!.versions.electron).toBe('44.7.0');

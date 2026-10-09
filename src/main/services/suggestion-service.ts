@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { LOCK_MESSAGES } from '../../shared/contracts/locks';
 import { REMINDER_MESSAGES as M } from '../../shared/contracts/reminders';
 import type { DismissalDtoType, SuggestionDismissRequestType, SuggestionListDismissedResponseType } from '../../shared/contracts/suggestions';
 import { DISMISSAL_KEEP_DAYS, MAX_DISMISSALS_PER_NOTE, MAX_SOURCE_TEXT } from '../../shared/nlp/constants';
@@ -51,6 +52,7 @@ export class SuggestionService {
     const row = runTx(this.deps.db, this.deps.logger, () => {
       const note = this.notes.getContentRow(req.noteId);
       if (!note || note.deleted_at !== null) throw new AppError('NOT_FOUND', M.noteMissing);
+      if (note.locked === 1) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.noSuggestions);
       if ((note.format === 'rich') !== (req.blockId !== null)) throw new AppError('VALIDATION_FAILED', M.sourceFormat, { sourceFormat: true });
       const text = normalizePhrase(req.text);
       if (text.length > MAX_SOURCE_TEXT) throw new AppError('VALIDATION_FAILED', 'Invalid request');

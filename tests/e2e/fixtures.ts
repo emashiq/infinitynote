@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { linuxSandboxMode } from '../support/linux-sandbox';
+import { linuxSandboxMode, pidNamespaceDepth, seccompField } from '../support/linux-sandbox';
 
 export const repoRoot = path.resolve(__dirname, '..', '..');
 export const packagedExe = process.env.INFINITY_NOTES_PACKAGED_EXE ?? '';
@@ -131,24 +131,41 @@ export async function rendererSandbox(app: ElectronApplication, urlSuffix = '#/'
   }, urlSuffix);
   if (process.platform === 'linux') {
     const mainPid = app.process().pid;
-    const ns = (pid: number | undefined, kind: string) => fs.readlinkSync(`/proc/${pid}/ns/${kind}`);
+    const status = (pid: number | undefined) => fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+    // A renderer of the setuid sandbox is not dumpable, so this user may not read its namespace links (EACCES); that
+    // sandbox gives it no user namespace of its own. The status file stays readable, so the PID namespace comes from NSpid.
+    const userNamespace = (pid: number | undefined) => {
+      try {
+        return fs.readlinkSync(`/proc/${pid}/ns/user`);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EACCES') return 'unreadable';
+        throw err;
+      }
+    };
+    const rendererStatus = status(info.pid);
+    const rendererUserNamespace = userNamespace(info.pid);
     const helper = fs.statSync(path.join(path.dirname(info.execPath), 'chrome-sandbox'), { throwIfNoEntry: false });
     const probe = {
-      ownUserNamespace: ns(info.pid, 'user') !== ns(mainPid, 'user'),
-      ownPidNamespace: ns(info.pid, 'pid') !== ns(mainPid, 'pid'),
-      seccomp: /^Seccomp:\s*(\d+)/m.exec(fs.readFileSync(`/proc/${info.pid}/status`, 'utf8'))?.[1] ?? 'missing',
+      ownUserNamespace: rendererUserNamespace !== 'unreadable' && rendererUserNamespace !== userNamespace(mainPid),
+      ownPidNamespace: pidNamespaceDepth(rendererStatus) > pidNamespaceDepth(status(mainPid)),
+      seccomp: seccompField(rendererStatus),
       suidHelper: helper !== undefined && helper.uid === 0 && (helper.mode & 0o4000) !== 0,
     };
     const mode = linuxSandboxMode(probe);
     return {
       osSandboxed: mode !== 'none',
-      evidence: `pid=${info.pid} mode=${mode} ownUserNamespace=${probe.ownUserNamespace} ownPidNamespace=${probe.ownPidNamespace} Seccomp=${probe.seccomp} suidHelper=${probe.suidHelper}`,
+      evidence: `pid=${info.pid} mode=${mode} userNamespace=${rendererUserNamespace} ownPidNamespace=${probe.ownPidNamespace} Seccomp=${probe.seccomp} suidHelper=${probe.suidHelper}`,
     };
   }
   return {
     osSandboxed: info.sandboxed === true,
     evidence: `pid=${info.pid} sandboxed=${String(info.sandboxed)} integrity=${String(info.integrityLevel)}`,
   };
+}
+
+/** The schema version this build migrates to: one numbered SQL file per version. */
+export function latestSchemaVersion(): number {
+  return fs.readdirSync(path.join(repoRoot, 'src', 'main', 'db', 'migrations')).filter((f) => /^\d{3}_.*\.sql$/.test(f)).length;
 }
 
 export function dbFileOf(userDataDir: string): string {

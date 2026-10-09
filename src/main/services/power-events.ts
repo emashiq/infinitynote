@@ -1,5 +1,5 @@
-/** OS power events the scheduler listens to; implemented over Electron's powerMonitor by electron-power.ts. */
-export type PowerEvent = 'resume' | 'suspend' | 'unlock-screen';
+/** OS power events the scheduler and locked notes listen to; implemented over Electron's powerMonitor by electron-power.ts. */
+export type PowerEvent = 'resume' | 'suspend' | 'lock-screen' | 'unlock-screen';
 
 export interface PowerEvents {
   on(event: PowerEvent, cb: () => void): () => void;

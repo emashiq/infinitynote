@@ -82,11 +82,11 @@ describe('StickyService (plan section 8.4)', () => {
     const plans = s.folder(alpha.id, null, 'Plans');
     const inFolder = s.note(alpha.id, plans.id, 'In folder', true);
     const common = s.note(null, null, '', true);
-    expect(s.stickies.meta(common.id)).toEqual({ title: '', color: 'yellow', path: ['Common'], trashed: null });
-    expect(s.stickies.meta(inFolder.id)).toEqual({ title: 'In folder', color: 'yellow', path: ['Alpha', 'Plans'], trashed: null });
+    expect(s.stickies.meta(common.id)).toEqual({ title: '', color: 'yellow', textColor: null, path: ['Common'], trashed: null });
+    expect(s.stickies.meta(inFolder.id)).toEqual({ title: 'In folder', color: 'yellow', textColor: null, path: ['Alpha', 'Plans'], trashed: null });
 
     const { trashBatchId } = s.trash.trashFolder(plans.id);
-    expect(s.stickies.meta(inFolder.id)).toEqual({ title: 'In folder', color: 'yellow', path: ['Alpha', 'Plans'], trashed: { batchId: trashBatchId } });
+    expect(s.stickies.meta(inFolder.id)).toEqual({ title: 'In folder', color: 'yellow', textColor: null, path: ['Alpha', 'Plans'], trashed: { batchId: trashBatchId } });
     s.trash.purge({ target: { kind: 'batch', batchId: trashBatchId }, confirmed: true });
     expect(s.stickies.meta(inFolder.id)).toBeNull();
   });

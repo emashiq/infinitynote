@@ -5,8 +5,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const release = fs.readFileSync('.github/workflows/release.yml', 'utf8');
+const ci = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
 const pages = fs.readFileSync('.github/workflows/pages.yml', 'utf8');
 const site = fs.readFileSync('website/index.html', 'utf8');
+const PAGES = [['index.html', site], ['docs.html', fs.readFileSync('website/docs.html', 'utf8')]] as const;
+const SITE_BASE = 'https://emashiq.github.io/infinitynote/';
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { version: string; dependencies: Record<string, string> };
 
 // The website links to releases/latest/download/<name>; these names must stay the same in every release.
@@ -29,33 +32,33 @@ describe('release workflow', () => {
     expect(release).toContain('needs: prepare');
   });
 
-  it('builds on Windows and Ubuntu with the static gates, packaging and the packaged native self-test, in order', () => {
+  it('builds the installers on Windows and Ubuntu: clean install, Electron download, packaging, artifacts, in order', () => {
     expect(release).toMatch(/os:\s*\[windows-2025,\s*ubuntu-24\.04\]/);
-    const order = [
-      'npm ci',
-      'npm run setup:electron',
-      'Linux prerequisites',
-      'npm run check',
-      'npm run package:current',
-      'Linux packaged sandbox helper',
-      'npm run verify:native -- --packaged',
-      'actions/upload-artifact',
-    ];
+    const order = ['npm ci', 'npm run setup:electron', 'npm run package:current', 'actions/upload-artifact'];
     let last = release.indexOf('build:');
     for (const step of order) {
       const at = release.indexOf(step, last);
       expect(at, step).toBeGreaterThan(last);
       last = at;
     }
-    // E2E stays in ci.yml.
-    expect(release).not.toContain('test:e2e');
+    for (const pattern of ['release/*.exe', 'release/*.AppImage', 'release/*.deb']) expect(release).toContain(pattern);
+    expect(release).toContain('if-no-files-found: error');
   });
 
-  it('keeps the Chromium sandbox enabled and pins Node like ci.yml', () => {
+  it('leaves the gates and the end-to-end tests to ci.yml, which runs them on both systems', () => {
+    // Commit 62e8a67: release.yml only builds and publishes; ci.yml runs on every push to main before a tag.
+    for (const step of ['npm run check', 'npm run test:e2e', 'npm run verify:native']) {
+      expect(release, step).not.toContain(step);
+      expect(ci, step).toContain(step);
+    }
+    expect(ci).toMatch(/os:\s*\[windows-2025,\s*ubuntu-24\.04\]/);
+  });
+
+  it('pins Node like ci.yml and never turns the Chromium sandbox off', () => {
+    const pins = (yml: string) => [...yml.matchAll(/node-version: '([^']+)'/g)].map((m) => m[1]);
+    expect(new Set(pins(release))).toEqual(new Set(pins(ci)));
+    expect(pins(release).length).toBeGreaterThanOrEqual(2);
     expect(release).not.toContain('--no-sandbox');
-    expect(release).toContain('chmod 4755 node_modules/electron/dist/chrome-sandbox');
-    expect(release).toContain('chmod 4755 release/linux-unpacked/chrome-sandbox');
-    expect(release).toContain("node-version: '24.21.0'");
   });
 
   it('only the publish job may write, and it publishes stable names, checksums and notices with gh', () => {
@@ -76,7 +79,7 @@ describe('release notes (tools/release-notes.mjs)', () => {
   it('prints the CHANGELOG section for the package version and the unsigned-build notice', () => {
     const r = releaseNotes([`v${pkg.version}`]);
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toContain('### Highlights');
+    expect(r.stdout).toContain('### Downloads');
     expect(r.stdout).toContain('### Known limitations');
     expect(r.stdout).not.toContain(`## [${pkg.version}]`);
     expect(r.stdout).toContain('**Unsigned builds.**');
@@ -142,18 +145,36 @@ describe('GitHub Pages workflow and website', () => {
     expect(pages).toMatch(/path: website\n/);
   });
 
-  it('download links are plain links to the stable latest-release assets, so they work without JavaScript', () => {
-    for (const name of STABLE_ASSETS) expect(site).toContain(`data-asset="${name}" href="${DOWNLOAD_BASE}${name}"`);
-    expect(site).toContain(`href="${DOWNLOAD_BASE}SHA256SUMS.txt"`);
-    expect(site).toContain('id="hero-download" class="button primary" href="#download"');
-    expect(site).toMatch(/macOS <span class="badge muted">Coming soon<\/span>/);
+  it('writes releases.json on every deploy and deploys again when a release is published, edited or deleted', () => {
+    expect(pages).toMatch(/release:\s*\n\s*types: \[published, edited, deleted\]/);
+    const resolve = pages.indexOf('node .github/scripts/pages-releases.mjs website');
+    expect(resolve).toBeGreaterThan(0);
+    expect(resolve).toBeLessThan(pages.indexOf('actions/upload-pages-artifact@'));
+    expect(fs.readFileSync('.github/scripts/pages-releases.mjs', 'utf8')).toContain("'releases.json'");
+    expect(fs.readFileSync('website/app.js', 'utf8')).toContain("fetch('releases.json'");
   });
 
-  it('loads no third-party scripts, styles or fonts and every local asset exists', () => {
-    expect(site).not.toMatch(/<script[^>]+src=/);
-    expect(site).not.toMatch(/<link[^>]+href="https?:\/\/(?!emashiq\.github\.io\/)/);
-    const local = [...site.matchAll(/(?:src|srcset|href)="(assets\/[^"]+|styles\.css)"/g)].map((m) => m[1]!);
-    expect(local.length).toBeGreaterThan(5);
-    for (const file of local) expect(fs.existsSync(path.join('website', file)), file).toBe(true);
+  it('download links are plain links to the stable latest-release assets, so they work without JavaScript', () => {
+    // The <a> tag that holds href="<url>"; app.js finds it by its data-asset name to point it at a newer release.
+    const anchorWith = (url: string): string => {
+      const at = site.indexOf(`href="${url}"`);
+      return at < 0 ? '' : site.slice(site.lastIndexOf('<a', at), at);
+    };
+    for (const name of [...STABLE_ASSETS, 'SHA256SUMS.txt']) expect(anchorWith(`${DOWNLOAD_BASE}${name}`), name).toMatch(/^<a\s[^>]*data-asset="[^"]+"/);
+  });
+
+  it('loads no third-party scripts, styles or fonts, and every local asset and page exists', () => {
+    for (const [page, html] of PAGES) {
+      expect([...html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map((m) => m[1]), page).toEqual(['app.js']);
+      expect(html, page).not.toMatch(/<link[^>]+href="https?:\/\/(?!emashiq\.github\.io\/infinitynote\/)/);
+      const local = [...html.matchAll(/\s(?:src|srcset|href|content)="([^"]+)"/g)]
+        .flatMap((m) => m[1]!.split(',').map((entry) => entry.trim().split(/\s+/)[0]!))
+        .map((url) => (url.startsWith(SITE_BASE) ? url.slice(SITE_BASE.length) : url))
+        .filter((url) => /^(\.\/|assets\/|[\w-]+\.(?:html|css|js)(?:#|$))/.test(url) || url === '')
+        .map((url) => url.replace(/^\.\//, '').replace(/#.*$/, '') || 'index.html');
+      expect(local.length, page).toBeGreaterThan(5);
+      for (const file of local) expect(fs.existsSync(path.join('website', file)), `${page}: ${file}`).toBe(true);
+    }
+    for (const asset of ['website/style.css', 'website/app.js']) expect(fs.readFileSync(asset, 'utf8'), asset).not.toMatch(/@import|fonts\.googleapis|<script|createElement\(['"]script/);
   });
 });

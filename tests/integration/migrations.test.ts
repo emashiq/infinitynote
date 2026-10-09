@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { openBetterSqlite } from '../../src/main/db/better-sqlite3-driver';
 import type { Db } from '../../src/main/db/driver';
 import { MigrationError, migrateDatabase } from '../../src/main/db/migrate';
-import { MIGRATIONS, type Migration } from '../../src/main/db/migrations';
+import { LATEST, MIGRATIONS, type Migration } from '../../src/main/db/migrations';
 import { openDatabase } from '../../src/main/db/open-database';
 import { memoryLogger } from '../../src/main/services/logger';
 import { mkTmp, openFresh, trackDb } from './helpers';
@@ -51,9 +51,9 @@ let tick = 0;
 const uniqueNow = () => new Date(Date.UTC(2026, 9, 8, 12, 0, 0) + 1000 * tick++);
 
 describe('migrations (INF-FND-05)', () => {
-  it('fresh: schema v7, wal, foreign keys and synchronous FULL', async () => {
+  it('fresh: the latest schema, wal, foreign keys and synchronous FULL', async () => {
     const t = await openFresh();
-    expect(t.db.pragmaValue('user_version')).toBe(7);
+    expect(t.db.pragmaValue('user_version')).toBe(LATEST);
     expect(String(t.db.pragmaValue('journal_mode')).toLowerCase()).toBe('wal');
     expect(t.db.pragmaValue('foreign_keys')).toBe(1);
     expect(t.db.pragmaValue('synchronous')).toBe(2);
@@ -64,16 +64,16 @@ describe('migrations (INF-FND-05)', () => {
       ]),
     );
     expect(fs.existsSync(t.preMigrationDir) ? fs.readdirSync(t.preMigrationDir) : []).toEqual([]);
-    expect(t.logger.lines.some((l) => l.includes('db open driver=better-sqlite3') && l.includes('schema=7') && l.includes('preMigrationCopy=no'))).toBe(true);
+    expect(t.logger.lines.some((l) => l.includes('db open driver=better-sqlite3') && l.includes(`schema=${LATEST}`) && l.includes('preMigrationCopy=no'))).toBe(true);
   });
 
-  it('reopening a v7 database makes no pre-migration copy and no change', async () => {
+  it('reopening a database at the latest schema makes no pre-migration copy and no change', async () => {
     const t = await openFresh();
     t.db.close();
     const again = await openDatabase({ dbFile: t.dbFile, preMigrationDir: t.preMigrationDir });
     if (!again.ok) throw new Error('reopen failed');
     trackDb(again.db);
-    expect(again.migratedFrom).toBe(7);
+    expect(again.migratedFrom).toBe(LATEST);
     expect(again.preMigrationCopy).toBe(false);
     expect(fs.existsSync(t.preMigrationDir) ? fs.readdirSync(t.preMigrationDir) : []).toEqual([]);
   });
@@ -125,7 +125,7 @@ describe('migrations (INF-FND-05)', () => {
   });
 
   const failing: Migration = {
-    version: 8,
+    version: LATEST + 1,
     name: 'broken',
     sql: 'CREATE TABLE part_two(a TEXT); CREATE TABLE part_three(a TEXT); THIS IS NOT SQL;',
   };
@@ -143,11 +143,11 @@ describe('migrations (INF-FND-05)', () => {
     });
     expect(result).toMatchObject({ ok: false, code: 'MIGRATION_FAILED' });
     const check = trackDb(openBetterSqlite(t.dbFile, { readonly: true, fileMustExist: true }));
-    expect(check.pragmaValue('user_version')).toBe(7);
+    expect(check.pragmaValue('user_version')).toBe(LATEST);
     expect(tableNames(check)).not.toContain('part_two');
     expect(tableNames(check)).not.toContain('part_three');
     expect(fs.readdirSync(t.preMigrationDir)).toHaveLength(1);
-    expect(logger.lines.some((l) => l.includes('migration failed version=8'))).toBe(true);
+    expect(logger.lines.some((l) => l.includes(`migration failed version=${LATEST + 1}`))).toBe(true);
   });
 
   it('migrateDatabase throws MigrationError carrying the failing version', async () => {
@@ -156,22 +156,22 @@ describe('migrations (INF-FND-05)', () => {
     try {
       migrateDatabase(t.db, [...MIGRATIONS, failing]);
     } catch (err) {
-      expect((err as MigrationError).version).toBe(8);
+      expect((err as MigrationError).version).toBe(LATEST + 1);
     }
-    expect(t.db.pragmaValue('user_version')).toBe(7);
+    expect(t.db.pragmaValue('user_version')).toBe(LATEST);
   });
 
   it('foreign key violation rolls back', async () => {
     const t = await openFresh();
     const violating: Migration = {
-      version: 8,
+      version: LATEST + 1,
       name: 'fk',
       sql:
         'PRAGMA defer_foreign_keys = ON;' +
         ` INSERT INTO notes(id, project_id, format, content_text, created_at, updated_at) VALUES ('${randomUUID()}', '${randomUUID()}', 'plain', '', 1, 1);`,
     };
     expect(() => migrateDatabase(t.db, [...MIGRATIONS, violating])).toThrow(MigrationError);
-    expect(t.db.pragmaValue('user_version')).toBe(7);
+    expect(t.db.pragmaValue('user_version')).toBe(LATEST);
     expect(t.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM notes').get()?.n).toBe(0);
   });
 
@@ -309,7 +309,7 @@ describe('migration 002 (D-044)', () => {
     const v2 = await openDatabase({ dbFile, preMigrationDir });
     if (!v2.ok) throw new Error('v2 open failed');
     const db = trackDb(v2.db);
-    expect(v2.schemaVersion).toBe(7);
+    expect(v2.schemaVersion).toBe(LATEST);
     expect(v2.migratedFrom).toBe(1);
     expect(v2.preMigrationCopy).toBe(true);
     const count = (table: string) => db.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()?.n;
@@ -340,7 +340,7 @@ describe('migration 005 reminders (D-073)', () => {
     const v5 = await openDatabase({ dbFile, preMigrationDir });
     if (!v5.ok) throw new Error('v5 open failed');
     const db = trackDb(v5.db);
-    expect(v5.schemaVersion).toBe(7);
+    expect(v5.schemaVersion).toBe(LATEST);
     expect(v5.migratedFrom).toBe(4);
     expect(v5.preMigrationCopy).toBe(true);
     const count = (table: string) => db.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()?.n;
@@ -412,10 +412,10 @@ describe('migration 006 reminder sources (D-088)', () => {
     const before = dump(v5.db);
     v5.db.close();
 
-    const v6 = await openDatabase({ dbFile, preMigrationDir });
+    const v6 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 6) });
     if (!v6.ok) throw new Error('v6 open failed');
     const db = trackDb(v6.db);
-    expect(v6.schemaVersion).toBe(7);
+    expect(v6.schemaVersion).toBe(6);
     expect(v6.migratedFrom).toBe(5);
     expect(v6.preMigrationCopy).toBe(true);
     expect(dump(db)).toEqual(before);
@@ -494,7 +494,7 @@ describe('migration 007 references and tags (D-098)', () => {
     const before = v6.db.prepare('SELECT * FROM notes ORDER BY rowid').all();
     v6.db.close();
 
-    const v7 = await openDatabase({ dbFile, preMigrationDir });
+    const v7 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 7) });
     if (!v7.ok) throw new Error('v7 open failed');
     const db = trackDb(v7.db);
     expect([v7.schemaVersion, v7.migratedFrom, v7.preMigrationCopy]).toEqual([7, 6, true]);
@@ -533,5 +533,128 @@ describe('migration 007 references and tags (D-098)', () => {
     db.prepare<[string]>('DELETE FROM notes WHERE id = ?').run(source);
     const count = (table: string) => db.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()?.n;
     expect([count('note_references'), count('note_tags'), count('tags')]).toEqual([0, 0, 1]);
+  });
+});
+
+describe('migration 008 sticky text color (v0.2.0)', () => {
+  it('upgrades a populated v7 database to v8: every note keeps its row and gets no text color', async () => {
+    const { dbFile, preMigrationDir } = layout();
+    const v7 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 7) });
+    if (!v7.ok) throw new Error('v7 open failed');
+    const id = randomUUID();
+    insertNote(v7.db, 'Sticky', 'body', { id });
+    v7.db.prepare<[string]>("UPDATE notes SET sticky_enabled = 1, color = 'blue' WHERE id = ?").run(id);
+    const before = v7.db.prepare('SELECT * FROM notes ORDER BY rowid').all() as Array<Record<string, unknown>>;
+    v7.db.close();
+
+    const v8 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 8) });
+    if (!v8.ok) throw new Error('v8 open failed');
+    const db = trackDb(v8.db);
+    expect([v8.schemaVersion, v8.migratedFrom, v8.preMigrationCopy]).toEqual([8, 7, true]);
+    expect(db.prepare('SELECT * FROM notes ORDER BY rowid').all()).toEqual(before.map((row) => ({ ...row, text_color: null })));
+    expect(fs.readdirSync(preMigrationDir)[0]).toMatch(/^infinity-notes-v7-/);
+  });
+
+  it('stores only a lowercase #rrggbb text color or none; a custom note color is any text', async () => {
+    const { db } = await openFresh();
+    const id = randomUUID();
+    insertNote(db, 'Sticky', 'body', { id });
+    const setText = (value: string | null) => db.prepare<[string | null, string]>('UPDATE notes SET text_color = ? WHERE id = ?').run(value, id);
+    setText('#e03131');
+    setText(null);
+    for (const bad of ['#E03131', 'red', '#e0313', '#e031311', '#e0313g', '']) expect(() => setText(bad), bad).toThrow(/CHECK/);
+    db.prepare<[string]>("UPDATE notes SET color = '#3a7bd5' WHERE id = ?").run(id);
+    expect(db.prepare<[string], { color: string; text_color: string | null }>('SELECT color, text_color FROM notes WHERE id = ?').get(id)).toEqual({ color: '#3a7bd5', text_color: null });
+  });
+});
+
+describe('migration 009 linked files (v0.2.0, D-108)', () => {
+  it('upgrades a populated v8 database to v9: notes are untouched and the link tables start empty', async () => {
+    const { dbFile, preMigrationDir } = layout();
+    const v8 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 8) });
+    if (!v8.ok) throw new Error('v8 open failed');
+    insertNote(v8.db, 'With files', 'body', { id: randomUUID() });
+    const before = v8.db.prepare('SELECT * FROM notes ORDER BY rowid').all();
+    v8.db.close();
+
+    const v9 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 9) });
+    if (!v9.ok) throw new Error('v9 open failed');
+    const db = trackDb(v9.db);
+    expect([v9.schemaVersion, v9.migratedFrom, v9.preMigrationCopy]).toEqual([9, 8, true]);
+    expect(db.prepare('SELECT * FROM notes ORDER BY rowid').all()).toEqual(before);
+    expect(db.prepare('SELECT count(*) AS n FROM linked_files').get()).toEqual({ n: 0 });
+    expect(db.prepare('SELECT count(*) AS n FROM note_linked_files').get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'note_linked_files' AND name NOT LIKE 'sqlite_%'").all()).toEqual([{ name: 'note_linked_files_link' }]);
+  });
+});
+
+describe('migration 010 note locks (v0.2.0, D-111)', () => {
+  const lockRow = (db: Db, noteId: string) =>
+    db
+      .prepare<[string, Buffer, Buffer, Buffer]>("INSERT INTO note_locks(note_id, kdf, salt, password_key, content, created_at, updated_at) VALUES (?, '{}', ?, ?, ?, 1, 1)")
+      .run(noteId, randomBytes(16), randomBytes(60), randomBytes(40));
+
+  it('upgrades a populated v9 database to v10: notes are untouched and unlocked, no lock rows', async () => {
+    const { dbFile, preMigrationDir } = layout();
+    const v9 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 9) });
+    if (!v9.ok) throw new Error('v9 open failed');
+    insertNote(v9.db, 'Private', 'body', { id: randomUUID() });
+    const before = v9.db.prepare('SELECT * FROM notes ORDER BY rowid').all() as Array<Record<string, unknown>>;
+    v9.db.close();
+
+    const v10 = await openDatabase({ dbFile, preMigrationDir });
+    if (!v10.ok) throw new Error('v10 open failed');
+    const db = trackDb(v10.db);
+    expect([v10.schemaVersion, v10.migratedFrom, v10.preMigrationCopy]).toEqual([10, 9, true]);
+    expect(db.prepare('SELECT * FROM notes ORDER BY rowid').all()).toEqual(before.map((row) => ({ ...row, locked: 0 })));
+    expect(db.prepare('SELECT count(*) AS n FROM note_locks').get()).toEqual({ n: 0 });
+  });
+
+  it('keeps notes.locked in step with note_locks and refuses plaintext for a locked note', async () => {
+    const { db } = await openFresh();
+    const id = randomUUID();
+    insertNote(db, 'Secret', 'the body', { id });
+    const locked = () => db.prepare<[string], { locked: number }>('SELECT locked FROM notes WHERE id = ?').get(id)!.locked;
+    // The plaintext must be gone before the lock row exists.
+    expect(() => lockRow(db, id)).toThrow(/locked note content must be encrypted/);
+    db.prepare<[string]>("UPDATE notes SET content_text = NULL, plain_text = '' WHERE id = ?").run(id);
+    lockRow(db, id);
+    expect(locked()).toBe(1);
+    expect(() => db.prepare<[string]>("UPDATE notes SET content_text = 'leak' WHERE id = ?").run(id)).toThrow(/must be encrypted/);
+    expect(() => db.prepare<[string]>("UPDATE notes SET plain_text = 'leak' WHERE id = ?").run(id)).toThrow(/must be encrypted/);
+    db.prepare<[string]>("UPDATE notes SET title = 'Renamed' WHERE id = ?").run(id);
+    expect(() =>
+      db.prepare<[string, string]>("INSERT INTO note_versions(id, note_id, revision, format, content_snapshot, reason, created_at) VALUES (?, ?, 1, 'plain', 'leak', 'auto', 1)").run(randomUUID(), id),
+    ).toThrow(/keep no versions/);
+    const draft = (content: string, title: string | null) =>
+      db
+        .prepare<[string, string, string, string | null]>("INSERT INTO note_drafts(id, note_id, view_id, base_revision, format, content, title, reason, created_at) VALUES (?, ?, 'v', 0, 'plain', ?, ?, 'conflict', 1)")
+        .run(randomUUID(), id, content, title);
+    expect(() => draft('leak', null)).toThrow(/must be sealed/);
+    expect(() => draft('sealed:AAAA', 'title')).toThrow(/must be sealed/);
+    draft('sealed:AAAA', null);
+    expect(() =>
+      db.prepare<[string, string]>("INSERT INTO suggestion_dismissals(dedupe_key, note_id, span_text, span_ordinal, reference_date, created_at) VALUES (?, ?, 'tomorrow', 0, '2026-10-10', 1)").run('a'.repeat(64), id),
+    ).toThrow(/no suggestion dismissals/);
+    db.prepare<[string]>('DELETE FROM note_locks WHERE note_id = ?').run(id);
+    expect(locked()).toBe(0);
+    db.prepare<[string]>("UPDATE notes SET content_text = 'back', plain_text = 'back' WHERE id = ?").run(id);
+  });
+
+  it('checks the lock row and removes it with its note', async () => {
+    const { db } = await openFresh();
+    const id = randomUUID();
+    insertNote(db, 'n', '', { id });
+    db.prepare<[string]>("UPDATE notes SET content_text = NULL WHERE id = ?").run(id);
+    const insert = (salt: Buffer, wrapped: Buffer, content: Buffer, kdf = '{}') =>
+      db
+        .prepare<[string, string, Buffer, Buffer, Buffer]>('INSERT INTO note_locks(note_id, kdf, salt, password_key, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 1)')
+        .run(id, kdf, salt, wrapped, content);
+    expect(() => insert(randomBytes(8), randomBytes(60), randomBytes(40))).toThrow(/CHECK/);
+    expect(() => insert(randomBytes(16), Buffer.alloc(0), randomBytes(40))).toThrow(/CHECK/);
+    expect(() => insert(randomBytes(16), randomBytes(60), randomBytes(40), 'not json')).toThrow(/CHECK/);
+    insert(randomBytes(16), randomBytes(60), randomBytes(40));
+    db.prepare<[string]>('DELETE FROM notes WHERE id = ?').run(id);
+    expect(db.prepare('SELECT count(*) AS n FROM note_locks').get()).toEqual({ n: 0 });
   });
 });

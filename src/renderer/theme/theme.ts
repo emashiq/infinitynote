@@ -10,3 +10,8 @@ export function resolveTheme(setting: ThemeSettingValue, prefersDark: boolean): 
 export function applyTheme(root: HTMLElement, theme: ResolvedTheme): void {
   root.dataset.theme = theme;
 }
+
+/** The theme applied to a root element (light until one is applied). */
+export function appliedTheme(root: HTMLElement): ResolvedTheme {
+  return root.dataset.theme === 'dark' ? 'dark' : 'light';
+}

@@ -1,13 +1,21 @@
 import { z } from 'zod';
 import { AppFlushedRequest, AppFlushRequestEvent, AppInfo, Capabilities, ShellOpenExternalRequest, ShellOpenExternalResponse } from './app';
 import {
+  AddedFile,
+  AddPickedRequest,
   AttachmentHandoffRequest,
   AttachmentImportBytesRequest,
   AttachmentImportBytesResponse,
-  AttachmentImportDialogRequest,
-  AttachmentImportDialogResponse,
   AttachmentOpenResponse,
   AttachmentShowResponse,
+  FileLinkCopyInResponse,
+  FileLinkCreateRequest,
+  FileLinkCreateResponse,
+  FileLinkRequest,
+  FileLinkStatusRequest,
+  FileLinkStatusResponse,
+  PickFilesRequest,
+  PickFilesResponse,
 } from './attachments';
 import type { EventChannel, InvokeChannel } from './channel-names';
 import {
@@ -54,6 +62,17 @@ import {
   TreeSnapshot,
 } from './hierarchy';
 import { HomeSummaryRequest, HomeSummaryResponse } from './home';
+import {
+  LockAllResponse,
+  LockChangePasswordRequest,
+  LockNoteRequest,
+  LockRemoveRequest,
+  LockSetHelloRequest,
+  LockSetRequest,
+  LockStatus,
+  LockUnlockRequest,
+  OsKeyAvailabilitySchema,
+} from './locks';
 import {
   DraftsListRequest,
   DraftsListResponse,
@@ -121,6 +140,7 @@ import {
   StickyNoteRequest,
   StickySetCollapsedRequest,
   StickySetColorRequest,
+  StickySetTextColorRequest,
   StickySetPinnedRequest,
   StickyState,
 } from './stickies';
@@ -177,7 +197,7 @@ export const CHANNEL_SCHEMAS = {
   'drafts:list': { request: DraftsListRequest, response: DraftsListResponse },
   'drafts:resolve': { request: DraftsResolveRequest, response: DraftsResolveResponse },
   'attachment:importBytes': { request: AttachmentImportBytesRequest, response: AttachmentImportBytesResponse },
-  'attachment:importFromDialog': { request: AttachmentImportDialogRequest, response: AttachmentImportDialogResponse },
+  'attachment:pickFiles': { request: PickFilesRequest, response: PickFilesResponse },
   'shell:openExternal': { request: ShellOpenExternalRequest, response: ShellOpenExternalResponse },
   'app:flushed': { request: AppFlushedRequest, response: Empty },
   'sticky:float': { request: StickyNoteRequest, response: StickyFloatResponse },
@@ -234,6 +254,25 @@ export const CHANNEL_SCHEMAS = {
   'collab:pull': { request: CollabPullRequest, response: CollabPullResponse },
   'collab:flush': { request: CollabFlushRequest, response: CollabFlushResponse },
   'collab:leave': { request: CollabLeaveRequest, response: CollabLeaveResponse },
+  'sticky:setTextColor': { request: StickySetTextColorRequest, response: StickyState.nullable() },
+  // v0.2.0: copy or link added files (D-108).
+  'attachment:addPicked': { request: AddPickedRequest, response: AddedFile },
+  'fileLink:create': { request: FileLinkCreateRequest, response: FileLinkCreateResponse },
+  'fileLink:status': { request: FileLinkStatusRequest, response: FileLinkStatusResponse },
+  'fileLink:open': { request: FileLinkRequest, response: AttachmentOpenResponse },
+  'fileLink:showInFolder': { request: FileLinkRequest, response: AttachmentShowResponse },
+  'fileLink:copyIn': { request: FileLinkRequest, response: FileLinkCopyInResponse },
+  // v0.2.0: locked notes (D-111..D-113), main window only.
+  'lock:availability': { request: Empty, response: OsKeyAvailabilitySchema },
+  'lock:status': { request: LockNoteRequest, response: LockStatus },
+  'lock:set': { request: LockSetRequest, response: LockStatus },
+  'lock:unlock': { request: LockUnlockRequest, response: LockStatus },
+  'lock:unlockHello': { request: LockNoteRequest, response: LockStatus },
+  'lock:lockNow': { request: LockNoteRequest, response: LockStatus },
+  'lock:lockAll': { request: Empty, response: LockAllResponse },
+  'lock:changePassword': { request: LockChangePasswordRequest, response: LockStatus },
+  'lock:setHello': { request: LockSetHelloRequest, response: LockStatus },
+  'lock:remove': { request: LockRemoveRequest, response: LockStatus },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {

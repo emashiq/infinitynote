@@ -8,18 +8,20 @@ export interface LiveNote {
   title: string;
   path: string[];
   updatedAt: number | null;
+  /** The note is locked (D-111). */
+  locked: boolean;
 }
 
 /** Title and location of a note taken from the tree snapshot when it lists the note, else from the opened copy. */
 export function liveNoteFrom(
   snapshot: TreeSnapshotType,
   noteId: string,
-  opened: { title: string; path: string[] } | null,
+  opened: { title: string; path: string[]; locked: boolean } | null,
 ): LiveNote | null {
   const live = snapshot.notes.find((n) => n.id === noteId);
-  if (!live) return opened ? { title: opened.title, path: opened.path, updatedAt: null } : null;
+  if (!live) return opened ? { title: opened.title, path: opened.path, updatedAt: null, locked: opened.locked } : null;
   const index = buildPathIndex(snapshot.projects, snapshot.folders);
-  return { title: live.title, path: pathOf(index, { projectId: live.projectId, folderId: live.folderId }), updatedAt: live.updatedAt };
+  return { title: live.title, path: pathOf(index, { projectId: live.projectId, folderId: live.folderId }), updatedAt: live.updatedAt, locked: live.locked };
 }
 
 export function useLiveNote(controller: NoteController): LiveNote | null {

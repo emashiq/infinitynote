@@ -1,15 +1,18 @@
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import type { SuggestionContext } from '../reminders/suggestion-context';
-import type { AttachmentLimits } from './uploader';
+import type { AddAction } from '../../shared/attachments/file-choice';
+import type { AttachmentPrefs } from './uploader';
 
 /**
  * What the editor needs from the app; passed in so the same editor serves tabs and (Phase 04) stickies. Must be a
  * stable object (each editor instance creates its uploader from it once).
  */
 export interface EditorServices {
-  bridge: Pick<InfinityBridge, 'attachment' | 'shell' | 'palette' | 'notes'>;
+  bridge: Pick<InfinityBridge, 'attachment' | 'fileLink' | 'shell' | 'palette' | 'notes'>;
   notify: (message: string) => void;
-  limits: () => AttachmentLimits;
+  attachmentPrefs: () => AttachmentPrefs;
+  /** Saves "When adding files" from the "Add files" dialog; absent where settings cannot be written (stickies). */
+  rememberAddFiles?: (action: AddAction) => void;
   /** Reminder suggestions: main's reference context, dismissals and the suggestion settings (D-091). */
   suggestions: SuggestionContext;
   /** Note references (main window only): live titles for the chips and opening a reference in a tab. */

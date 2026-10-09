@@ -6,7 +6,7 @@ import type { AppOpenNoteEventType } from '../../shared/contracts/windows';
 import { RemindersStore } from '../reminders/reminders-store';
 import { EditorHandle } from '../editor/editor-handle';
 import type { EditorServices, ReferenceHost } from '../editor/editor-services';
-import type { AttachmentLimits } from '../editor/uploader';
+import type { AttachmentPrefs } from '../editor/uploader';
 import { createCommandRunner, type CommandRunner } from './commands';
 import { createPortabilityCommands, type PortabilityCommands } from './portability-commands';
 import { browserHideEvents, createCoreServices } from './core-services';
@@ -58,8 +58,8 @@ export interface AppServices {
   portability: PortabilityCommands;
   windowSettings: WindowSettingsStore;
   reminders: RemindersStore;
-  /** Attachment size limits from the public settings (followed live through settings:changed). */
-  attachmentLimits: Store<AttachmentLimits>;
+  /** Attachment limits and "When adding files" from the public settings (followed live through settings:changed). */
+  attachmentPrefs: Store<AttachmentPrefs>;
   /** What every note editor uses from the app; one stable object. */
   editor: EditorServices;
   /** The active note tab's editor as the tab strip sees it: Enter in the tab's title moves into the text (D-102). */
@@ -88,7 +88,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
   const viewId = uuid();
   const now = deps.now ?? (() => Date.now());
 
-  const core = createCoreServices(bridge, { timers, themeEnv: deps.themeEnv === undefined ? browserThemeEnv() : deps.themeEnv });
+  const core = createCoreServices(bridge, { timers, themeEnv: deps.themeEnv === undefined ? browserThemeEnv() : deps.themeEnv, canWriteSettings: true });
   const { notices, theme } = core;
   const meta = createStore<MetaState>({ info: null });
   const tabs = new TabsStore({ bridge, notices, timers, viewId, uuid });
@@ -217,7 +217,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     portability,
     windowSettings,
     reminders,
-    attachmentLimits: core.attachmentLimits,
+    attachmentPrefs: core.attachmentPrefs,
     editor,
     noteEditor: new EditorHandle(),
     ready,

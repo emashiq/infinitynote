@@ -18,6 +18,8 @@ export const TIMER_CAP_MS = 60_000;
 export const CLOCK_JUMP_MS = 120_000;
 export const MAX_SINGLE_PER_BATCH = 3;
 export const DUE_CHUNK = 500;
+/** The notification title of a reminder in a locked note, instead of the reminder title (D-112). */
+export const LOCKED_REMINDER_TITLE = 'Reminder in a locked note';
 export const BACKOFF_START_MS = 1_000;
 const MINUTE = 60_000;
 
@@ -266,7 +268,9 @@ export class ReminderScheduler {
     } else {
       for (const c of claimed) {
         const body = `Due ${formatShort(c.row.due_at_utc, c.row.zone_id)} · ${displayTitle(c.row.note_title)}`;
-        await showCurrent([c], () => ({ ref: c.deliveryId, title: c.row.title, body }));
+        // A reminder's title may be text from its note; a locked note's reminder says only that it is due (D-112).
+        const title = c.row.note_locked === 1 ? LOCKED_REMINDER_TITLE : c.row.title;
+        await showCurrent([c], () => ({ ref: c.deliveryId, title, body }));
       }
     }
     const at = this.deps.clock.now();

@@ -36,8 +36,10 @@ describe('Phase 06 catalogue (D-089)', () => {
       expect(isChannelAllowed('main', channel), channel).toBe(true);
     }
     // 35 after Phase 06; Phase 07 adds attachment:open and attachment:showInFolder (D-098).
-    // The three lease channels gave way to the five live-sync channels (D-103).
-    expect(STICKY_ALLOWED_CHANNELS.size).toBe(39);
+    // The three lease channels gave way to the five live-sync channels (D-103); v0.2.0 adds sticky:setTextColor, and the
+    // picker (attachment:pickFiles replacing attachment:importFromDialog, attachment:addPicked) and the five fileLink
+    // channels (D-108).
+    expect(STICKY_ALLOWED_CHANNELS.size).toBe(46);
     expect([...WIDGET_ALLOWED_CHANNELS]).toEqual([
       'app:getInfo',
       'app:quit',

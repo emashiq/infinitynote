@@ -6,10 +6,16 @@ import type { RestoreOutcomeType } from '../shared/contracts/portability';
 import type { SettingsChangedPayload } from '../shared/contracts/settings';
 import type { Db } from './db/driver';
 import { SettingsRepo } from './db/repositories/settings-repo';
+import { LockService } from './locks/lock-service';
+import type { KdfParams } from './locks/note-crypto';
+import { NoteVault } from './locks/note-vault';
+import { OS_KEY_MESSAGES, unsupportedVerifier, type KeyProtector, type OsKeyVerifier } from './locks/os-key';
 import { PortabilityService } from './portability/portability-service';
 import type { RestorePaths } from './portability/restore';
 import { AttachmentHandoff } from './services/attachment-handoff';
 import { AttachmentService } from './services/attachment-service';
+import { FilePicker } from './services/file-picker';
+import { LinkedFileService } from './services/linked-file-service';
 import type { Clock } from './services/clock';
 import { CollabHub } from './services/collab-hub';
 import { ContentIndexer } from './services/content-indexer';
@@ -36,6 +42,7 @@ import { SettingsService } from './services/settings-service';
 import { StickyService } from './services/sticky-service';
 import { SuggestionService } from './services/suggestion-service';
 import { TagService } from './services/tag-service';
+import type { PowerEvents } from './services/power-events';
 import type { SystemZoneProvider } from './services/system-zone';
 import { WidgetStateStore } from './services/widget-state';
 import { TrashService } from './services/trash-service';
@@ -58,6 +65,10 @@ export interface MainServices {
   formats: FormatService;
   attachments: AttachmentService;
   handoff: AttachmentHandoff;
+  /** Files linked at their original location (D-108). */
+  links: LinkedFileService;
+  /** The native file picker; picked files are copied or linked by index (D-108). */
+  picker: FilePicker;
   references: ReferenceService;
   search: SearchService;
   tags: TagService;
@@ -69,6 +80,8 @@ export interface MainServices {
   maintenance: MaintenanceService;
   /** The single writer of note content (used by the services above and the E2E fake view). */
   content: NoteContent;
+  /** Locked notes (D-111..D-113). */
+  locks: LockService;
 }
 
 export interface MainServicesDeps {
@@ -102,6 +115,15 @@ export interface MainServicesDeps {
   onReminderChanged: (event: ReminderChangedEventType) => void;
   /** After a committed reminder write: wakes the scheduler. */
   onRemindersWritten?: () => void;
+  /** Locked notes: the OS key (Windows Hello), its key protection, power events and the main window handle (D-113). */
+  locks?: {
+    verifier?: OsKeyVerifier;
+    protector?: KeyProtector | null;
+    power?: PowerEvents;
+    windowHandle?: () => Buffer | null;
+    /** Cheaper scrypt parameters (tests only). */
+    kdf?: KdfParams;
+  };
   /** Test-only hooks (E2E): save fault injection and an import delay. */
   testFaults?: { save?: SaveFaults; beforeImport?: () => Promise<void> };
 }
@@ -111,7 +133,8 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
   const settings = new SettingsService({ repo: new SettingsRepo(db), clock, logger, emit: deps.onSettingsChanged });
   const reminderClock = deps.reminderClock ?? clock;
   const anchors = new ReminderAnchors(db, { clock: reminderClock, logger });
-  const content = new NoteContent(db, new ContentIndexer(db, logger, anchors));
+  const vault = new NoteVault(db, clock);
+  const content = new NoteContent(db, new ContentIndexer(db, logger, anchors), vault);
   // A write outside a note's live-sync session starts it over (D-103). A content write that changed a reminder anchor
   // is followed by reminder:changed after its revision event (D-080).
   let collab: CollabHub | null = null;
@@ -127,7 +150,7 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     ops,
     autoPolicy: () => ({ maxAgeDays: settings.getInternal('retention.autoVersionDays'), maxCount: settings.getInternal('retention.autoVersionMax') }),
   });
-  collab = new CollabHub({ db, clock, ids, logger, content, versions, emitRevision: onNoteRevision, send: deps.sendCollab, faults: deps.testFaults?.save });
+  collab = new CollabHub({ db, clock, ids, logger, content, versions, vault, emitRevision: onNoteRevision, send: deps.sendCollab, faults: deps.testFaults?.save });
   const reminders = new ReminderService({
     db,
     clock: reminderClock,
@@ -135,6 +158,7 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     logger,
     zones: deps.zones,
     settings,
+    vault,
     emit: deps.onReminderChanged,
     onWrite: () => deps.onRemindersWritten?.(),
   });
@@ -145,10 +169,10 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     ids,
     logger,
     settings,
-    dialog: deps.dialog,
     dataDir: deps.dataDir,
     beforeImport: deps.testFaults?.beforeImport,
   });
+  const links = new LinkedFileService({ db, clock, ids, logger, shell: deps.shell, attachments });
   const portability = new PortabilityService({
     db,
     paths: deps.restorePaths,
@@ -161,13 +185,30 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     dialog: deps.dialog,
     attachments,
     content,
+    vault,
     reminders,
     onTreeChanged: deps.onTreeChanged,
     restart: deps.restart,
     restoreOutcome: deps.restoreOutcome,
   });
+  const locks = new LockService({
+    db,
+    clock,
+    logger,
+    vault,
+    collab,
+    settings,
+    verifier: deps.locks?.verifier ?? unsupportedVerifier(OS_KEY_MESSAGES.otherOs),
+    protector: deps.locks?.protector ?? null,
+    windowHandle: deps.locks?.windowHandle ?? (() => null),
+    onTreeChanged: deps.onTreeChanged,
+    onReminderChanged: deps.onReminderChanged,
+    power: deps.locks?.power,
+    kdf: deps.locks?.kdf,
+  });
   return {
     content,
+    locks,
     settings,
     hierarchy: new HierarchyService({ db, clock, ids, logger, onChange: deps.onTreeChanged }),
     trash,
@@ -182,11 +223,13 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     search: new SearchService(db),
     tags: new TagService(db, logger),
     handoff: new AttachmentHandoff(db, { dataDir: deps.dataDir, shell: deps.shell, logger }),
-    reader: new NoteReader(db),
-    writer: new NoteWriter({ db, clock, ids, logger, content, versions, emit: onNoteRevision, faults: deps.testFaults?.save }),
+    links,
+    picker: new FilePicker({ dialog: deps.dialog, ids, attachments, links }),
+    reader: new NoteReader(db, vault),
+    writer: new NoteWriter({ db, clock, ids, logger, content, versions, vault, emit: onNoteRevision, faults: deps.testFaults?.save }),
     collab,
     versions,
-    drafts: new DraftService({ db, clock, ops, versions }),
+    drafts: new DraftService({ db, clock, ops, versions, vault }),
     formats: new FormatService({ ids, ops, versions }),
     attachments,
     portability,

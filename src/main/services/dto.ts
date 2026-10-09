@@ -30,6 +30,7 @@ export const toNoteDto = (r: NoteMetaRow): NoteDtoType => ({
   pinnedAt: r.pinned_at,
   favorite: r.favorite === 1,
   revision: r.revision,
+  locked: r.locked === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });

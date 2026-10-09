@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   APP_ID,
+  APP_VERSION,
   AUTHOR_NAME,
   COPYRIGHT,
   DEV_APP_ID,
@@ -42,9 +43,11 @@ const builder = JSON.parse(fs.readFileSync('electron-builder.json', 'utf8')) as 
   buildDependenciesFromSource: boolean;
   asarUnpack: string[];
   publish: unknown;
+  files: string[];
+  win: { icon: string };
   nsis: { include: string; deleteAppDataOnUninstall: boolean; license: string };
   electronFuses: Record<string, boolean>;
-  linux: { executableName: string; syncDesktopName: boolean; maintainer: string };
+  linux: { executableName: string; syncDesktopName: boolean; maintainer: string; icon: string };
 };
 
 describe('app identity (INF-FND-11)', () => {
@@ -61,7 +64,8 @@ describe('app identity (INF-FND-11)', () => {
   it('package.json identity and engines', () => {
     expect(pkg.name).toBe(NPM_NAME);
     expect(pkg.productName).toBe(PRODUCT_NAME);
-    expect(pkg.version).toBe('0.1.0');
+    expect(pkg.version).toBe('0.2.0');
+    expect(pkg.version).toBe(APP_VERSION);
     expect(pkg.engines.node).toBe('>=24.15.0 <25');
     expect(pkg.main).toBe('out/main/index.js');
     expect(pkg.type).toBeUndefined();
@@ -139,18 +143,30 @@ describe('app identity (INF-FND-11)', () => {
     expect(nsh).toMatch(/\$\{ifNot\} \$\{isUpdated\}[\s\S]*DeleteRegKey[\s\S]*\$\{endIf\}/);
   });
 
-  it('the placeholder icons are a 512x512 PNG and an ICO with a 256 entry', () => {
-    const png = fs.readFileSync('resources/icon.png');
-    expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-    expect(png.readUInt32BE(16)).toBe(512);
-    expect(png.readUInt32BE(20)).toBe(512);
+  it('the app icons come from the logo (tools/brand-assets.mjs): a 512 px PNG, an ICO from 16 to 256 px and the Linux, logo and tray PNGs (D-109)', () => {
+    const pngSize = (file: string) => {
+      const png = fs.readFileSync(file);
+      expect(png.subarray(0, 8), file).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      return [png.readUInt32BE(16), png.readUInt32BE(20)];
+    };
+    expect(pngSize('resources/icon.png')).toEqual([512, 512]);
     const ico = fs.readFileSync('resources/icon.ico');
     expect(ico.readUInt16LE(0)).toBe(0);
     expect(ico.readUInt16LE(2)).toBe(1);
     const count = ico.readUInt16LE(4);
     const sizes = Array.from({ length: count }, (_, i) => ico[6 + i * 16]! || 256);
-    expect(sizes).toContain(256);
-    expect(sizes).toEqual([256, 48, 32, 16]);
+    expect(sizes).toEqual([16, 24, 32, 48, 64, 128, 256]);
+    for (const n of [16, 32, 48, 64, 128, 256, 512]) expect(pngSize(`resources/icons/${n}x${n}.png`)).toEqual([n, n]);
+    for (const n of [32, 64, 128, 256]) expect(pngSize(`resources/brand/logo-${n}.png`)).toEqual([n, n]);
+    for (const n of [16, 24, 32]) expect(pngSize(`resources/brand/tray-${n}.png`)).toEqual([n, n]);
+    // The old placeholder generator would overwrite them.
+    expect(fs.existsSync('tools/make-icon.mjs')).toBe(false);
+  });
+
+  it('the installers use the icons: the Windows ICO, the Linux PNG set, and the tray images inside the app', () => {
+    expect(builder.win.icon).toBe('resources/icon.ico');
+    expect(builder.linux.icon).toBe('resources/icons');
+    expect(builder.files).toEqual(expect.arrayContaining(['resources/icon.png', 'resources/brand/tray-*.png']));
   });
 
   it('forbidden dependencies are absent and runtime dependencies are only what main loads', () => {

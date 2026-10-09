@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { displayTitle } from '../../shared/names';
 import { useServices, useStore } from '../state/use-store';
+import { ColorDot } from '../ui/ColorDot';
+import { LockMark } from '../ui/LockMark';
 
 const LIMIT = 12;
 
@@ -25,8 +27,9 @@ export function PinnedSection() {
               <li key={note.id}>
                 <button type="button" className="card" onClick={() => void tabs.openNote(note.id)}>
                   <span className="card-title">
-                    {note.sticky && note.color ? <span className={`dot dot-${note.color}`} aria-hidden /> : null}
+                    {note.sticky && note.color ? <ColorDot color={note.color} /> : null}
                     {displayTitle(note.title)}
+                    {note.locked ? <LockMark /> : null}
                   </span>
                   <span className="card-path muted">{note.path.join(' › ')}</span>
                 </button>

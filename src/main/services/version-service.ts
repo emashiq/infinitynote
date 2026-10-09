@@ -29,8 +29,12 @@ export class VersionService {
     this.notes = new NotesRepo(deps.db);
   }
 
-  /** Saves the row's current content as a version; runs inside the caller's transaction. Returns the version id. */
-  snapshot(row: ContentRow, reason: VersionReason, now: number): string {
+  /**
+   * Saves the row's current content as a version; runs inside the caller's transaction. Returns the version id, or null
+   * for a locked note, which keeps no history while it is locked (D-112).
+   */
+  snapshot(row: ContentRow, reason: VersionReason, now: number): string | null {
+    if (row.locked === 1) return null;
     const id = this.deps.ids.uuid();
     const attachmentIds = row.format === 'rich' ? [...new Set(collectAttachmentRefs(storedContent(row)).map((r) => r.attachmentId))] : [];
     this.versions.insert({ id, noteId: row.id, revision: row.revision, format: row.format, content: serializedContent(row), attachmentIds, reason, now });
@@ -42,7 +46,7 @@ export class VersionService {
    * automatic version from the last 10 minutes, then prunes that note's automatic versions to the retention setting.
    */
   maybeAuto(row: ContentRow, now: number): void {
-    if (row.revision < 1) return;
+    if (row.revision < 1 || row.locked === 1) return;
     if (row.plain_text === '' && !this.attachments.hasLinks(row.id)) return;
     if (this.versions.hasAutoSince(row.id, now - AUTO_VERSION_INTERVAL_MS)) return;
     this.snapshot(row, 'auto', now);

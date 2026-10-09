@@ -48,6 +48,8 @@ export default defineConfig({
     build: {
       // electron-vite leaves the renderer unminified by default; the production React build is minified here (F-01-5).
       minify: 'esbuild',
+      // Assets are emitted as files: the CSP allows images from the app itself, not data: URLs (D-109).
+      assetsInlineLimit: 0,
       rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html') } },
     },
     plugins: [react(), cspMeta()],

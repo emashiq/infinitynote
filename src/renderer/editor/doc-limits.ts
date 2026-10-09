@@ -2,7 +2,9 @@ import { Extension, getChangedRanges } from '@tiptap/core';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state';
 import { MAX_DOC_DEPTH, MAX_DOC_NODES } from '../../shared/editor/doc-schema';
+import { TABLE_TOO_LARGE_MESSAGE } from '../../shared/editor/table-limits';
 import { isRemote } from './content';
+import { tablesAroundFit } from './table-size';
 
 export const TOO_DEEP_MESSAGE = 'This would nest lists or quotes more deeply than a note can store. Use fewer levels.';
 export const TOO_MANY_PARTS_MESSAGE = 'This would make the note too large to store. Paste or add a smaller part.';
@@ -62,11 +64,13 @@ function countNodes(doc: PmNode): number {
 interface Delta {
   added: number;
   depth: number;
+  /** Whether every table the change touches fits the table limits (D-116). */
+  tablesFit: boolean;
 }
 
 /**
  * Keeps every document within what `normalizeRichDoc` accepts (QA-3): a change that would nest deeper than 64
- * levels or grow the note past 100,000 parts is refused with a message, so a note never reaches a state it cannot
+ * levels, grow the note past 100,000 parts or make a table over the table limits (D-116) is refused with a message, so a note never reaches a state it cannot
  * save; edits that arrive from another view (D-103) were checked where they were made. The work is proportional to
  * the size of each change; the node count is tracked incrementally, and the change of a transaction is measured once
  * for both the filter and the state update (F-03-2).
@@ -82,11 +86,13 @@ export function createDocLimits(notify: (message: string) => void, limits = { de
         if (cached) return cached;
         let added = 0;
         let depth = 0;
+        let tablesFit = true;
         for (const { oldRange, newRange } of getChangedRanges(tr)) {
           added += countInRange(tr.doc, newRange.from, newRange.to) - countInRange(tr.before, oldRange.from, oldRange.to);
           depth = Math.max(depth, depthAround(tr.doc, newRange.from, newRange.to));
+          tablesFit &&= tablesAroundFit(tr.doc, newRange.from, newRange.to);
         }
-        const result = { added, depth };
+        const result = { added, depth, tablesFit };
         measured.set(tr, result);
         return result;
       };
@@ -107,6 +113,10 @@ export function createDocLimits(notify: (message: string) => void, limits = { de
             }
             if (change.added > 0 && (key.getState(state) ?? 0) + change.added > limits.nodes) {
               notify(TOO_MANY_PARTS_MESSAGE);
+              return false;
+            }
+            if (!change.tablesFit) {
+              notify(TABLE_TOO_LARGE_MESSAGE);
               return false;
             }
             return true;

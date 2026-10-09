@@ -29,7 +29,7 @@ async function setup(opts: { caps?: CapabilitiesType; displays?: DisplayInfo[]; 
   const sent: Array<{ webContentsId: number; state: StickyStateType }> = [];
   const opened: Array<{ noteId: string }> = [];
   const layout: StickyLayoutEntry[] = [];
-  const ctl = { caps: opts.caps ?? WINDOWS_CAPS, restore: opts.restore ?? false, flushGate: null as Deferred | null, saved: true };
+  const ctl = { caps: opts.caps ?? WINDOWS_CAPS, restore: opts.restore ?? false, flushGate: null as Deferred | null, saved: true, theme: 'light' as 'light' | 'dark' };
   // The real StickyService, with setOpen recorded in the order log.
   const service = Object.assign(Object.create(s.stickies) as typeof s.stickies, {
     setOpen: (noteId: string, open: boolean) => {
@@ -60,7 +60,7 @@ async function setup(opts: { caps?: CapabilitiesType; displays?: DisplayInfo[]; 
       },
     },
     restoreOnStartupEnabled: () => ctl.restore,
-    theme: () => 'light',
+    theme: () => ctl.theme,
     logger: s.logger,
     timers,
     maxOpen: opts.maxOpen,
@@ -275,6 +275,47 @@ describe('StickyManager tree changes (INF-STKY-04, INF-STKY-08)', () => {
     expect(t.m.setColor(note.id, 'blue')).toMatchObject({ color: 'blue', activation: 1 });
     expect(win.backgroundColor).toBe('#DCEBFF');
     expect(t.sent.length - before).toBe(1);
+  });
+
+  it('a custom color is stored as given and is the window background in both themes (v0.2.0)', async () => {
+    const t = await setup();
+    const note = t.s.note(null, null, 'n', true);
+    await t.m.float(note.id);
+    const win = t.last();
+    expect(t.m.setColor(note.id, '#3a7bd5')).toMatchObject({ color: '#3a7bd5', textColor: null });
+    expect(t.noteRow(note.id)?.color).toBe('#3a7bd5');
+    expect(win.backgroundColor).toBe('#3a7bd5');
+    t.ctl.theme = 'dark';
+    t.m.themeChanged();
+    expect(win.backgroundColor).toBe('#3a7bd5');
+  });
+
+  it('the window background follows a theme change for presets (v0.2.0)', async () => {
+    const t = await setup();
+    const note = t.s.note(null, null, 'n', true);
+    await t.m.float(note.id);
+    const win = t.last();
+    expect(win.backgroundColor).toBe('#FFF4B8');
+    t.ctl.theme = 'dark';
+    t.m.themeChanged();
+    expect(win.backgroundColor).toBe('#4A4320');
+  });
+
+  it('setTextColor stores the default text color, tells the window and answers null when not floating (v0.2.0)', async () => {
+    const t = await setup();
+    const note = t.s.note(null, null, 'n', true);
+    expect(t.m.setTextColor(note.id, '#e03131')).toBeNull();
+    expect(t.s.stickies.meta(note.id)?.textColor).toBe('#e03131');
+    await t.m.float(note.id);
+    const win = t.last();
+    expect(t.lastState(win)?.textColor ?? t.m.stateOf(note.id).textColor).toBe('#e03131');
+    const before = t.sent.length;
+    expect(t.m.setTextColor(note.id, null)).toMatchObject({ textColor: null });
+    expect(t.sent.length - before).toBe(1);
+    expect(t.lastState(win)?.textColor).toBeNull();
+    expect(t.s.row<{ text_color: string | null }>('SELECT text_color FROM notes WHERE id = ?', note.id)?.text_color).toBeNull();
+    const plain = t.s.note(null, null, 'not a sticky');
+    expect(() => t.m.setTextColor(plain.id, '#e03131')).toThrow(/not a sticky/);
   });
 });
 

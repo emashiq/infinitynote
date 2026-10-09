@@ -89,7 +89,16 @@ test('notes and attachments: size limits within bounds and retention choices per
   const notes = settingsSection(page, 'Notes and attachments');
   const image = notes.getByLabel('Largest image');
   await expect(image).toHaveValue('20');
-  await expect(notes.getByLabel('Largest file')).toHaveValue('50');
+  // v0.2.0 (D-108): files up to 25 MB are copied, larger ones linked; adding files asks by default.
+  await expect(notes.getByLabel('When adding files')).toHaveValue('ask');
+  const copyLimit = notes.getByLabel('Largest file to copy');
+  await expect(copyLimit).toHaveValue('25');
+  await copyLimit.fill('26');
+  await copyLimit.press('Enter');
+  await expect(notes.getByRole('alert')).toHaveText('Enter a whole number from 1 to 25.');
+  await copyLimit.fill('10');
+  await copyLimit.press('Enter');
+  await expect.poll(() => h.setting('attachments.documentMaxMb')).toEqual({ v: 2, value: 10 });
   await image.fill('0');
   await image.press('Enter');
   await expect(notes.getByRole('alert')).toHaveText('Enter a whole number from 1 to 100.');

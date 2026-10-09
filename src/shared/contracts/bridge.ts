@@ -24,9 +24,37 @@ export interface InfinityBridge {
   };
   readonly attachment: {
     importBytes: Call<'attachment:importBytes'>;
-    importFromDialog: Call<'attachment:importFromDialog'>;
+    pickFiles: Call<'attachment:pickFiles'>;
+    addPicked: Call<'attachment:addPicked'>;
     open: Call<'attachment:open'>;
     showInFolder: Call<'attachment:showInFolder'>;
+  };
+  /**
+   * Files linked at their original location (D-108). Page script never names or sees a path to link: the preload reads
+   * it from a File the user dropped or pasted (webUtils.getPathForFile), which page script cannot forge (D-115).
+   */
+  readonly fileLink: {
+    /** Links a dropped or pasted file on disk; refused for clipboard data and for a File made by page script. */
+    createFromFile(file: File): Res<ChannelResponse<'fileLink:create'>>;
+    /** Whether a dropped or pasted file is on disk, so it can be linked. */
+    isOnDisk(file: File): boolean;
+    status: Call<'fileLink:status'>;
+    open: Call<'fileLink:open'>;
+    showInFolder: Call<'fileLink:showInFolder'>;
+    copyIn: Call<'fileLink:copyIn'>;
+  };
+  /** Locked notes (D-111..D-113): passwords go only to main, in these requests. */
+  readonly lock: {
+    availability: Query<'lock:availability'>;
+    status: Call<'lock:status'>;
+    set: Call<'lock:set'>;
+    unlock: Call<'lock:unlock'>;
+    unlockHello: Call<'lock:unlockHello'>;
+    lockNow: Call<'lock:lockNow'>;
+    lockAll: Query<'lock:lockAll'>;
+    changePassword: Call<'lock:changePassword'>;
+    setHello: Call<'lock:setHello'>;
+    remove: Call<'lock:remove'>;
   };
   readonly settings: {
     get(req: { keys: PublicSettingKey[] }): Res<{ values: Partial<{ [K in PublicSettingKey]: SettingValue<K> }> }>;
@@ -114,6 +142,7 @@ export interface InfinityBridge {
     dock: Call<'sticky:dock'>;
     hide: Call<'sticky:hide'>;
     setColor: Call<'sticky:setColor'>;
+    setTextColor: Call<'sticky:setTextColor'>;
     setPinned: Call<'sticky:setPinned'>;
     setCollapsed: Call<'sticky:setCollapsed'>;
     remove: Call<'sticky:remove'>;

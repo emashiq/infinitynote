@@ -13,6 +13,7 @@ const note = (i: number, over: Partial<NoteDtoType> = {}): NoteDtoType => ({
   pinnedAt: null,
   favorite: false,
   revision: 0,
+  locked: false,
   createdAt: i,
   updatedAt: i,
   ...over,

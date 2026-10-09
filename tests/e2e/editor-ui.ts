@@ -22,10 +22,22 @@ export function editorSelectionText(page: Page): Promise<string> {
   });
 }
 
-/** Clicks into the editor and puts the cursor at the end of the document. */
+/**
+ * Clicks into the editor and puts the cursor at the end of the document. ProseMirror reads the DOM selection change on
+ * the asynchronous selectionchange event, so this waits until the editor's own cursor is at the end: a key pressed
+ * earlier would act at the clicked position.
+ */
 export async function focusEditorEnd(page: Page): Promise<void> {
   await editor(page).click();
   await page.keyboard.press('Control+End');
+  await expect
+    .poll(() =>
+      editor(page).evaluate((el) => {
+        const { state } = (el as unknown as { editor: { state: { doc: { content: { size: number } }; selection: { empty: boolean; head: number } } } }).editor;
+        return state.selection.empty && state.selection.head === state.doc.content.size - 1;
+      }),
+    )
+    .toBe(true);
 }
 
 /** Types text line by line (Enter between lines) at the cursor. */
@@ -185,6 +197,33 @@ export async function dropFiles(page: Page, files: DropFile[]): Promise<void> {
   }, files);
 }
 
+/**
+ * Drops files from disk (D-108). Playwright cannot drag from the file manager, so a hidden file input gets the real
+ * files (Files backed by their paths, as a drag from the file manager gives) and a synthetic drop carries them.
+ */
+export async function dropDiskFiles(page: Page, paths: string[]): Promise<void> {
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.id = 'e2e-disk-files';
+    input.hidden = true;
+    document.body.append(input);
+  });
+  await page.locator('#e2e-disk-files').setInputFiles(paths);
+  await editor(page).evaluate((el) => {
+    const input = document.getElementById('e2e-disk-files') as HTMLInputElement;
+    const dt = new DataTransfer();
+    for (const file of Array.from(input.files ?? [])) dt.items.add(file);
+    input.remove();
+    const rect = el.getBoundingClientRect();
+    const init = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: rect.left + 10, clientY: rect.bottom - 4 };
+    el.dispatchEvent(new DragEvent('dragenter', init));
+    el.dispatchEvent(new DragEvent('dragover', init));
+    el.dispatchEvent(new DragEvent('drop', init));
+  });
+}
+
 /** Queues the paths the next native file dialog "chooses" (test hooks; an empty queue means canceled). */
 export async function queueDialog(app: ElectronApplication, paths: string[]): Promise<void> {
   await app.evaluate((_e, p) => {
@@ -192,7 +231,7 @@ export async function queueDialog(app: ElectronApplication, paths: string[]): Pr
   }, paths);
 }
 
-export type TestHookKey = 'failSaves' | 'importDelayMs';
+export type TestHookKey = 'failSaves' | 'importDelayMs' | 'startupDelayMs';
 
 export async function setHook(app: ElectronApplication, key: TestHookKey, value: number): Promise<void> {
   await app.evaluate(

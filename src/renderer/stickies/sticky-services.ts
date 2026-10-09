@@ -1,3 +1,4 @@
+import type { HexColor } from '../../shared/color';
 import type { CapabilitiesType } from '../../shared/contracts/app';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import type { Result } from '../../shared/contracts/envelope';
@@ -14,6 +15,7 @@ export type StickyPhase = 'loading' | 'ready' | 'invalid';
 
 export interface StickyActions {
   setColor(color: NoteColorType): Promise<void>;
+  setTextColor(color: HexColor | null): Promise<void>;
   togglePinned(): Promise<void>;
   toggleCollapsed(): Promise<void>;
   hide(): Promise<void>;
@@ -154,6 +156,9 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
   const actions: StickyActions = {
     async setColor(color) {
       updateFrom(await bridge.sticky.setColor({ noteId, color }));
+    },
+    async setTextColor(textColor) {
+      updateFrom(await bridge.sticky.setTextColor({ noteId, textColor }));
     },
     async togglePinned() {
       const state = current();

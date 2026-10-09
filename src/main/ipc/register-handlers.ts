@@ -10,6 +10,7 @@ import { registerAttachmentHandlers } from './handlers/attachment-handlers';
 import { registerContentHandlers } from './handlers/content-handlers';
 import { registerHierarchyHandlers } from './handlers/hierarchy-handlers';
 import { registerHomeHandlers } from './handlers/home-handlers';
+import { registerLockHandlers } from './handlers/lock-handlers';
 import { registerNoteHandlers } from './handlers/note-handlers';
 import { registerPaletteHandlers } from './handlers/palette-handlers';
 import { registerPortabilityHandlers } from './handlers/portability-handlers';
@@ -60,7 +61,7 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
   registerPaletteHandlers(router, use('palette'));
   registerNoteHandlers(router, { reader: use('reader'), writer: use('writer'), collab: use('collab'), formats: use('formats') });
   registerContentHandlers(router, { versions: use('versions'), drafts: use('drafts') });
-  registerAttachmentHandlers(router, use('attachments'), use('handoff'));
+  registerAttachmentHandlers(router, { attachments: use('attachments'), handoff: use('handoff'), picker: use('picker'), links: use('links') });
   registerRetrievalHandlers(router, { references: use('references'), search: use('search'), tags: use('tags') });
   registerStickyHandlers(router, stickies);
   registerWindowHandlers(router, {
@@ -78,4 +79,5 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
   registerAutostartHandlers(router, desktop.autostart);
   registerPortabilityHandlers(router, use('portability'));
   registerShortcutHandlers(router, () => desktop.shortcut ?? storageUnavailable());
+  registerLockHandlers(router, use('locks'));
 }

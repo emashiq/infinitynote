@@ -198,7 +198,7 @@ describe('role allowlist and note ownership (D-064)', () => {
       [
         'app:getInfo', 'app:quit', 'app:flushed', 'capabilities:get', 'settings:get', 'note:open', 'note:save', 'note:rename', 'note:trash',
         'note:convertFormat', 'versions:list', 'versions:restore', 'drafts:list',
-        'drafts:resolve', 'attachment:importBytes', 'attachment:importFromDialog', 'shell:openExternal', 'window:getState', 'sticky:dock',
+        'drafts:resolve', 'attachment:importBytes', 'attachment:pickFiles', 'shell:openExternal', 'window:getState', 'sticky:dock',
         'sticky:hide', 'sticky:setColor', 'sticky:setPinned', 'sticky:setCollapsed', 'sticky:remove', 'sticky:restore',
         'reminder:listForNote', 'reminder:open',
         // Phase 06 (D-089): suggestions and hand-entered reminders for the sticky's own note.
@@ -207,6 +207,10 @@ describe('role allowlist and note ownership (D-064)', () => {
         'attachment:open', 'attachment:showInFolder',
         // D-103: live sync of the sticky's own note.
         'collab:join', 'collab:push', 'collab:pull', 'collab:flush', 'collab:leave',
+        // v0.2.0: the sticky's own default text color.
+        'sticky:setTextColor',
+        // v0.2.0 (D-108): copying picked files or linking files, and its note's linked files.
+        'attachment:addPicked', 'fileLink:create', 'fileLink:status', 'fileLink:open', 'fileLink:showInFolder', 'fileLink:copyIn',
       ].sort(),
     );
     for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('main', channel)).toBe(true);
@@ -228,7 +232,7 @@ describe('role allowlist and note ownership (D-064)', () => {
   it('every main-only channel group answers FORBIDDEN to a sticky window and never reaches its handler', async () => {
     const r = rolesRouter();
     const mainOnly = INVOKE_CHANNELS.filter((c) => !STICKY_ALLOWED_CHANNELS.has(c));
-    for (const group of ['session:', 'settings:set', 'tree:', 'trash:', 'project:', 'folder:', 'item:', 'note:create', 'note:move', 'home:', 'palette:', 'app:showDataFolder', 'sticky:float']) {
+    for (const group of ['session:', 'settings:set', 'tree:', 'trash:', 'project:', 'folder:', 'item:', 'note:create', 'note:move', 'home:', 'palette:', 'app:showDataFolder', 'sticky:float', 'lock:']) {
       expect(mainOnly.some((c) => c.startsWith(group)), group).toBe(true);
     }
     for (const channel of mainOnly) {

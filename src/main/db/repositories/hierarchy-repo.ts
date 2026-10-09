@@ -33,9 +33,11 @@ export interface NoteMetaRow {
   title: string;
   sticky_enabled: number;
   color: string | null;
+  text_color: string | null;
   pinned_at: number | null;
   favorite: number;
   revision: number;
+  locked: number;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -45,7 +47,7 @@ export interface NoteMetaRow {
 const PROJECT_COLS = 'id, name, favorite, created_at, updated_at, deleted_at, trash_batch_id';
 const FOLDER_COLS = 'id, project_id, parent_id, name, favorite, created_at, updated_at, deleted_at, trash_batch_id';
 export const NOTE_META_COLS =
-  'id, project_id, folder_id, title, sticky_enabled, color, pinned_at, favorite, revision, created_at, updated_at, deleted_at, trash_batch_id';
+  'id, project_id, folder_id, title, sticky_enabled, color, text_color, pinned_at, favorite, revision, locked, created_at, updated_at, deleted_at, trash_batch_id';
 
 const SUBTREE_CTE = `WITH RECURSIVE sub(id, depth) AS (
   SELECT id, 0 FROM folders WHERE id = ?
@@ -164,6 +166,9 @@ export class HierarchyRepo {
   }
   setColor(id: string, color: string): void {
     this.db.prepare<[string, string]>('UPDATE notes SET color = ? WHERE id = ?').run(color, id);
+  }
+  setTextColor(id: string, textColor: string | null): void {
+    this.db.prepare<[string | null, string]>('UPDATE notes SET text_color = ? WHERE id = ?').run(textColor, id);
   }
   setFavorite(kind: 'project' | 'folder' | 'note', id: string, favorite: boolean): void {
     const table = kind === 'project' ? 'projects' : kind === 'folder' ? 'folders' : 'notes';

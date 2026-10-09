@@ -1,4 +1,5 @@
 import type { CapabilitiesType } from '../../shared/contracts/app';
+import type { HexColor } from '../../shared/color';
 import type { NoteColorType, TrashRestoreResponseType } from '../../shared/contracts/hierarchy';
 import { MAX_OPEN_STICKIES, STICKY_DEFAULT, STICKY_HEADER_PX, STICKY_MESSAGES, STICKY_MIN, type StickyStateType, type StoredBoundsType } from '../../shared/contracts/stickies';
 import { displayTitle } from '../../shared/names';
@@ -67,7 +68,7 @@ export interface StickyLayoutEntry {
 export interface StickyManagerDeps {
   service: Pick<
     StickyService,
-    'enable' | 'disable' | 'setColor' | 'meta' | 'metaMany' | 'state' | 'saveBounds' | 'setOpen' | 'setCollapsed' | 'setAlwaysOnTop' | 'openStickyIds' | 'closeAll'
+    'enable' | 'disable' | 'setColor' | 'setTextColor' | 'meta' | 'metaMany' | 'state' | 'saveBounds' | 'setOpen' | 'setCollapsed' | 'setAlwaysOnTop' | 'openStickyIds' | 'closeAll'
   >;
   factory: StickyWindowFactory;
   displays: DisplayProvider;
@@ -343,10 +344,25 @@ export class StickyManager {
   /** Recolors a sticky; answers its window state while it floats, else null. */
   setColor(noteId: string, color: NoteColorType): StickyStateType | null {
     this.deps.service.setColor(noteId, color);
+    return this.refreshFloating(noteId);
+  }
+
+  /** Sets a sticky's default text color (null: Automatic); answers its window state while it floats, else null. */
+  setTextColor(noteId: string, textColor: HexColor | null): StickyStateType | null {
+    this.deps.service.setTextColor(noteId, textColor);
+    return this.refreshFloating(noteId);
+  }
+
+  private refreshFloating(noteId: string): StickyStateType | null {
     const entry = this.entries.get(noteId);
     if (!entry) return null;
     this.refresh(entry, this.requireMeta(noteId));
     return this.stateOf(noteId);
+  }
+
+  /** The theme changed: preset colors have a variant per theme, so every window's background follows. */
+  themeChanged(): void {
+    for (const entry of this.entries.values()) entry.handle.setBackgroundColor(stickyBackground(entry.meta.color, this.deps.theme()));
   }
 
   setPinned(noteId: string, pinned: boolean): StickyStateType {

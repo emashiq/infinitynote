@@ -5,7 +5,9 @@ import type { Schema } from '@tiptap/pm/model';
 import StarterKit, { type StarterKitOptions } from '@tiptap/starter-kit';
 import { parseExternalUrl } from '../url-policy';
 import { BLOCK_ID_TYPES } from './doc-schema';
-import { FileAttachmentNode, ImageNode, NoteRefNode } from './nodes';
+import { FileAttachmentNode, FileLinkNode, ImageNode, NoteRefNode } from './nodes';
+import { TABLE_EXTENSIONS } from './tables';
+import { TEXT_STYLE_EXTENSIONS } from './text-style';
 
 export const UNDO_DEPTH = 200;
 
@@ -62,7 +64,10 @@ export function noteSchema(format: 'rich' | 'plain'): Schema {
     TaskItem.configure({ nested: true }),
     ImageNode,
     FileAttachmentNode,
+    FileLinkNode,
     NoteRefNode,
+    ...TABLE_EXTENSIONS,
+    ...TEXT_STYLE_EXTENSIONS,
     UniqueID.configure({ types: [...BLOCK_ID_TYPES] }),
   ];
   return (rich ??= getSchema(extensions));

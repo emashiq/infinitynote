@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NoteColor } from './hierarchy';
+import { HexColor, NoteColor } from './hierarchy';
 import { Uuid } from './ids';
 
 /** Sticky window geometry (UX_SPEC section 5, D-070). Sizes are outer window bounds in DIP. */
@@ -29,6 +29,8 @@ export type StoredBoundsType = z.infer<typeof StoredBounds>;
 export const StickyNoteRequest = z.strictObject({ noteId: Uuid });
 export const StickyFloatResponse = z.strictObject({ noteId: Uuid, created: z.boolean() });
 export const StickySetColorRequest = z.strictObject({ noteId: Uuid, color: NoteColor });
+/** The sticky's default text color; null is Automatic (dark or light ink from the background). */
+export const StickySetTextColorRequest = z.strictObject({ noteId: Uuid, textColor: HexColor.nullable() });
 export const StickySetPinnedRequest = z.strictObject({ noteId: Uuid, pinned: z.boolean() });
 export const StickySetCollapsedRequest = z.strictObject({ noteId: Uuid, collapsed: z.boolean() });
 
@@ -37,6 +39,8 @@ export const StickyState = z.strictObject({
   noteId: Uuid,
   title: z.string().max(200),
   color: NoteColor,
+  /** The default text color, or null for Automatic. */
+  textColor: HexColor.nullable(),
   path: z.array(z.string()).max(66),
   /** Null while the note is live. */
   trashed: z.strictObject({ batchId: Uuid.nullable() }).nullable(),

@@ -1,6 +1,6 @@
 import { BLOCK_ID_TYPES, collectBlockIds, normalizeRichDoc, type RichDocLike, type RichNode } from '../../shared/editor/doc-schema';
 
-/** Fresh IDs for one import (INF-PORT-04): every project, folder, note, block and attachment gets a new ID. */
+/** Fresh IDs for one import (INF-PORT-04): every project, folder, note, block, attachment and linked file gets a new ID. */
 export interface IdRemap {
   /** The new ID of an imported item, created on first use; an ID outside the archive also gets a stable fresh ID. */
   item(oldId: string): string;
@@ -8,6 +8,8 @@ export interface IdRemap {
   block(oldNoteId: string, oldBlockId: string): string | null;
   /** The stored attachment for an archived one, or null when it could not be imported. */
   attachment(oldId: string): string | null;
+  /** The new ID of an archived linked file (D-108), or null when the archive does not list it. */
+  link(oldId: string): string | null;
 }
 
 export function createIdRemap(deps: {
@@ -15,6 +17,7 @@ export function createIdRemap(deps: {
   /** Block IDs of every archived rich note, read before any rewrite. */
   blocksByNote: ReadonlyMap<string, ReadonlySet<string>>;
   attachments: ReadonlyMap<string, string>;
+  links: ReadonlyMap<string, string>;
 }): IdRemap {
   const items = new Map<string, string>();
   const blocks = new Map<string, string>();
@@ -39,6 +42,7 @@ export function createIdRemap(deps: {
       return id;
     },
     attachment: (oldId) => deps.attachments.get(oldId) ?? null,
+    link: (oldId) => deps.links.get(oldId) ?? null,
   };
 }
 
@@ -55,8 +59,9 @@ const BLOCK_TYPES: ReadonlySet<string> = new Set(BLOCK_ID_TYPES);
 
 /**
  * Rewrites an archived rich document for its new note: block IDs, `noteRef` targets (a target outside the archive keeps
- * its label and shows as missing, never aliasing a local note) and attachment IDs. Images and files whose attachment
- * could not be imported are dropped, since a node must name a stored attachment.
+ * its label and shows as missing, never aliasing a local note), attachment IDs and link IDs. Images and files whose
+ * attachment could not be imported, and linked files the archive does not list, are dropped, since a node must name a
+ * stored attachment or link.
  */
 export function remapRichDoc(doc: RichDocLike, oldNoteId: string, remap: IdRemap): RichDocLike {
   const rewrite = (node: RichNode): RichNode | null => {
@@ -67,6 +72,11 @@ export function remapRichDoc(doc: RichDocLike, oldNoteId: string, remap: IdRemap
         const attachmentId = remap.attachment(attrs.attachmentId);
         if (!attachmentId) return null;
         attrs.attachmentId = attachmentId;
+      }
+      if (node.type === 'fileLink' && typeof attrs.linkId === 'string') {
+        const linkId = remap.link(attrs.linkId);
+        if (!linkId) return null;
+        attrs.linkId = linkId;
       }
       if (node.type === 'noteRef' && typeof attrs.noteId === 'string') {
         const target = attrs.noteId;

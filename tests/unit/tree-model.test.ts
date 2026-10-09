@@ -31,6 +31,7 @@ const note = (n: number, title: string, projectId: string | null, folderId: stri
   pinnedAt: null,
   favorite: false,
   revision: 0,
+  locked: false,
   createdAt: n,
   updatedAt: n,
   ...extra,

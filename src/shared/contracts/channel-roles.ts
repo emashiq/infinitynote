@@ -8,7 +8,8 @@ import type { WindowRoleType } from './windows';
  * also confirm suggestions and add reminders by hand for its note: the zone list, `reminder:create`,
  * `reminder:createFromSuggestion` and the dismissal channels. Editing a reminder (`reminder:update`,
  * `reminder:updateFromSource`, `reminder:delete`) stays in the main window. The router allows a `noteId` only for the
- * sticky's own note. From Phase 07 (D-098) it may open or show its note's attached files. Everything else (tabs, the
+ * sticky's own note. From Phase 07 (D-098) it may open or show its note's attached files, and from
+ * v0.2.0 (D-108) add files by copying or linking them and use its note's linked files. Everything else (tabs, the
  * tree, trash, creation, moves, settings writes, references, search and tags) is main-window only.
  */
 export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<InvokeChannel>([
@@ -32,12 +33,14 @@ export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<Invok
   'drafts:list',
   'drafts:resolve',
   'attachment:importBytes',
-  'attachment:importFromDialog',
+  'attachment:pickFiles',
+  'attachment:addPicked',
   'shell:openExternal',
   'window:getState',
   'sticky:dock',
   'sticky:hide',
   'sticky:setColor',
+  'sticky:setTextColor',
   'sticky:setPinned',
   'sticky:setCollapsed',
   'sticky:remove',
@@ -51,6 +54,11 @@ export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<Invok
   'suggestion:listDismissed',
   'attachment:open',
   'attachment:showInFolder',
+  'fileLink:create',
+  'fileLink:status',
+  'fileLink:open',
+  'fileLink:showInFolder',
+  'fileLink:copyIn',
 ]);
 
 /**

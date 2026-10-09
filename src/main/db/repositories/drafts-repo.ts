@@ -79,6 +79,15 @@ export class DraftsRepo {
     return this.db.prepare<[], { format: 'rich' | 'plain'; content: string }>('SELECT format, content FROM note_drafts WHERE resolved_at IS NULL').all();
   }
 
+  /** Every draft of a note, open or resolved (removing a lock opens its sealed drafts; D-111). */
+  allForNote(noteId: string): Array<{ id: string; content: string }> {
+    return this.db.prepare<[string], { id: string; content: string }>('SELECT id, content FROM note_drafts WHERE note_id = ?').all(noteId);
+  }
+
+  setContent(draftId: string, content: string): void {
+    this.db.prepare<[string, string]>('UPDATE note_drafts SET content = ? WHERE id = ?').run(content, draftId);
+  }
+
   resolve(draftId: string, now: number): void {
     this.db.prepare<[number, string]>('UPDATE note_drafts SET resolved_at = ? WHERE id = ?').run(now, draftId);
   }

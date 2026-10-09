@@ -1,6 +1,7 @@
 import { DocSchemaError, normalizeRichDoc, type RichDocLike } from '../../shared/editor/doc-schema';
 import type { Db } from '../db/driver';
 import { NotesRepo } from '../db/repositories/notes-repo';
+import type { NoteVault } from '../locks/note-vault';
 import { AppError } from './app-error';
 import type { ContentIndexer } from './content-indexer';
 
@@ -35,7 +36,9 @@ export function normalizeContent(format: 'rich' | 'plain', content: unknown): No
 
 /**
  * The single place that changes a note's content: indexes it (plain text, attachment links), then writes the
- * next revision. Must run inside the caller's transaction (save, conversion, version and draft restore).
+ * next revision. Must run inside the caller's transaction (save, conversion, version and draft restore). A locked
+ * note's content is encrypted with its key and its row keeps no text (D-111); its links are still indexed, so its
+ * attachments stay in use.
  */
 export class NoteContent {
   private readonly notes: NotesRepo;
@@ -43,22 +46,27 @@ export class NoteContent {
   constructor(
     db: Db,
     private readonly indexer: ContentIndexer,
+    private readonly vault: NoteVault,
   ) {
     this.notes = new NotesRepo(db);
   }
 
   write(w: ContentWrite): { revision: number; updatedAt: number } {
+    const locked = this.notes.isLocked(w.noteId);
+    if (locked) this.vault.keyOf(w.noteId);
     const { plainText } = this.indexer.index(w.noteId, w.format, w.content, w.now);
+    const serialized = typeof w.content === 'string' ? w.content : JSON.stringify(w.content);
     const written = this.notes.writeContent({
       id: w.noteId,
       format: w.format,
-      content: typeof w.content === 'string' ? w.content : JSON.stringify(w.content),
-      plainText,
+      content: locked ? null : serialized,
+      plainText: locked ? '' : plainText,
       title: w.title,
       expectedRevision: w.expectedRevision,
       now: w.now,
     });
     if (!written) throw new Error(`note ${w.noteId} is no longer at revision ${w.expectedRevision}`);
+    if (locked) this.vault.storeContent(w.noteId, serialized, w.now);
     return { revision: w.expectedRevision + 1, updatedAt: w.now };
   }
 }

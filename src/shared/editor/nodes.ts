@@ -99,6 +99,42 @@ export const FileAttachmentNode = Node.create({
 });
 
 /**
+ * A file linked at its original location, shown as a chip (D-108): the link ID and display facts only. The path stays in
+ * main's database, so a document (or a paste) can never name a path that main would open.
+ */
+export const FileLinkNode = Node.create({
+  name: 'fileLink',
+  group: 'block',
+  atom: true,
+  draggable: true,
+  selectable: true,
+
+  addAttributes() {
+    return {
+      linkId: {
+        default: null,
+        parseHTML: (el) => uuidAttr(el, 'data-file-link-id'),
+        renderHTML: (attrs) => (attrs.linkId ? { 'data-file-link-id': attrs.linkId } : {}),
+      },
+      name: { default: 'file', parseHTML: (el) => el.getAttribute('data-name') ?? el.textContent ?? 'file', renderHTML: (attrs) => ({ 'data-name': attrs.name }) },
+      sizeBytes: {
+        default: 0,
+        parseHTML: (el) => Math.max(0, Number.parseInt(el.getAttribute('data-size') ?? '0', 10) || 0),
+        renderHTML: (attrs) => ({ 'data-size': String(attrs.sizeBytes) }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-file-link-id]', getAttrs: (el) => (uuidAttr(el as HTMLElement, 'data-file-link-id') ? null : false) }];
+  },
+
+  renderHTML({ HTMLAttributes, node }) {
+    return ['div', mergeAttributes(HTMLAttributes, { class: 'file-chip file-chip-linked' }), String(node.attrs.name)];
+  },
+});
+
+/**
  * An inline link to another note or one of its blocks (INF-REF-01, INF-REF-02): IDs only; the label and excerpt are
  * what the target looked like when inserted and are shown only when the target is not live.
  */

@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import { ADD_FILES_MODES } from '../attachments/file-choice';
 import { DEFAULT_DOCUMENT_MAX_MB, DEFAULT_IMAGE_MAX_MB, DOCUMENT_MAX_MB_RANGE, IMAGE_MAX_MB_RANGE } from '../attachments/limits';
 import { isKnownZone } from '../time/zones';
 import { AUTO_VERSION_DAYS_RANGE, AUTO_VERSION_MAX_RANGE, DEFAULT_AUTO_VERSION_DAYS, DEFAULT_AUTO_VERSION_MAX } from '../versions/retention';
 import { HomeScope } from './home';
+import { AUTO_LOCK_MINUTES, DEFAULT_AUTO_LOCK_MINUTES } from './locks';
 import { AutoBackupSetting, LastAutoBackup } from './portability';
 import { FollowupInterval, FollowupMax, LocalTime, REMINDER_MESSAGES, ZoneId } from './reminders';
 import { DEFAULT_SESSION, TabSession } from './session';
@@ -28,7 +30,10 @@ export const QuietHoursSetting = z
 export const TRASH_RETENTION_DAYS = [30, 90] as const;
 export const TrashRetentionSetting = z.literal(TRASH_RETENTION_DAYS).nullable();
 
-/** Settings registry (D-041, D-045). Stored as {"v":<version>,"value":<value>}. `public: false` keys are main-only. */
+/**
+ * Settings registry (D-041, D-045). Stored as {"v":<version>,"value":<value>}. `public: false` keys are main-only. A key
+ * whose stored form changed has a newer version and an `upgrade` that turns an older stored value into the current one.
+ */
 export const SETTINGS = {
   'appearance.theme': { version: 1, schema: ThemeSetting, default: 'system', public: true },
   'layout.treeOpen': { version: 1, schema: z.boolean(), default: true, public: true },
@@ -45,12 +50,15 @@ export const SETTINGS = {
     default: DEFAULT_IMAGE_MAX_MB,
     public: true,
   },
+  // The copy limit: version 2 (v0.2.0, D-108) caps it at 25 MB; larger version 1 values become 25.
   'attachments.documentMaxMb': {
-    version: 1,
+    version: 2,
     schema: z.number().int().min(DOCUMENT_MAX_MB_RANGE.min).max(DOCUMENT_MAX_MB_RANGE.max),
     default: DEFAULT_DOCUMENT_MAX_MB,
     public: true,
+    upgrade: (value: unknown): unknown => (typeof value === 'number' ? Math.min(value, DOCUMENT_MAX_MB_RANGE.max) : value),
   },
+  'attachments.addFiles': { version: 1, schema: z.enum(ADD_FILES_MODES), default: 'ask', public: true },
   'app.closeBehavior': { version: 1, schema: CloseBehavior, default: 'ask', public: true },
   'stickies.restoreOnStartup': { version: 1, schema: z.boolean(), default: false, public: true },
   // Null follows the computer's zone (D-083).
@@ -85,6 +93,8 @@ export const SETTINGS = {
     default: DEFAULT_AUTO_VERSION_MAX,
     public: true,
   },
+  // Unlocked notes lock again after this many minutes without use (D-111).
+  'locks.autoLockMinutes': { version: 1, schema: z.literal(AUTO_LOCK_MINUTES), default: DEFAULT_AUTO_LOCK_MINUTES, public: true },
   // Main-only: the folder comes from main's folder dialog, never from a renderer (backup:* channels, D-099).
   'backup.auto': { version: 1, schema: AutoBackupSetting, default: { enabled: false, directory: null, intervalDays: 7, keep: 5 }, public: false },
   'backup.lastAuto': { version: 1, schema: LastAutoBackup, default: null, public: false },

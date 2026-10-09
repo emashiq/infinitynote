@@ -1,5 +1,7 @@
 import { UUID_RE } from '../contracts/ids';
 import { parseExternalUrl } from '../url-policy';
+import { normalizeTextStyle } from './formatting';
+import { MAX_CELL_SPAN, tableFits, type CellSpan } from './table-limits';
 
 /**
  * The rich-note document schema shared by the editor (renderer) and the note writer (main), D-053.
@@ -27,8 +29,11 @@ export interface RichMark {
   attrs?: Record<string, unknown>;
 }
 
-/** Node types that carry a stable block `id` (UniqueID and BlockIdGuard). */
-export const BLOCK_ID_TYPES = ['paragraph', 'heading', 'codeBlock', 'blockquote', 'listItem', 'taskItem', 'image', 'fileAttachment'] as const;
+/**
+ * Node types that carry a stable block `id` (UniqueID and BlockIdGuard). A table has one; its rows and cells do not,
+ * while the paragraphs in its cells keep theirs, so a reminder or reference can target a cell's text.
+ */
+export const BLOCK_ID_TYPES = ['paragraph', 'heading', 'codeBlock', 'blockquote', 'listItem', 'taskItem', 'image', 'fileAttachment', 'fileLink', 'table'] as const;
 
 export const IMAGE_SIZES = ['small', 'medium', 'full'] as const;
 export type ImageSize = (typeof IMAGE_SIZES)[number];
@@ -38,8 +43,10 @@ export const MAX_DOC_DEPTH = 64;
 export const MAX_REF_LABEL = 200;
 export const MAX_REF_EXCERPT = 80;
 export const MAX_DOC_NODES = 100_000;
+/** Widest column (CSS pixels) a table cell may store; spans and the grid are bounded in table-limits (D-116). */
+export const MAX_COLUMN_WIDTH = 10_000;
 
-const BLOCK = ['paragraph', 'heading', 'codeBlock', 'blockquote', 'bulletList', 'orderedList', 'taskList', 'horizontalRule', 'image', 'fileAttachment'];
+const BLOCK = ['paragraph', 'heading', 'codeBlock', 'blockquote', 'bulletList', 'orderedList', 'taskList', 'horizontalRule', 'image', 'fileAttachment', 'fileLink', 'table'];
 const INLINE = ['text', 'hardBreak', 'noteRef'];
 
 /** Allowed child types per node type; an empty list is a leaf. */
@@ -59,11 +66,17 @@ const CHILDREN: Record<string, readonly string[]> = {
   noteRef: [],
   image: [],
   fileAttachment: [],
+  fileLink: [],
+  table: ['tableRow'],
+  tableRow: ['tableCell', 'tableHeader'],
+  tableCell: BLOCK,
+  tableHeader: BLOCK,
   text: [],
 };
 
 export const RICH_NODE_TYPES = Object.keys(CHILDREN);
-export const RICH_MARK_TYPES = ['bold', 'italic', 'strike', 'underline', 'code', 'link'] as const;
+export const RICH_MARK_TYPES = ['bold', 'italic', 'strike', 'underline', 'code', 'link', 'textStyle'] as const;
+export const CELL_ALIGNS = ['left', 'center', 'right'] as const;
 
 export class DocSchemaError extends Error {
   constructor(message: string) {
@@ -86,6 +99,7 @@ function nodeAttrs(type: string, raw: Json): Json {
     case 'paragraph':
     case 'blockquote':
     case 'listItem':
+    case 'table':
       return { id };
     case 'heading':
       if (!intIn(raw.level, 1, 3)) throw new DocSchemaError('Heading level must be 1, 2 or 3');
@@ -119,9 +133,35 @@ function nodeAttrs(type: string, raw: Json): Json {
       if (mime === null) throw new DocSchemaError('File type is invalid');
       return { id, attachmentId: raw.attachmentId, name: raw.name, sizeBytes: raw.sizeBytes, mime };
     }
+    case 'fileLink': {
+      if (!isUuid(raw.linkId)) throw new DocSchemaError('Linked file without a link');
+      if (typeof raw.name !== 'string' || raw.name.length < 1 || raw.name.length > 255) throw new DocSchemaError('File name is invalid');
+      if (!intIn(raw.sizeBytes, 0, Number.MAX_SAFE_INTEGER)) throw new DocSchemaError('File size is invalid');
+      return { id, linkId: raw.linkId, name: raw.name, sizeBytes: raw.sizeBytes };
+    }
+    case 'tableCell':
+    case 'tableHeader':
+      return cellAttrs(raw);
     default:
       return {};
   }
+}
+
+/** A column or row span: an invalid value falls back to 1; one over MAX_CELL_SPAN is refused (D-116). */
+function cellSpan(v: unknown): number {
+  if (!intIn(v, 1, Number.MAX_SAFE_INTEGER)) return 1;
+  if (v > MAX_CELL_SPAN) throw new DocSchemaError('A table cell spans too many columns or rows');
+  return v;
+}
+
+/** A cell's spans, column widths (one per spanned column, else none) and alignment; invalid values fall back. */
+function cellAttrs(raw: Json): Json {
+  const colspan = cellSpan(raw.colspan);
+  const rowspan = cellSpan(raw.rowspan);
+  const widths = raw.colwidth;
+  const colwidth = Array.isArray(widths) && widths.length === colspan && widths.every((w) => intIn(w, 1, MAX_COLUMN_WIDTH)) ? widths : null;
+  const align = (CELL_ALIGNS as readonly unknown[]).includes(raw.align) ? raw.align : null;
+  return { colspan, rowspan, colwidth, align };
 }
 
 function withoutUndefined(attrs: Json): Json | undefined {
@@ -130,7 +170,10 @@ function withoutUndefined(attrs: Json): Json | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** Keeps known marks; a link whose address is not http(s) is dropped (its text stays). */
+/**
+ * Keeps known marks; a link whose address is not http(s) is dropped (its text stays), and a text style keeps only
+ * listed fonts and sizes and `#rrggbb` colors (it is dropped when nothing valid is left).
+ */
 function normalizeMarks(raw: unknown): RichMark[] | undefined {
   if (raw === undefined) return undefined;
   if (!Array.isArray(raw)) throw new DocSchemaError('Marks must be a list');
@@ -142,6 +185,9 @@ function normalizeMarks(raw: unknown): RichMark[] | undefined {
     if (m.type === 'link') {
       const href = isObject(m.attrs) ? m.attrs.href : undefined;
       if (typeof href === 'string' && parseExternalUrl(href).ok) out.push({ type: 'link', attrs: { href } });
+    } else if (m.type === 'textStyle') {
+      const attrs = normalizeTextStyle(isObject(m.attrs) ? m.attrs : {});
+      if (attrs) out.push({ type: 'textStyle', attrs: { ...attrs } });
     } else {
       out.push({ type: m.type });
     }
@@ -151,7 +197,8 @@ function normalizeMarks(raw: unknown): RichMark[] | undefined {
 
 /**
  * Validates and normalizes a rich document. Throws DocSchemaError for an unknown node or mark type, a node in a
- * place the schema does not allow, a missing required attribute, depth over 64 or more than 100,000 nodes.
+ * place the schema does not allow, a missing required attribute, depth over 64, more than 100,000 nodes or a table over
+ * the table limits (D-116).
  * A block ID that already appeared earlier in the document is dropped, so copied content never aliases a block
  * (INF-REF-07); the editor gives the block a fresh ID when the note is next opened.
  */
@@ -185,6 +232,9 @@ export function normalizeRichDoc(doc: unknown): RichDocLike {
     if (attrs) node.attrs = attrs;
     const content = visitContent(raw.content, depth, children);
     if (content) node.content = content;
+    if (type === 'table' && !tableFits((content ?? []).map((row) => (row.content ?? []).map((cell) => cell.attrs as unknown as CellSpan)))) {
+      throw new DocSchemaError('A table has too many cells');
+    }
     return node;
   };
 
@@ -229,6 +279,15 @@ export function collectAttachmentRefs(doc: unknown): AttachmentRef[] {
     }
   });
   return refs;
+}
+
+/** The IDs of every linked file in a document (D-108), in document order without repeats. */
+export function collectLinkIds(doc: unknown): string[] {
+  const ids = new Set<string>();
+  eachNode(doc, (node) => {
+    if (node.type === 'fileLink' && isObject(node.attrs) && isUuid(node.attrs.linkId)) ids.add(node.attrs.linkId);
+  });
+  return [...ids];
 }
 
 /** The IDs of every block that can carry one (BLOCK_ID_TYPES), for reminder anchors (D-080). */

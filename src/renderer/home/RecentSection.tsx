@@ -1,6 +1,8 @@
 import { displayTitle } from '../../shared/names';
 import { formatRelative } from '../../shared/time/relative-time';
 import { useServices, useStore } from '../state/use-store';
+import { ColorDot } from '../ui/ColorDot';
+import { LockMark } from '../ui/LockMark';
 
 export function RecentSection() {
   const { home, tabs, now } = useServices();
@@ -19,8 +21,9 @@ export function RecentSection() {
             <li key={note.id}>
               <button type="button" className="recent-row" onClick={() => void tabs.openNote(note.id)}>
                 <span className="recent-title">
-                  {note.sticky && note.color ? <span className={`dot dot-${note.color}`} aria-hidden /> : null}
+                  {note.sticky && note.color ? <ColorDot color={note.color} /> : null}
                   {displayTitle(note.title)}
+                  {note.locked ? <LockMark /> : null}
                 </span>
                 <span className="muted recent-path">{note.path.join(' › ')}</span>
                 <span className="muted recent-time">{formatRelative(note.updatedAt, now())}</span>

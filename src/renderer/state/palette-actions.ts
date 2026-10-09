@@ -3,6 +3,8 @@ import type { CommandId } from './commands';
 export interface PaletteAction {
   id: CommandId;
   label: string;
+  /** More words the palette matches. */
+  keywords?: string;
   shortcut?: string;
 }
 
@@ -25,6 +27,9 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: 'note.insertReference', label: 'Link to note…' },
   { id: 'note.float', label: 'Float current note' },
   { id: 'note.exportMarkdown', label: 'Export note as Markdown…' },
+  { id: 'note.lock', label: 'Lock note…', keywords: 'password encrypt windows hello lock settings' },
+  { id: 'note.lockNow', label: 'Lock note now' },
+  { id: 'notes.lockAll', label: 'Lock all notes' },
   { id: 'backup.create', label: 'Back up now…' },
   { id: 'help.shortcuts', label: 'Keyboard shortcuts', shortcut: 'Ctrl+/' },
 ];

@@ -21,3 +21,14 @@ export function linuxSandboxMode(p: LinuxSandboxProbe): LinuxSandboxMode {
   if (p.ownUserNamespace) return 'user-namespace';
   return p.suidHelper ? 'suid' : 'none';
 }
+
+/** How many nested PID namespaces a process is in: the entries of the `NSpid:` line of /proc/<pid>/status (0 if absent). */
+export function pidNamespaceDepth(status: string): number {
+  const line = /^NSpid:\s*(.*)$/m.exec(status)?.[1]?.trim();
+  return line ? line.split(/\s+/).length : 0;
+}
+
+/** The `Seccomp:` field of /proc/<pid>/status, or "missing". */
+export function seccompField(status: string): string {
+  return /^Seccomp:\s*(\d+)/m.exec(status)?.[1] ?? 'missing';
+}

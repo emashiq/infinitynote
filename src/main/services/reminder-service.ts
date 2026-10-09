@@ -1,4 +1,5 @@
 import type { HomeScopeType } from '../../shared/contracts/home';
+import { LOCK_MESSAGES } from '../../shared/contracts/locks';
 import {
   COMPLETED_VIEW_DAYS,
   HOME_REMINDER_LIMIT,
@@ -37,6 +38,7 @@ import type { PathIndex } from '../../shared/tree/paths';
 import type { Db } from '../db/driver';
 import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
 import { NotesRepo, type ContentRow } from '../db/repositories/notes-repo';
+import type { NoteVault } from '../locks/note-vault';
 import { ReminderSourcesRepo, type ReminderSourceRow, type SourceFields } from '../db/repositories/reminder-sources-repo';
 import { RemindersRepo, type OccurrenceItemRow, type ReminderRow, type ViewBounds } from '../db/repositories/reminders-repo';
 import { AppError } from './app-error';
@@ -64,6 +66,8 @@ export interface ReminderServiceDeps {
   logger: Logger;
   zones: SystemZoneProvider;
   settings: Pick<SettingsService, 'getInternal'>;
+  /** Reads the content of locked notes while they are unlocked (block anchors; D-111). */
+  vault: NoteVault;
   /** After every committed change: the `reminder:changed` broadcast. */
   emit(event: ReminderChangedEventType): void;
   /** After every committed write: wakes the scheduler. */
@@ -169,6 +173,13 @@ export class ReminderService {
     return row;
   }
 
+  /** A note a reminder may take its source text from: live and not locked (a locked note keeps no source text, D-112). */
+  private sourceNote(noteId: string): ContentRow {
+    const note = this.liveNote(noteId);
+    if (note.locked === 1) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.noSuggestions);
+    return note;
+  }
+
   private checkZone(zoneId: string): void {
     if (!isKnownZone(zoneId, this.systemZone())) throw new AppError('VALIDATION_FAILED', M.chooseZone);
   }
@@ -176,7 +187,7 @@ export class ReminderService {
   /** A block anchor must name a block of the stored content (D-080); plain-text notes have none. */
   private checkBlock(note: ContentRow, blockId: string): void {
     if (note.format === 'plain') throw new AppError('VALIDATION_FAILED', M.plainBlock);
-    if (!collectBlockIds(JSON.parse(note.content_json ?? '{}')).has(blockId)) throw new AppError('VALIDATION_FAILED', M.blockMissing, { blockMissing: true });
+    if (!collectBlockIds(JSON.parse(this.deps.vault.readable(note).content_json ?? '{}')).has(blockId)) throw new AppError('VALIDATION_FAILED', M.blockMissing, { blockMissing: true });
   }
 
   /** A phrase's reference instant is metadata, but it must be plausible (plan section 8.2). */
@@ -337,7 +348,7 @@ export class ReminderService {
     const now = this.deps.clock.now();
     const { source } = req;
     const result = this.tx(() => {
-      const note = this.liveNote(req.noteId);
+      const note = this.sourceNote(req.noteId);
       this.checkZone(req.zoneId);
       this.checkReference(source.referenceInstantUtc, now);
       checkSource(note, source);
@@ -369,7 +380,7 @@ export class ReminderService {
       const { action: _action, source, ...input } = req;
       this.checkReference(source.referenceInstantUtc, now);
       const row = this.applyUpdate({ ...input, blockId: source.blockId }, now);
-      checkSource(this.liveNote(row.note_id), source);
+      checkSource(this.sourceNote(row.note_id), source);
       this.sources.replace(row.id, row.note_id, sourceFields(source), now);
       return row.note_id;
     });
@@ -493,7 +504,10 @@ export class ReminderService {
     return this.dtoOf(reminderId);
   }
 
-  private resyncRestored(row: ReminderRow, note: ContentRow, now: number): void {
+  private resyncRestored(row: ReminderRow, stored: ContentRow, now: number): void {
+    // A locked note's anchors are checked again at its next save while it is unlocked.
+    if (stored.locked === 1 && !this.deps.vault.isUnlocked(stored.id)) return;
+    const note = this.deps.vault.readable(stored);
     const doc: unknown = note.format === 'rich' ? JSON.parse(note.content_json ?? '{}') : null;
     if (row.block_id !== null) {
       const present = note.format === 'rich' && collectBlockIds(doc).has(row.block_id);

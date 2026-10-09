@@ -237,7 +237,7 @@ test('sticky light, collapsed and color menu', async () => {
   const { sp } = await floatedSticky();
   await shot(sp, 'sticky-light.png', 3_000);
   await activate(stickyHeader(sp).getByRole('button', { name: 'Sticky color' }));
-  await expect(sp.getByRole('menu', { name: 'Sticky color' })).toBeVisible();
+  await expect(sp.getByRole('dialog', { name: 'Sticky color' })).toBeVisible();
   await shot(sp, 'sticky-color-menu.png', 3_000);
   await sp.keyboard.press('Escape');
   await activate(stickyHeader(sp).getByRole('button', { name: 'Collapse sticky' }));

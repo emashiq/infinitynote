@@ -116,6 +116,18 @@ Fixed-verification (Phase 09 Repair 1, 2026-10-09, D-101). Logs are in `.infinit
 | --- | --- | --- | --- |
 | N-O2 | observation (usability, not a defect) | The sticky title field flexes across all free header width and is `-webkit-app-region: no-drag` by design (`stickies.css`, D-097: clicking it edits the title). Only the scope badge, the gaps and the header padding move the window. Under WSLg, every drag from those parts moved the sticky on the first try | Drags at local x=70 and x=150 of a 320 px sticky landed in the title field and did nothing. This may also explain some of the Windows N-O1 attempts ("title area"), but that is not confirmed. A wider drag handle is a possible follow-up |
 
+### 3b. v0.2.0 Run D, 2026-10-10
+
+Same host (WSLg 1.0.73, Weston 2318feca, Node 24.21.0, user `infinity`, `~/infinity-notes` mirror); logs in `.infinity-work/logs/release-0.2.0/` (`runD-wsl-*.log`), details in docs/progress/release-0.2.0.md (Run D). Not GNOME.
+
+| Case | Status | Evidence / note |
+| --- | --- | --- |
+| Lint, typecheck, unit, integration, traceability on the mirror | pass | `runD-wsl-check.log` (unit 795, integration 454) |
+| Full Electron E2E under WSLg | pass | `runD-wsl-test-e2e-wslg.log`: 237 passed, 2 skipped (Windows-only tray specs); sandbox `mode=user-namespace` |
+| CI-equivalent full E2E: Xvfb, no WSL marker, no session bus, setuid sandbox (`user.max_user_namespaces=0`, root-owned 4755 `chrome-sandbox`) | pass | `runD-wsl-test-e2e-xvfb-ci.log`: 237 passed, 2 skipped; capabilities as on the Ubuntu runner; sandbox `mode=suid`. An emulation of ubuntu-24.04's AppArmor restriction, not that runner |
+| AppImage and .deb build (x64, unsigned) | pass | `runD-wsl-package-linux.log` (.deb `f106be4e…2448`, AppImage `35e9980a…0cbd`) |
+| Packaged E2E under WSLg and CI-equivalent | pass | `runD-wsl-test-e2e-packaged.log` (8 passed, `mode=user-namespace`, notifications `unsupported`), `runD-wsl-test-e2e-packaged-xvfb.log` (8 passed, `mode=suid`, notification `failed` with the in-app banner) |
+
 ## 4. GNOME and X11 (outside the validation scope)
 
 | Case (TEST_MATRIX) | Status | Note |

@@ -1,0 +1,73 @@
+/*
+ * Startup loader (D-109). It is part of index.html, so it paints with the window's first frame, above the page and in
+ * the theme the window opens with: prefers-color-scheme follows the app's theme setting through nativeTheme, and the
+ * colors are the --bg and --text tokens of that theme (a unit test keeps them equal). The logo and name fade in after
+ * 150 ms, so a window that is ready sooner never shows them; once the shell is ready the loader fades out in 120 ms.
+ */
+.startup-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #ffffff;
+  color: #1d2030;
+  font-family: var(--font-ui);
+  transition: opacity 120ms ease-out;
+}
+
+@media (prefers-color-scheme: dark) {
+  .startup-loader {
+    background: #17181d;
+    color: #e7e8ee;
+  }
+}
+
+.startup-loader.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.startup-logo,
+.startup-name {
+  opacity: 0;
+  animation: startup-appear 200ms ease-out 150ms forwards;
+}
+
+.startup-logo {
+  animation:
+    startup-appear 200ms ease-out 150ms forwards,
+    startup-breathe 1.8s ease-in-out 350ms infinite;
+}
+
+.startup-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+@keyframes startup-appear {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes startup-breathe {
+  50% {
+    transform: scale(0.94);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-loader {
+    transition: none;
+  }
+
+  .startup-logo,
+  .startup-name {
+    animation: startup-appear 0s linear 150ms forwards;
+  }
+}

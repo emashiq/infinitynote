@@ -1,14 +1,21 @@
 import type { RichNode } from '../../shared/editor/doc-schema';
+import { extractPlainText } from '../../shared/text/plain-text';
 
 /**
  * Markdown for one rich note (INF-PORT-05). Lossy by design and documented in Settings and the progress report: block
- * IDs, reminders, tags, sticky state and colors, image size presets and underline are dropped; note references become
- * their label text; images and files become links to copies saved next to the Markdown file.
+ * IDs, reminders, tags, sticky state and colors, fonts, font sizes, text and highlight colors, image size presets and
+ * underline are dropped; note references become their label text; tables become GFM tables; images and files become
+ * links to copies saved next to the Markdown file; linked files become file:// links to their original location.
  */
 export interface MarkdownAssets {
   /** The relative link of an attachment copy, or null when the file is unavailable. */
   linkOf(attachmentId: string): string | null;
+  /** The file:// URL of a linked file's stored path (D-108), or null when the link is unknown. */
+  linkedFileUrl(linkId: string): string | null;
 }
+
+/** A link target without the characters that end a Markdown link (encodeURIComponent leaves parentheses as they are). */
+const linkTarget = (href: string): string => href.replace(/[()\s]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
 
 const escapeText = (text: string): string => text.replace(/([\\`*_[\]<>])/g, '\\$1');
 
@@ -25,10 +32,43 @@ function inline(nodes: readonly RichNode[] | undefined): string {
       if (marks.has('italic')) out = `*${out}*`;
       if (marks.has('strike')) out = `~~${out}~~`;
       const link = node.marks?.find((m) => m.type === 'link')?.attrs?.href;
-      if (typeof link === 'string') out = `[${out}](${link.replace(/[()\s]/g, encodeURIComponent)})`;
+      if (typeof link === 'string') out = `[${out}](${linkTarget(link)})`;
       return out;
     })
     .join('');
+}
+
+/** A cell on one line: its paragraphs and headings with their marks, other blocks as text; pipes escaped. */
+function cellMarkdown(cell: RichNode): string {
+  return (cell.content ?? [])
+    .map((b) => (b.type === 'paragraph' || b.type === 'heading' ? inline(b.content) : escapeText(extractPlainText('rich', { type: 'doc', content: [b] }))))
+    .join('\n')
+    .trim()
+    .replace(/\|/g, '\\|')
+    .replace(/ *\n+/g, '<br>');
+}
+
+const ALIGN_RULE: Record<string, string> = { left: ':---', center: ':---:', right: '---:' };
+
+/**
+ * A GFM table. Its first row is the header row (Markdown requires one); a cell spanning columns is followed by empty
+ * cells, while row spans and column widths are dropped.
+ */
+function table(node: RichNode): string {
+  const rows = (node.content ?? []).map((row) =>
+    (row.content ?? []).flatMap((cell) => {
+      const span = typeof cell.attrs?.colspan === 'number' ? cell.attrs.colspan : 1;
+      return [{ text: cellMarkdown(cell), align: cell.attrs?.align }, ...Array.from({ length: span - 1 }, () => ({ text: '', align: null }))];
+    }),
+  );
+  const width = Math.max(1, ...rows.map((r) => r.length));
+  const line = (texts: string[]) => `| ${texts.join(' | ')} |`;
+  const [head = [], ...body] = rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? { text: '', align: null }));
+  return [
+    line(head.map((c) => c.text)),
+    line(head.map((c) => (typeof c.align === 'string' ? (ALIGN_RULE[c.align] ?? '---') : '---'))),
+    ...body.map((r) => line(r.map((c) => c.text))),
+  ].join('\n');
 }
 
 /** Indents every line after the first, so a block continues inside its list item. */
@@ -70,6 +110,8 @@ function block(node: RichNode, assets: MarkdownAssets): string {
       return listItems(node.content ?? [], (_i, item) => (item.attrs?.checked === true ? '- [x] ' : '- [ ] '), assets);
     case 'horizontalRule':
       return '---';
+    case 'table':
+      return table(node);
     case 'image': {
       const link = typeof attrs.attachmentId === 'string' ? assets.linkOf(attrs.attachmentId) : null;
       const alt = escapeText(typeof attrs.alt === 'string' ? attrs.alt : 'image');
@@ -79,6 +121,11 @@ function block(node: RichNode, assets: MarkdownAssets): string {
       const link = typeof attrs.attachmentId === 'string' ? assets.linkOf(attrs.attachmentId) : null;
       const name = escapeText(typeof attrs.name === 'string' ? attrs.name : 'file');
       return link ? `[${name}](${link})` : `*[${name}: file unavailable]*`;
+    }
+    case 'fileLink': {
+      const url = typeof attrs.linkId === 'string' ? assets.linkedFileUrl(attrs.linkId) : null;
+      const name = escapeText(typeof attrs.name === 'string' ? attrs.name : 'file');
+      return url ? `[${name}](${linkTarget(url)})` : `*[${name}: linked file unavailable]*`;
     }
     default:
       return '';

@@ -10,8 +10,10 @@ import {
 } from '../../shared/contracts/portability';
 import { suggestedFileName } from '../../shared/names';
 import type { TreeChangedEventType } from '../../shared/contracts/hierarchy';
+import { LOCK_MESSAGES } from '../../shared/contracts/locks';
 import type { Db } from '../db/driver';
 import { NotesRepo } from '../db/repositories/notes-repo';
+import type { NoteVault } from '../locks/note-vault';
 import { AppError, errorDetail } from '../services/app-error';
 import type { AttachmentService } from '../services/attachment-service';
 import type { Clock } from '../services/clock';
@@ -45,6 +47,8 @@ export interface PortabilityServiceDeps {
   dialog: Pick<DialogAdapter, 'showSaveFile' | 'showOpenFile' | 'showOpenFolder'>;
   attachments: Pick<AttachmentService, 'importArchived'>;
   content: NoteContent;
+  /** Exports a locked note only while it is unlocked (D-111). */
+  vault: NoteVault;
   reminders: Pick<ReminderService, 'insertImported' | 'announceImported'>;
   onTreeChanged(event: TreeChangedEventType): void;
   /** Quits and starts the app again (after the usual flush), so a scheduled restore is applied. */
@@ -173,6 +177,8 @@ export class PortabilityService {
   async exportNote(req: { noteId: string; format: 'markdown' | 'text' }, ctx: Ctx) {
     const row = new NotesRepo(this.deps.db).getContentRow(req.noteId);
     if (!row || row.deleted_at !== null) throw new AppError('NOT_FOUND', PORTABILITY_MESSAGES.noteMissing);
+    // A locked note is exported only while it is unlocked: the user chose to write its text to a file (D-111).
+    if (row.locked === 1 && !this.deps.vault.isUnlocked(req.noteId)) throw new AppError('FORBIDDEN', LOCK_MESSAGES.exportLocked, { locked: true });
     const markdown = req.format === 'markdown';
     const file = await this.deps.dialog.showSaveFile({
       webContentsId: ctx.webContentsId,
@@ -183,7 +189,7 @@ export class PortabilityService {
     if (file === null) return { canceled: true as const };
     const target = withExtension(file, markdown ? 'md' : 'txt');
     const { db, paths, logger } = this.deps;
-    const result = await this.exclusive(() => this.writing('export', () => writeNoteExport({ db, dataDir: paths.dataDir, logger }, req.noteId, req.format, target)));
+    const result = await this.exclusive(() => this.writing('export', () => writeNoteExport({ db, dataDir: paths.dataDir, logger, vault: this.deps.vault }, req.noteId, req.format, target)));
     return { canceled: false as const, file: target, ...result };
   }
 
@@ -197,10 +203,10 @@ export class PortabilityService {
     if (file === null) return { canceled: true as const };
     const target = withExtension(file, EXPORT_EXTENSION);
     const { db, paths, appVersion, clock, logger } = this.deps;
-    const counts = await this.exclusive(() =>
+    const result = await this.exclusive(() =>
       this.writing('export', () => writePortableExport({ db, dataDir: paths.dataDir, appVersion, now: () => clock.now(), logger }, target)),
     );
-    return { canceled: false as const, file: target, counts };
+    return { canceled: false as const, file: target, ...result };
   }
 
   async importPortable(ctx: Ctx) {

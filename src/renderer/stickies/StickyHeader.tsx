@@ -1,7 +1,9 @@
 import { ChevronDown, ChevronUp, Ellipsis, Pin, X } from 'lucide-react';
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
+import type { HexColor } from '../../shared/color';
 import type { NoteColorType } from '../../shared/contracts/hierarchy';
 import { STICKY_MESSAGES, type StickyStateType } from '../../shared/contracts/stickies';
+import { ColorDot } from '../ui/ColorDot';
 import { IconButton } from '../ui/IconButton';
 import { Menu } from '../ui/Menu';
 import { ColorMenu } from './ColorMenu';
@@ -18,6 +20,8 @@ export const STICKY_MENU_LABELS = {
 
 export interface StickyHeaderActions {
   setColor(color: NoteColorType): void;
+  /** The default text color; null is Automatic. */
+  setTextColor(color: HexColor | null): void;
   togglePinned(): void;
   toggleCollapsed(): void;
   openInApp(): void;
@@ -40,7 +44,8 @@ const below = (ref: RefObject<HTMLButtonElement | null>) => {
 
 /**
  * The 36 px sticky header (D-070): color, title, source badge, pin (disabled where always-on-top is unsupported),
- * collapse, the actions menu and Close. The window is frameless (D-097): the header is the title bar and drag region,
+ * collapse, the actions menu and Close. The title and the source badge share one center line; the badge shrinks first
+ * and ends with an ellipsis (its tooltip has the whole path). The window is frameless (D-097): the header is the title bar and drag region,
  * gaps, empty space and source badge included; only the small controls and the title field, which is as wide as its
  * text, are not (D-102). A click on the title edits it in place; Rename in the actions menu and F2 select it.
  * Close hides the sticky, as closing its window always has.
@@ -83,15 +88,17 @@ export function StickyHeader({
         className="icon-btn sticky-color-btn"
         aria-label="Sticky color"
         title="Sticky color"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={menu?.kind === 'color'}
         onClick={openColors}
       >
-        <span className={`dot dot-${state.color}`} aria-hidden />
+        <ColorDot color={state.color} />
       </button>
-      {titleField}
-      <span className="sticky-badge" title={path}>
-        {path}
+      <span className="sticky-heading">
+        {titleField}
+        <span className="sticky-badge" title={path}>
+          {path}
+        </span>
       </span>
       <IconButton
         label="Keep on top"
@@ -123,7 +130,9 @@ export function StickyHeader({
       />
       <IconButton label="Close sticky" title="Close (Ctrl+W)" icon={X} size={14} className="sticky-close" onClick={actions.hide} />
       {menu?.kind === 'actions' ? <Menu label="Sticky actions" anchor={menu.anchor} items={items} onClose={close} /> : null}
-      {menu?.kind === 'color' ? <ColorMenu current={state.color} anchor={menu.anchor} onSelect={actions.setColor} onClose={close} /> : null}
+      {menu?.kind === 'color' ? (
+        <ColorMenu color={state.color} textColor={state.textColor} anchor={menu.anchor} onColor={actions.setColor} onTextColor={actions.setTextColor} onClose={close} />
+      ) : null}
     </div>
   );
 }

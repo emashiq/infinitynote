@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { isUserEdit } from '../../../../src/renderer/editor/content';
 import { blockIdAtSelection, chipsMeta, findBlock, reminderChipsKey, type ChipInfo } from '../../../../src/renderer/editor/reminder-chips';
-import { attachmentNode, insertBlocks } from '../../../../src/renderer/editor/uploader';
+import { insertBlocks } from '../../../../src/renderer/editor/uploader';
 import { makeEditor, type TestEditor } from './support';
 
 const P = '1b4e28ba-2fa1-41d2-883f-0016d3cca427';
@@ -101,7 +101,7 @@ describe('reminder chips (INF-REM-04, D-080)', () => {
     const p = findBlock(t.editor.state.doc, P)!;
     const end = p.pos + p.node.nodeSize - 1;
     t.editor.commands.setTextSelection(end);
-    const file = attachmentNode({ id: '6b4e28ba-2fa1-41d2-883f-0016d3cca427', kind: 'document', mime: 'application/pdf', sizeBytes: 10, originalName: 'a.pdf', width: null, height: null }, 'a.pdf');
+    const file = { type: 'fileAttachment', attrs: { attachmentId: '6b4e28ba-2fa1-41d2-883f-0016d3cca427', name: 'a.pdf', sizeBytes: 10, mime: 'application/pdf' } };
     insertBlocks(t.editor, { from: end, to: end }, [file]);
     expect(t.editor.state.doc.toJSON().content.some((n: { type: string }) => n.type === 'fileAttachment')).toBe(true);
     expect(new Map(chipsByBlock(t)).get(P)).toEqual(['a']);

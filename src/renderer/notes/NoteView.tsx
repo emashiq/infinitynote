@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { REMINDER_MESSAGES } from '../../shared/contracts/reminders';
 import { NoteEditor } from '../editor/NoteEditor';
 import { newReminderDialog, useNoteReminders } from '../reminders/note-reminders';
 import { ReminderChipBar } from '../reminders/ReminderChipBar';
 import { useServices, useStore } from '../state/use-store';
 import { useLiveNote } from './live-note';
+import { LockScreen } from './LockScreen';
 import { NoteBanners } from './NoteBanners';
 import type { ActionResult, NoteController } from './note-controller';
 import { NoteDialogs, type NoteDialog } from './NoteDialogs';
@@ -36,6 +37,8 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
   const noteReminders = useNoteReminders(services.bridge, controller.noteId);
   const tab = session.tabs.find((t) => t.id === tabId);
   const savedScroll = tab?.kind === 'note' ? (tab.scrollTop ?? 0) : 0;
+  const reopen = useCallback(() => void controller.reopen(), [controller]);
+  const locked = live?.locked ?? false;
 
   // The tab is the note's title (D-102): a title request renames the tab once the note is open. Ctrl+F requests are
   // handed to the editor below.
@@ -101,6 +104,11 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         </div>
       </div>
     );
+  }
+
+  if (state.status === 'locked') {
+    // Mounted again when the lock changes elsewhere (removed in Lock settings), so it checks the note's state again.
+    return <LockScreen key={String(locked)} noteId={controller.noteId} title={liveTitle} bridge={services.bridge} onUnlocked={reopen} />;
   }
 
   if (state.status === 'missing' || state.status === 'error' || state.content === null) {
@@ -177,13 +185,19 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
           controller.revealDone();
         }}
         onAddReminder={() => ui.openDialog(newReminderDialog(controller, liveTitle))}
-        onFloat={() => void commands.float(controller.noteId)}
-        suggestions={{
-          noteId: controller.noteId,
-          noteTitle: liveTitle,
-          reminders: noteReminders.reminders,
-          openCard: (request) => ui.openDialog({ kind: 'suggestion', request }),
-        }}
+        // A locked note never floats and keeps no reminder source text (D-111, D-112).
+        onFloat={locked ? undefined : () => void commands.float(controller.noteId)}
+        lock={{ locked, open: () => commands.openLock(controller.noteId), lockNow: () => void commands.lockNow(controller.noteId) }}
+        suggestions={
+          locked
+            ? undefined
+            : {
+                noteId: controller.noteId,
+                noteTitle: liveTitle,
+                reminders: noteReminders.reminders,
+                openCard: (request) => ui.openDialog({ kind: 'suggestion', request }),
+              }
+        }
       />
       <NoteDialogs
         controller={controller}

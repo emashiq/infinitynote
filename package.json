@@ -1,7 +1,7 @@
 {
   "name": "infinity-notes",
   "productName": "Infinity Notes",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Offline notes, stickies and reminders for Windows and Linux.",
   "desktopName": "infinity-notes.desktop",
@@ -49,6 +49,8 @@
     "@playwright/test": "1.64.0",
     "@tiptap/core": "3.31.4",
     "@tiptap/extension-list": "3.31.4",
+    "@tiptap/extension-table": "3.31.4",
+    "@tiptap/extension-text-style": "3.31.4",
     "@tiptap/extension-unique-id": "3.31.4",
     "@tiptap/extensions": "3.31.4",
     "@tiptap/pm": "3.31.4",

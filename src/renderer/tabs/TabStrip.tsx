@@ -1,10 +1,13 @@
 import { Bell, ChevronLeft, ChevronRight, FileText, House, Settings, StickyNote, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import type { NoteColorType } from '../../shared/contracts/hierarchy';
 import { displayTitle } from '../../shared/names';
 import { NoteTitleField, type TitleEditEnd } from '../notes/NoteTitleField';
 import type { TabType } from '../../shared/contracts/session';
 import type { AppServices } from '../state/app-services';
 import { useServices, useStore } from '../state/use-store';
+import { ColorDot } from '../ui/ColorDot';
+import { LockMark } from '../ui/LockMark';
 import { IconButton } from '../ui/IconButton';
 import { scrollBehavior } from '../ui/motion';
 import { AllTabsMenu } from './AllTabsMenu';
@@ -13,7 +16,8 @@ export interface TabView {
   tab: TabType;
   label: string;
   sticky: boolean;
-  color: string | null;
+  color: NoteColorType | null;
+  locked: boolean;
 }
 
 export function tabViews(services: AppServices, tabs: TabType[]): TabView[] {
@@ -21,16 +25,16 @@ export function tabViews(services: AppServices, tabs: TabType[]): TabView[] {
   return tabs.map((tab) => {
     switch (tab.kind) {
       case 'home':
-        return { tab, label: 'Home', sticky: false, color: null };
+        return { tab, label: 'Home', sticky: false, color: null, locked: false };
       case 'stickies':
-        return { tab, label: 'Stickies', sticky: false, color: null };
+        return { tab, label: 'Stickies', sticky: false, color: null, locked: false };
       case 'reminders':
-        return { tab, label: 'Reminders', sticky: false, color: null };
+        return { tab, label: 'Reminders', sticky: false, color: null, locked: false };
       case 'settings':
-        return { tab, label: 'Settings', sticky: false, color: null };
+        return { tab, label: 'Settings', sticky: false, color: null, locked: false };
       default: {
         const note = notes.find((n) => n.id === tab.noteId);
-        return { tab, label: displayTitle(note?.title ?? ''), sticky: !!note?.sticky, color: note?.color ?? null };
+        return { tab, label: displayTitle(note?.title ?? ''), sticky: !!note?.sticky, color: note?.color ?? null, locked: !!note?.locked };
       }
     }
   });
@@ -51,7 +55,8 @@ function TabIcon({ view }: { view: TabView }) {
       return (
         <>
           {view.sticky ? <StickyNote {...props} /> : <FileText {...props} />}
-          {view.sticky && view.color ? <span className={`dot dot-${view.color}`} aria-hidden /> : null}
+          {view.sticky && view.color ? <ColorDot color={view.color} /> : null}
+          {view.locked ? <LockMark /> : null}
         </>
       );
   }

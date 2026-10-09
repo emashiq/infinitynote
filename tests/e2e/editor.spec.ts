@@ -332,7 +332,8 @@ test('plain note (INF-EDIT-04)', async () => {
   await expect(titleInput(page)).toBeFocused();
   const id = h.one<{ id: string }>('SELECT id FROM notes ORDER BY created_at DESC LIMIT 1')!.id;
   expect(noteRow(id)).toMatchObject({ format: 'plain', content_text: '', content_json: null });
-  // No formatting in a plain-text note; its note menu has Find, Convert to rich text and Version history (D-102).
+  // No formatting in a plain-text note; its note menu has Find, Convert to rich text and Version history (D-102), and
+  // Lock note… (D-111).
   await openFormatting(page);
   await expect(toolbar(page)).toHaveCount(0);
   await page.keyboard.press('Shift+F10');
@@ -343,6 +344,7 @@ test('plain note (INF-EDIT-04)', async () => {
     'Convert to rich text',
     'Version history…',
     'Float as sticky',
+    'Lock note…',
   ]);
   await page.keyboard.press('Escape');
   await expect(noteMenu(page)).toHaveCount(0);
@@ -391,7 +393,7 @@ test('conversion warning and version history (INF-EDIT-05, INF-SAVE-06)', async 
   await chooseNoteMenu(page, 'Convert to plain text…');
   const dialog = dialogByName(page, 'Convert to plain text?');
   await expect(dialog.getByRole('heading')).toHaveText('Convert to plain text?');
-  await expect(dialog.locator('.dialog-body')).toHaveText('Formatting, checklists, links and images will be removed. A version of the current note is saved so you can restore it.');
+  await expect(dialog.locator('.dialog-body')).toHaveText('Formatting, fonts and colors, checklists, links and images will be removed, and tables become lines of tab-separated text. A version of the current note is saved so you can restore it.');
   await dialog.getByRole('button', { name: 'Cancel' }).press('Enter');
   await expect(dialog).toHaveCount(0);
   await openFormatting(page);

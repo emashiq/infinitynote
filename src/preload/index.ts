@@ -1,6 +1,8 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { InfinityBridge } from '../shared/contracts/bridge';
+import { LINK_MESSAGES } from '../shared/attachments/link-messages';
 import { EVENT_CHANNELS, type EventChannel, type InvokeChannel } from '../shared/contracts/channel-names';
+import { fail } from '../shared/contracts/envelope';
 
 /**
  * One bridge method per channel. Main validates every payload, so the preload only forwards it; the return
@@ -22,6 +24,14 @@ function subscribe(channel: EventChannel, cb: (payload: never) => void): () => v
   };
 }
 
+/**
+ * The path of a file on disk that the user dropped or pasted; empty for clipboard data, for a File made by page script
+ * and for anything else. It never reaches page script: only fileLink:create receives it (D-115).
+ */
+function diskPath(file: unknown): string {
+  return file instanceof File ? webUtils.getPathForFile(file) : '';
+}
+
 const bridge: InfinityBridge = {
   app: {
     getInfo: call('app:getInfo'),
@@ -31,9 +41,33 @@ const bridge: InfinityBridge = {
   },
   attachment: {
     importBytes: call('attachment:importBytes'),
-    importFromDialog: call('attachment:importFromDialog'),
+    pickFiles: call('attachment:pickFiles'),
+    addPicked: call('attachment:addPicked'),
     open: call('attachment:open'),
     showInFolder: call('attachment:showInFolder'),
+  },
+  fileLink: {
+    createFromFile: (file) => {
+      const path = diskPath(file);
+      return path === '' ? Promise.resolve(fail('VALIDATION_FAILED', LINK_MESSAGES.noPath)) : ipcRenderer.invoke('fileLink:create', { path });
+    },
+    isOnDisk: (file) => diskPath(file) !== '',
+    status: call('fileLink:status'),
+    open: call('fileLink:open'),
+    showInFolder: call('fileLink:showInFolder'),
+    copyIn: call('fileLink:copyIn'),
+  },
+  lock: {
+    availability: call('lock:availability'),
+    status: call('lock:status'),
+    set: call('lock:set'),
+    unlock: call('lock:unlock'),
+    unlockHello: call('lock:unlockHello'),
+    lockNow: call('lock:lockNow'),
+    lockAll: call('lock:lockAll'),
+    changePassword: call('lock:changePassword'),
+    setHello: call('lock:setHello'),
+    remove: call('lock:remove'),
   },
   settings: { get: call('settings:get'), set: call('settings:set') },
   capabilities: { get: call('capabilities:get') },
@@ -73,6 +107,7 @@ const bridge: InfinityBridge = {
     dock: call('sticky:dock'),
     hide: call('sticky:hide'),
     setColor: call('sticky:setColor'),
+    setTextColor: call('sticky:setTextColor'),
     setPinned: call('sticky:setPinned'),
     setCollapsed: call('sticky:setCollapsed'),
     remove: call('sticky:remove'),

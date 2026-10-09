@@ -18,6 +18,9 @@ export type DialogState =
   /** Help menu (D-097). */
   | { kind: 'shortcuts' }
   | { kind: 'about' }
+  /** "Lock note…" and the lock settings of a locked note (D-111). */
+  | { kind: 'lockNote'; noteId: string }
+  | { kind: 'lockSettings'; noteId: string }
   /** The confirmation of a checked backup before the app restarts to restore it (D-099). */
   | { kind: 'restoreBackup'; summary: BackupSummaryType };
 

@@ -71,7 +71,7 @@ test('menus by keyboard: Alt focuses the bar, arrows move, Enter runs, Escape cl
   await page.getByRole('menu', { name: 'Help' }).getByRole('menuitem', { name: 'About Infinity Notes' }).focus();
   await page.keyboard.press('Enter');
   const about = page.getByRole('dialog', { name: 'About Infinity Notes' });
-  await expect(about).toContainText('Version 0.1.0');
+  await expect(about).toContainText('Version 0.2.0');
   await expect(about).toContainText('Developed by Ashiqur Rahman Emran');
   await expect(about).toContainText('Copyright © 2026 Ashiqur Rahman Emran');
 });

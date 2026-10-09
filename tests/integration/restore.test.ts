@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { APP_VERSION } from '../../src/shared/app-identity';
 import { PORTABILITY_MESSAGES } from '../../src/shared/contracts/portability';
 import { createHash, randomUUID } from 'node:crypto';
 import { openBetterSqlite } from '../../src/main/db/better-sqlite3-driver';
+import { LATEST } from '../../src/main/db/migrations';
 import { writeBackup } from '../../src/main/portability/backup-writer';
 import { openArchive } from '../../src/main/portability/zip-archive';
 import { memoryLogger } from '../../src/main/services/logger';
@@ -75,7 +77,7 @@ describe('restore (INF-PORT-02)', () => {
     const { seeded, file, expected } = await backedUpNotebook();
     const b = await cleanProfile();
     const prepared = await schedule(b, file);
-    expect(prepared).toMatchObject({ canceled: false, summary: { schemaVersion: 7, notes: 3, attachments: 1, appVersion: '0.1.0' } });
+    expect(prepared).toMatchObject({ canceled: false, summary: { schemaVersion: LATEST, notes: 3, attachments: 1, appVersion: APP_VERSION } });
     expect(b.pathDialogs.at(-1)).toMatchObject({ kind: 'open', title: 'Restore from backup' });
 
     const { restore, services: r } = await restartWithRestore(b);
@@ -177,13 +179,17 @@ describe('restore (INF-PORT-02)', () => {
 
   it('a backup from an older schema is restored and migrated forward', async () => {
     const { a, file } = await backedUpNotebook();
-    // The same notebook as schema 6 had it: without the Phase 07 tables.
+    // The same notebook as schema 6 had it: without the Phase 07 tables and the v0.2.0 sticky text color, linked files and
+    // note locks.
     const work = tmpFile('old.sqlite3');
     const archive = await openArchive(file);
     await archive.extractTo('db/infinity-notes.sqlite3', work);
     archive.close();
     const old = openBetterSqlite(work);
-    old.exec('DROP TRIGGER note_references_target_purged; DROP TABLE note_tags; DROP TABLE tags; DROP TABLE note_references; PRAGMA user_version = 6;');
+    old.exec(
+      'DROP TRIGGER notes_locked_plaintext; DROP TRIGGER note_versions_locked; DROP TRIGGER note_drafts_locked; DROP TRIGGER reminder_sources_locked; DROP TRIGGER suggestion_dismissals_locked; DROP TABLE note_locks; ALTER TABLE notes DROP COLUMN locked; ' +
+        'DROP TABLE note_linked_files; DROP TABLE linked_files; DROP TRIGGER note_references_target_purged; DROP TABLE note_tags; DROP TABLE tags; DROP TABLE note_references; ALTER TABLE notes DROP COLUMN text_color; PRAGMA user_version = 6;',
+    );
     const oldFile = tmpFile('old.infinitybackup');
     await writeBackup({ db: old, dataDir: a.dataDir, appVersion: '0.0.6', now: () => 1, uuid: () => randomUUID(), logger: memoryLogger() }, oldFile);
     old.close();
@@ -192,7 +198,7 @@ describe('restore (INF-PORT-02)', () => {
     expect(await schedule(b, oldFile)).toMatchObject({ canceled: false, summary: { schemaVersion: 6, appVersion: '0.0.6' } });
     const { restore, services: r } = await restartWithRestore(b);
     expect(restore?.status).toBe('restored');
-    expect(r.t.db.pragmaValue('user_version')).toBe(7);
+    expect(r.t.db.pragmaValue('user_version')).toBe(LATEST);
     expect(r.rows('SELECT title FROM notes ORDER BY title')).toEqual([{ title: 'Design' }, { title: 'Index' }, { title: 'Plain' }]);
     expect(fs.readdirSync(r.paths.preMigrationDir)).toHaveLength(1);
   });

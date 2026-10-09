@@ -72,7 +72,8 @@
 }
 
 .brand-icon {
-  color: var(--accent);
+  display: block;
+  flex: none;
 }
 
 .app-title {

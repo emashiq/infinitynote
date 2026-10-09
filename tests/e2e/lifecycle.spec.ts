@@ -151,7 +151,7 @@ test('first close asks; choice is remembered and editable (INF-DESK-01)', async 
 });
 
 test('the close question names the relaunch path where no tray is supported (INF-DESK-01)', async () => {
-  const { app } = await h.start(WIN ? { INFINITY_NOTES_TEST_CAPS: JSON.stringify({ tray: 'unsupported' }) } : {});
+  const { app } = await h.startUnsupported('tray');
   await closeWindowByUrl(app, '#/');
   await expect.poll(async () => (await closeDialogs(app)).map((d) => d.detail)).toEqual([`Reminders and stickies only work while the app is running.\n\n${RELAUNCH}`]);
   await railGo(await mainPageOf(app), 'Settings');
@@ -197,9 +197,9 @@ test('tray menu (INF-DESK-02, Windows)', async () => {
 });
 
 test('without a tray host a second launch brings the window back (INF-DESK-02)', async () => {
-  const { app, page } = await h.start(WIN ? { INFINITY_NOTES_TEST_CAPS: JSON.stringify({ tray: 'unsupported' }) } : {});
+  const { app, page, forced } = await h.startUnsupported('tray');
   const caps = await page.evaluate(() => window.infinity.capabilities.get());
-  expect(caps).toMatchObject({ ok: true, data: { tray: { status: 'unsupported', reason: WIN ? 'test-override' : 'no-status-notifier-host' } } });
+  expect(caps).toMatchObject({ ok: true, data: { tray: { status: 'unsupported', reason: forced ? 'test-override' : 'no-status-notifier-host' } } });
   expect(await app.evaluate(() => globalThis.__infinityTest!.tray!.present)).toBe(false);
   expect(readMainLog(h.userData)).toMatch(/tray: not created reason=/);
 

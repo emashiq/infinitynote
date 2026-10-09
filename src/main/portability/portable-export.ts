@@ -1,8 +1,9 @@
 import path from 'node:path';
 import { ARCHIVE_FORMAT_VERSION, EXPORT_FORMAT, type PortableCountsType } from '../../shared/contracts/portability';
-import { NoteColor } from '../../shared/contracts/hierarchy';
+import { HexColor, NoteColor } from '../../shared/contracts/hierarchy';
 import type { Db } from '../db/driver';
 import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
+import { LinkedFilesRepo } from '../db/repositories/linked-files-repo';
 import { PortableRepo } from '../db/repositories/portable-repo';
 import { storedContent } from '../db/repositories/notes-repo';
 import { containedAttachmentFile } from '../services/attachment-files';
@@ -24,12 +25,13 @@ const archivedPath = (managedPath: string): string => `attachments/${path.posix.
 
 /**
  * Writes the portable export (INF-PORT-04): live projects, folders and notes with their content, tags, reminders and
- * attachment files. Reads run in one transaction so the document is consistent.
+ * attachment files, and the records of linked files (not the files). Locked notes are left out (an export would hold
+ * their text in the clear; D-111) and counted. Reads run in one transaction so the document is consistent.
  */
-export async function writePortableExport(deps: PortableExportDeps, destFile: string): Promise<PortableCountsType> {
+export async function writePortableExport(deps: PortableExportDeps, destFile: string): Promise<{ counts: PortableCountsType; skippedLocked: number }> {
   const hierarchy = new HierarchyRepo(deps.db);
   const repo = new PortableRepo(deps.db);
-  const { doc, attachmentRows } = deps.db.transaction(() => {
+  const { doc, attachmentRows, skippedLocked } = deps.db.transaction(() => {
     const tags = repo.tagsByNote();
     const attachmentRows = repo.liveAttachments();
     const doc: PortableDocumentType = {
@@ -41,6 +43,7 @@ export async function writePortableExport(deps: PortableExportDeps, destFile: st
       folders: hierarchy.liveFolders().map((f) => ({ id: f.id, projectId: f.project_id, parentId: f.parent_id, name: f.name, favorite: f.favorite === 1 })),
       notes: repo.liveNotes().map((n) => {
         const color = NoteColor.safeParse(n.color);
+        const textColor = HexColor.safeParse(n.text_color);
         return {
           id: n.id,
           projectId: n.project_id,
@@ -50,6 +53,7 @@ export async function writePortableExport(deps: PortableExportDeps, destFile: st
           content: storedContent(n),
           sticky: n.sticky_enabled === 1,
           color: color.success ? color.data : null,
+          textColor: textColor.success ? textColor.data : null,
           pinned: n.pinned_at !== null,
           favorite: n.favorite === 1,
           tags: tags.get(n.id) ?? [],
@@ -74,8 +78,9 @@ export async function writePortableExport(deps: PortableExportDeps, destFile: st
         kind: a.kind,
         originalName: a.original_name,
       })),
+      links: new LinkedFilesRepo(deps.db).usedByExportableNotes().map((l) => ({ id: l.id, path: l.path, name: l.name, sizeBytes: l.size_bytes })),
     };
-    return { doc, attachmentRows };
+    return { doc, attachmentRows, skippedLocked: repo.countLockedNotes() };
   });
 
   const files: ArchiveItem[] = [];
@@ -93,6 +98,6 @@ export async function writePortableExport(deps: PortableExportDeps, destFile: st
   doc.attachments = doc.attachments.filter((a) => exported.has(a.id));
   await writeArchive(destFile, [{ name: PORTABLE_DATA_ENTRY, buffer: Buffer.from(JSON.stringify(doc)), compress: true }, ...files]);
   const counts = { projects: doc.projects.length, folders: doc.folders.length, notes: doc.notes.length, reminders: doc.reminders.length, attachments: files.length };
-  deps.logger.info(`export: portable ${JSON.stringify(counts)}`);
-  return counts;
+  deps.logger.info(`export: portable ${JSON.stringify(counts)} skippedLocked=${skippedLocked}`);
+  return { counts, skippedLocked };
 }

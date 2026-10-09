@@ -129,6 +129,7 @@ test('the note view is only the text, its tab is the title, with formatting, ins
   await expect(noteMenu(page).getByRole('menuitem')).toHaveText([
     'Insert image',
     'Attach file',
+    'Insert table…',
     'Link to note…',
     'Add reminder…',
     'Create reminder from text',
@@ -136,6 +137,7 @@ test('the note view is only the text, its tab is the title, with formatting, ins
     'Convert to plain text…',
     'Version history…',
     'Float as sticky',
+    'Lock note…',
   ]);
   await noteMenu(page).getByRole('menuitem', { name: 'Add reminder…' }).click();
   await expect(noteMenu(page)).toHaveCount(0);

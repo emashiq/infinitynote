@@ -1,3 +1,5 @@
+import { rowsToTsv } from './table-text';
+
 const BLOCK_NODES = new Set([
   'paragraph',
   'heading',
@@ -11,6 +13,7 @@ const BLOCK_NODES = new Set([
   'horizontalRule',
   'image',
   'fileAttachment',
+  'fileLink',
 ]);
 /** Blocks that hold text directly; each gives exactly one line, also when empty. */
 const TEXT_BLOCKS = new Set(['paragraph', 'heading', 'codeBlock']);
@@ -26,6 +29,15 @@ interface PmNode {
 function endsWithNewline(out: string[]): boolean {
   const last = out[out.length - 1];
   return last === undefined || last.endsWith('\n');
+}
+
+const childNodes = (node: PmNode): PmNode[] => (Array.isArray(node.content) ? (node.content as PmNode[]) : []);
+
+/** A cell's blocks on one line. */
+function cellText(cell: PmNode, depth: number): string {
+  const out: string[] = [];
+  for (const child of childNodes(cell)) walk(child, depth + 1, out);
+  return out.join('').trim().replace(/\n+/g, ' ');
 }
 
 function walk(node: unknown, depth: number, out: string[]): void {
@@ -44,11 +56,17 @@ function walk(node: unknown, depth: number, out: string[]): void {
     if (typeof n.attrs?.label === 'string') out.push(n.attrs.label);
     return;
   }
+  // A table reads as one line per row with tab-separated cells, as spreadsheets copy it.
+  if (n.type === 'table') {
+    if (!endsWithNewline(out)) out.push('\n');
+    out.push(`${rowsToTsv(childNodes(n).map((row) => childNodes(row).map((cell) => cellText(cell, depth + 2))))}\n`);
+    return;
+  }
   const isBlock = typeof n.type === 'string' && BLOCK_NODES.has(n.type);
   if (isBlock && !endsWithNewline(out)) out.push('\n');
   const start = out.length;
-  // A file chip contributes its name as its own line; images contribute no text.
-  if (n.type === 'fileAttachment' && typeof n.attrs?.name === 'string') out.push(n.attrs.name);
+  // A file chip (copied or linked) contributes its name as its own line; images contribute no text.
+  if ((n.type === 'fileAttachment' || n.type === 'fileLink') && typeof n.attrs?.name === 'string') out.push(n.attrs.name);
   if (Array.isArray(n.content)) {
     for (const child of n.content) walk(child, depth + 1, out);
   }
@@ -58,7 +76,8 @@ function walk(node: unknown, depth: number, out: string[]): void {
 
 /**
  * The text of a note, used for search, previews and rich-to-plain conversion: plain notes as stored (LF line
- * ends), rich notes one line per text block (empty paragraphs give empty lines; trailing ones are dropped).
+ * ends), rich notes one line per text block (empty paragraphs give empty lines; trailing ones are dropped) and one
+ * line per table row with tab-separated cells.
  */
 export function extractPlainText(format: 'rich' | 'plain', content: unknown): string {
   if (format === 'plain') {

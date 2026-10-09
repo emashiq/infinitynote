@@ -1,4 +1,5 @@
-import { Menu, Tray, nativeImage, type MenuItemConstructorOptions } from 'electron';
+import path from 'node:path';
+import { Menu, Tray, nativeImage, type MenuItemConstructorOptions, type NativeImage } from 'electron';
 import type { CapabilityStatusType } from '../shared/contracts/app';
 import { PRODUCT_NAME } from '../shared/app-identity';
 import type { Logger } from './services/logger';
@@ -10,13 +11,37 @@ export interface TrayItem {
 
 export interface TrayDeps {
   tray: CapabilityStatusType;
-  iconPath: string;
+  /** Holds tray-16.png, tray-24.png and tray-32.png. */
+  iconDir: string;
   platform: NodeJS.Platform;
   openMainWindow(): void;
   newSticky(): Promise<void>;
   showWidget(): void;
   quit(): void;
   logger: Logger;
+}
+
+/**
+ * The tray icon files per platform: Windows gets one image with 16, 24 and 32 px representations for 100, 150 and 200%
+ * display scaling; Linux tray hosts scale a single 32 px image to their panel.
+ */
+export function trayIconFiles(platform: NodeJS.Platform): Array<{ file: string; scaleFactor: number }> {
+  if (platform === 'win32') {
+    return [
+      { file: 'tray-16.png', scaleFactor: 1 },
+      { file: 'tray-24.png', scaleFactor: 1.5 },
+      { file: 'tray-32.png', scaleFactor: 2 },
+    ];
+  }
+  return [{ file: 'tray-32.png', scaleFactor: 1 }];
+}
+
+function trayImage(dir: string, platform: NodeJS.Platform): NativeImage {
+  const image = nativeImage.createEmpty();
+  for (const { file, scaleFactor } of trayIconFiles(platform)) {
+    image.addRepresentation({ scaleFactor, buffer: nativeImage.createFromPath(path.join(dir, file)).toPNG() });
+  }
+  return image;
 }
 
 export const TRAY_LABELS = { open: 'Open Infinity Notes', newSticky: 'New sticky', showWidget: 'Show widget', quit: 'Quit Infinity Notes' } as const;
@@ -48,8 +73,7 @@ export class TrayController {
       this.deps.logger.info(`tray: not created reason=${this.deps.tray.reason}`);
       return;
     }
-    const size = this.deps.platform === 'win32' ? 16 : 22;
-    this.tray = new Tray(nativeImage.createFromPath(this.deps.iconPath).resize({ width: size, height: size }));
+    this.tray = new Tray(trayImage(this.deps.iconDir, this.deps.platform));
     this.tray.setToolTip(PRODUCT_NAME);
     const entries: MenuItemConstructorOptions[] = this.items.map((item) => ({ label: item.label, click: () => item.run() }));
     // Quit sits apart from the other items.

@@ -1,6 +1,6 @@
 name: release
 # Builds the unsigned Windows and Linux installers for a version tag and publishes them as a GitHub Release.
-# End-to-end tests run in ci.yml; this workflow repeats the static gates and the packaged native self-test.
+# It only builds and publishes: the static gates, the end-to-end tests and the packaged native self-test run in ci.yml.
 on:
   push:
     tags: ['v*']

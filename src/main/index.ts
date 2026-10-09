@@ -1,5 +1,5 @@
 import './windows/schemes';
-import { Menu, Notification, app, globalShortcut, ipcMain, nativeTheme, protocol, screen, session, shell } from 'electron';
+import { BrowserWindow, Menu, Notification, app, globalShortcut, ipcMain, nativeTheme, protocol, safeStorage, screen, session, shell, webContents } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -18,6 +18,7 @@ import { createEventBus } from './ipc/event-bus';
 import { registerIpcHandlers } from './ipc/register-handlers';
 import { createIpcRouter } from './ipc/router';
 import { createSenderPolicy } from './ipc/sender-policy';
+import { platformVerifier, safeStorageProtector } from './locks/os-key';
 import { createMainServices, type MainServices } from './main-services';
 import { openWithPendingRestore } from './portability/restore';
 import { errorMessage } from './services/app-error';
@@ -169,6 +170,13 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   let scheduler: ReminderScheduler | null = null;
   const wakeReminders = (reason: WakeReason) => scheduler?.wake(reason);
   const reminderChanged = (event: ReminderChangedEventType) => eventBus.broadcast('reminder:changed', event);
+  // Windows Hello for locked notes (D-113): a fake under the hooks; its prompt belongs to the main window.
+  const osKey = hooks?.osKey ?? { verifier: platformVerifier(process.platform), protector: safeStorageProtector(safeStorage) };
+  const mainWindowHandle = (): Buffer | null => {
+    const id = desktop?.mainWindow.webContentsId();
+    const contents = id == null ? undefined : webContents.fromId(id);
+    return (contents && BrowserWindow.fromWebContents(contents)?.getNativeWindowHandle()) ?? null;
+  };
   let services: MainServices | null = null;
   if (db) {
     const emitRevision = (event: NoteRevisionEventType) => eventBus.broadcast('note:revision', event);
@@ -211,6 +219,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       onReminderChanged: reminderChanged,
       onRemindersWritten: () => wakeReminders('write'),
       testFaults: hooks?.faults,
+      locks: { ...osKey, power: seams ? seams.power : electronPowerEvents, windowHandle: mainWindowHandle },
     });
     hooks?.attachServices({ services, db, clock: systemClock, emitRevision });
     applyNativeTheme(services.settings.getInternal('appearance.theme'));
@@ -226,6 +235,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       log.warn('suggestions: pruning dismissals failed');
     }
     startHousekeeping(services, log);
+    services.locks.start();
   }
 
   const startup: StartupStateType = opened.ok ? { status: 'ok' } : { status: 'error', code: opened.code };
@@ -266,6 +276,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       devUrl: devUrl ? `${devUrl}${devUrl.endsWith('/') ? '' : '/'}` : null,
       onTitleBarOverlay: hooks ? (overlay) => (hooks.state.titleBarOverlay = overlay) : undefined,
     },
+    trayIconDir: path.join(app.getAppPath(), 'resources', 'brand'),
     onStickyLayout: hooks ? (entry) => hooks.state.stickyLog.push(entry) : undefined,
     // Started once the startup windows are back, so an overdue alert at startup has a window to fall back to.
     afterStartup: () => scheduler?.start(),
@@ -315,6 +326,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   registerIpcHandlers(router, {
     app: {
       getInfo,
+      beforeInfo: hooks ? () => new Promise((resolve) => setTimeout(resolve, hooks.state.startupDelayMs)) : undefined,
       getCapabilities: () => capabilities,
       shell: shellAdapter,
       dataDir: paths.dataDir,
@@ -344,6 +356,8 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     shortcut?.stop();
     // The windows flushed before quitting; whatever main still holds of their edits is saved now (D-072, D-103).
     services?.collab.closeAll();
+    // Then every locked note's key is zeroed (D-111).
+    services?.locks.stop();
     try {
       db?.close();
     } catch {

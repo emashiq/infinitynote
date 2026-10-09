@@ -232,7 +232,7 @@ test('image-heavy and very large notes stay responsive; inactive tabs hold no ed
   for (const id of others) await openFromTree(page, id);
   await expect(page.locator('html')).toHaveAttribute('data-live-editors', '1');
   await expect(page.locator('#tabpanel .ProseMirror')).toHaveCount(1);
-  await expect(page.locator('img')).toHaveCount(0);
+  await expect(page.locator('#tabpanel img')).toHaveCount(0);
   const tenTabs = await memory(app);
 
   record('editor-responsiveness', {

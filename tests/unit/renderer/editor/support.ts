@@ -3,7 +3,8 @@ import { afterEach } from 'vitest';
 import { plainExtensions, richExtensions } from '../../../../src/renderer/editor/extensions';
 import { createPasteProps } from '../../../../src/renderer/editor/paste';
 import { AttachmentUploader, type UploaderDeps } from '../../../../src/renderer/editor/uploader';
-import { ok } from '../../../../src/shared/contracts/envelope';
+import { LINK_MESSAGES } from '../../../../src/shared/attachments/link-messages';
+import { fail, ok } from '../../../../src/shared/contracts/envelope';
 
 const editors: Editor[] = [];
 
@@ -33,15 +34,20 @@ export function makeEditor(opts: { format?: 'rich' | 'plain'; content?: Content;
   const uploader = new AttachmentUploader({
     importBytes: async (req) =>
       ok({ attachment: { id: crypto.randomUUID(), kind: req.kind, mime: 'image/png', sizeBytes: req.bytes.byteLength, originalName: req.originalName ?? null, width: 4, height: 3 } }),
-    limits: () => ({ imageMaxMb: 20, documentMaxMb: 50 }),
+    // jsdom files are never on disk, like a File made by page script (D-115).
+    isOnDisk: () => false,
+    linkFile: async () => fail('VALIDATION_FAILED', LINK_MESSAGES.noPath),
+    prefs: () => ({ imageMaxMb: 20, documentMaxMb: 25, addFiles: 'ask' }),
     notify: (m) => notices.push(m),
+    chooseFiles: async () => null,
+    rememberChoice: () => undefined,
     ...opts.uploader,
   });
   const element = document.createElement('div');
   document.body.appendChild(element);
   const editor = new Editor({
     element,
-    extensions: format === 'rich' ? richExtensions({ uploader, notify: (m) => notices.push(m), files: null, references: null }) : plainExtensions(),
+    extensions: format === 'rich' ? richExtensions({ uploader, notify: (m) => notices.push(m), files: null, links: null, references: null }) : plainExtensions(),
     content: opts.content ?? null,
     enableContentCheck: true,
     editorProps: createPasteProps({ format, uploader, notify: (m) => notices.push(m), flushPending: opts.flushPending ?? (async () => {}) }),

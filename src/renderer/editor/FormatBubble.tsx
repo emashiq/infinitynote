@@ -1,16 +1,20 @@
 import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
+import { isInTable } from '@tiptap/pm/tables';
 import { useEditorState } from '@tiptap/react';
-import { Bold, ChevronDown, Code, Heading, Italic, Link, List, ListOrdered, ListTodo, SquareCode } from 'lucide-react';
+import { ALargeSmall, Baseline, Bold, Code, Heading, Highlighter, Italic, Link, List, ListOrdered, ListTodo, SquareCode, Table, Type } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import type { ImageSize } from '../../shared/editor/doc-schema';
+import { FONT_FAMILIES, FONT_SIZES, HIGHLIGHT_COLORS, TEXT_COLORS, type ColorSwatch } from '../../shared/editor/formatting';
 import { IconButton } from '../ui/IconButton';
-import { Menu, type MenuItem } from '../ui/Menu';
+import type { MenuItem } from '../ui/Menu';
 import { SegmentedControl } from '../ui/SegmentedControl';
+import { ColorButton, MenuButton } from './bubble-controls';
 import { Floating } from './Floating';
 import { bubbleKind, selectionBox } from './placement';
 import { LinkBar } from './LinkBar';
 import { selectedLinkHref } from './link';
+import { tableHasHeaderRow, tableMenuItems } from './table-actions';
 
 export interface LinkActions {
   edit(): void;
@@ -24,53 +28,32 @@ const IMAGE_SIZE_OPTIONS: Array<{ value: ImageSize; label: string }> = [
   { value: 'full', label: 'Full width' },
 ];
 
+const swatches = (colors: readonly ColorSwatch[]) => colors.map((c) => ({ value: c.value, label: c.label, color: c.value }));
+const TEXT_SWATCHES = swatches(TEXT_COLORS);
+const HIGHLIGHT_SWATCHES = swatches(HIGHLIGHT_COLORS);
+
 function ToggleButton({ pressed, ...rest }: ComponentProps<typeof IconButton> & { pressed: boolean }) {
   return <IconButton aria-pressed={pressed} className={pressed ? 'is-on' : undefined} {...rest} />;
 }
 
-/** The Heading button: it opens Paragraph, Heading 1, 2 and 3 below itself. */
-function HeadingButton({ items }: { items: MenuItem[] }) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
-  return (
-    <>
-      <button
-        ref={ref}
-        type="button"
-        className="icon-btn bubble-menu-btn"
-        aria-label="Heading"
-        title="Heading (Ctrl+Alt+1, 2, 3)"
-        aria-haspopup="menu"
-        aria-expanded={anchor !== null}
-        onClick={() => {
-          const r = ref.current!.getBoundingClientRect();
-          setAnchor({ x: r.left, y: r.bottom + 4 });
-        }}
-      >
-        <Heading size={16} strokeWidth={1.75} aria-hidden />
-        <ChevronDown size={12} strokeWidth={1.75} aria-hidden />
-      </button>
-      {anchor ? <Menu items={items} anchor={anchor} label="Heading" itemRole="menuitemradio" onClose={() => setAnchor(null)} /> : null}
-    </>
-  );
-}
-
-/** The toolbar's own enabled buttons (not the items of its open Heading menu). */
+/** The toolbar's own enabled buttons (not the items of its open menus and popovers). */
 function bubbleButtons(toolbar: HTMLElement) {
-  return [...toolbar.querySelectorAll<HTMLButtonElement>('button:not([disabled])')].filter((b) => !b.closest('[role="menu"]'));
+  return [...toolbar.querySelectorAll<HTMLButtonElement>('button:not([disabled])')].filter((b) => !b.closest('[role="menu"], [role="dialog"]'));
 }
 
 /**
- * The floating formatting toolbar of rich notes (D-102). It appears above selected text (formatting and, inside a
- * link, the link actions), above a selected image (its size presets) and while the cursor is in a link (the link
- * actions). Alt+F10 (a new `request`) shows it at the cursor too and moves the focus into it; Left and Right move
- * between its buttons and Escape returns to the text.
+ * The floating formatting toolbar of rich notes (D-102). It appears above selected text (formatting, font, size and
+ * colors, the table actions inside a table and, inside a link, the link actions), above a selected image (its size
+ * presets) and while the cursor is in a link (the link actions). Alt+F10 (a new `request`) shows it at the cursor too
+ * and moves the focus into it; Left and Right move between its buttons and Escape returns to the text.
  */
 export function FormatBubble({ editor, editable, request, link }: { editor: Editor; editable: boolean; request: object | null; link: LinkActions }) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => {
       const { selection } = e.state;
+      const style = e.getAttributes('textStyle') as { fontFamily?: string | null; fontSize?: string | null; color?: string | null; backgroundColor?: string | null };
+      const inTable = isInTable(e.state);
       return {
         anchor: selection.anchor,
         head: selection.head,
@@ -85,6 +68,12 @@ export function FormatBubble({ editor, editable, request, link }: { editor: Edit
         orderedList: e.isActive('orderedList'),
         taskList: e.isActive('taskList'),
         codeBlock: e.isActive('codeBlock'),
+        fontFamily: style.fontFamily ?? null,
+        fontSize: style.fontSize ?? null,
+        color: style.color ?? null,
+        backgroundColor: style.backgroundColor ?? null,
+        inTable,
+        headerRow: inTable && tableHasHeaderRow(e.state),
         link: selectedLinkHref(e.state),
         imageSize: selection instanceof NodeSelection && selection.node.type.name === 'image' ? (selection.node.attrs.size as ImageSize) : null,
       };
@@ -92,6 +81,8 @@ export function FormatBubble({ editor, editable, request, link }: { editor: Edit
   });
   const ref = useRef<HTMLDivElement>(null);
   const [focusInside, setFocusInside] = useState(false);
+  // An open color popover keeps the toolbar up, also while the system color dialog it opened has the focus.
+  const [popoverOpen, setPopoverOpen] = useState(false);
   // A request shows the toolbar where the cursor was when it was made, until the selection moves.
   const [requestedAt, setRequestedAt] = useState<{ anchor: number; head: number } | null>(null);
   const [shownRequest, setShownRequest] = useState<object | null>(null);
@@ -102,7 +93,7 @@ export function FormatBubble({ editor, editable, request, link }: { editor: Edit
   const requested = requestedAt !== null && requestedAt.anchor === s.anchor && requestedAt.head === s.head;
   const kind = requested ? s.requestedKind : s.kind;
   if (kind === null && focusInside) setFocusInside(false);
-  const visible = kind !== null && (s.focused || focusInside);
+  const visible = kind !== null && (s.focused || focusInside || popoverOpen);
 
   // The focus moves into the toolbar once per request; a request the toolbar cannot show is dropped.
   const handledRequest = useRef<object | null>(null);
@@ -115,14 +106,23 @@ export function FormatBubble({ editor, editable, request, link }: { editor: Edit
   if (!visible) return null;
 
   const run = (fn: () => boolean) => () => void fn();
+  const chain = () => editor.chain().focus();
   const headingItems: MenuItem[] = [
-    { id: 'p', label: 'Paragraph', checked: s.heading === 0, onSelect: run(() => editor.chain().focus().setParagraph().run()) },
+    { id: 'p', label: 'Paragraph', checked: s.heading === 0, onSelect: run(() => chain().setParagraph().run()) },
     ...([1, 2, 3] as const).map((level) => ({
       id: `h${level}`,
       label: `Heading ${level}`,
       checked: s.heading === level,
-      onSelect: run(() => editor.chain().focus().setHeading({ level }).run()),
+      onSelect: run(() => chain().setHeading({ level }).run()),
     })),
+  ];
+  const fontItems: MenuItem[] = [
+    { id: 'default', label: 'Default', checked: s.fontFamily === null, onSelect: run(() => chain().unsetFontFamily().run()) },
+    ...FONT_FAMILIES.map((f) => ({ id: f.key, label: f.label, checked: s.fontFamily === f.key, onSelect: run(() => chain().setFontFamily(f.key).run()) })),
+  ];
+  const sizeItems: MenuItem[] = [
+    { id: 'default', label: 'Default', checked: s.fontSize === null, onSelect: run(() => chain().unsetFontSize().run()) },
+    ...FONT_SIZES.map((size) => ({ id: size, label: size.replace('px', ''), checked: s.fontSize === size, onSelect: run(() => chain().setFontSize(size).run()) })),
   ];
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -134,13 +134,14 @@ export function FormatBubble({ editor, editable, request, link }: { editor: Edit
       return;
     }
     const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-    if (step === 0 || !(e.target instanceof HTMLButtonElement) || e.target.closest('[role="menu"]')) return;
+    if (step === 0 || !(e.target instanceof HTMLButtonElement) || e.target.closest('[role="menu"], [role="dialog"]')) return;
     const buttons = bubbleButtons(e.currentTarget);
     e.preventDefault();
     buttons[(buttons.indexOf(e.target) + step + buttons.length) % buttons.length]?.focus();
   };
-  // Pointer presses keep the focus (and the selection) in the text, except on a field (the image size radios), which
-  // takes it: the toolbar counts as focused from the press on, so the text's blur does not hide it under the pointer.
+  // Pointer presses keep the focus (and the selection) in the text, except on a field (the image size radios, the
+  // custom color fields), which takes it: the toolbar counts as focused from the press on, so the text's blur does not
+  // hide it under the pointer.
   const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if ((e.target as Element).closest('input')) setFocusInside(true);
     else e.preventDefault();
@@ -149,7 +150,7 @@ export function FormatBubble({ editor, editable, request, link }: { editor: Edit
     const next = e.relatedTarget as Node | null;
     if (next && e.currentTarget.contains(next)) return;
     setFocusInside(false);
-    if (next !== editor.view.dom) setRequestedAt(null);
+    if (next !== editor.view.dom && !popoverOpen) setRequestedAt(null);
   };
 
   return (
@@ -168,16 +169,38 @@ export function FormatBubble({ editor, editable, request, link }: { editor: Edit
     >
       {kind === 'format' ? (
         <>
-          <HeadingButton items={headingItems} />
-          <ToggleButton label="Bold" title="Bold (Ctrl+B)" icon={Bold} pressed={s.bold} onClick={run(() => editor.chain().focus().toggleBold().run())} />
-          <ToggleButton label="Italic" title="Italic (Ctrl+I)" icon={Italic} pressed={s.italic} onClick={run(() => editor.chain().focus().toggleItalic().run())} />
-          <ToggleButton label="Inline code" title="Inline code (Ctrl+E)" icon={Code} pressed={s.code} onClick={run(() => editor.chain().focus().toggleCode().run())} />
+          <MenuButton label="Heading" title="Heading (Ctrl+Alt+1, 2, 3)" icon={Heading} items={headingItems} itemRole="menuitemradio" />
+          <ToggleButton label="Bold" title="Bold (Ctrl+B)" icon={Bold} pressed={s.bold} onClick={run(() => chain().toggleBold().run())} />
+          <ToggleButton label="Italic" title="Italic (Ctrl+I)" icon={Italic} pressed={s.italic} onClick={run(() => chain().toggleItalic().run())} />
+          <ToggleButton label="Inline code" title="Inline code (Ctrl+E)" icon={Code} pressed={s.code} onClick={run(() => chain().toggleCode().run())} />
           <ToggleButton label="Link" title="Link" icon={Link} pressed={s.link !== null} onClick={link.edit} />
           <span className="bubble-separator" aria-hidden />
-          <ToggleButton label="Bulleted list" title="Bulleted list (Ctrl+Shift+8)" icon={List} pressed={s.bulletList} onClick={run(() => editor.chain().focus().toggleBulletList().run())} />
-          <ToggleButton label="Numbered list" title="Numbered list (Ctrl+Shift+7)" icon={ListOrdered} pressed={s.orderedList} onClick={run(() => editor.chain().focus().toggleOrderedList().run())} />
-          <ToggleButton label="Checklist" title="Checklist (Ctrl+Shift+9)" icon={ListTodo} pressed={s.taskList} onClick={run(() => editor.chain().focus().toggleTaskList().run())} />
-          <ToggleButton label="Code block" title="Code block (Ctrl+Alt+C)" icon={SquareCode} pressed={s.codeBlock} onClick={run(() => editor.chain().focus().toggleCodeBlock().run())} />
+          <MenuButton label="Font" icon={Type} items={fontItems} itemRole="menuitemradio" />
+          <MenuButton label="Font size" icon={ALargeSmall} items={sizeItems} itemRole="menuitemradio" />
+          <ColorButton
+            label="Text color"
+            icon={Baseline}
+            swatches={TEXT_SWATCHES}
+            current={s.color}
+            reset="Default"
+            onOpenChange={setPopoverOpen}
+            onSelect={(color) => void (color ? chain().setColor(color) : chain().unsetColor()).run()}
+          />
+          <ColorButton
+            label="Highlight"
+            icon={Highlighter}
+            swatches={HIGHLIGHT_SWATCHES}
+            current={s.backgroundColor}
+            reset="None"
+            onOpenChange={setPopoverOpen}
+            onSelect={(color) => void (color ? chain().setBackgroundColor(color) : chain().unsetBackgroundColor()).run()}
+          />
+          <span className="bubble-separator" aria-hidden />
+          <ToggleButton label="Bulleted list" title="Bulleted list (Ctrl+Shift+8)" icon={List} pressed={s.bulletList} onClick={run(() => chain().toggleBulletList().run())} />
+          <ToggleButton label="Numbered list" title="Numbered list (Ctrl+Shift+7)" icon={ListOrdered} pressed={s.orderedList} onClick={run(() => chain().toggleOrderedList().run())} />
+          <ToggleButton label="Checklist" title="Checklist (Ctrl+Shift+9)" icon={ListTodo} pressed={s.taskList} onClick={run(() => chain().toggleTaskList().run())} />
+          <ToggleButton label="Code block" title="Code block (Ctrl+Alt+C)" icon={SquareCode} pressed={s.codeBlock} onClick={run(() => chain().toggleCodeBlock().run())} />
+          {s.inTable ? <MenuButton label="Table" icon={Table} items={tableMenuItems(editor, s.headerRow)} /> : null}
         </>
       ) : null}
       {kind === 'image' && s.imageSize ? (

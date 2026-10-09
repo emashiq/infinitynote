@@ -4,234 +4,562 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Infinity Notes: offline notes, stickies and reminders for Windows and Linux</title>
-    <meta name="description" content="Infinity Notes is a free, fully offline desktop app for notes, floating stickies and time-zone-aware reminders on Windows and Linux. No accounts, no sync, no tracking." />
+    <meta
+      name="description"
+      content="Infinity Notes is a free, fully offline desktop app for notes, floating stickies and time-zone-aware reminders on Windows and Linux. No account, no sync, no telemetry."
+    />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#17181d" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f7f8fc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d0f1a" media="(prefers-color-scheme: dark)" />
     <link rel="canonical" href="https://emashiq.github.io/infinitynote/" />
-    <link rel="icon" type="image/png" href="assets/icon.png" />
-    <link rel="apple-touch-icon" href="assets/icon.png" />
+    <link rel="icon" href="assets/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/png" href="assets/logo.png" sizes="256x256" />
+    <link rel="apple-touch-icon" href="assets/logo.png" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Infinity Notes" />
     <meta property="og:title" content="Infinity Notes: offline notes, stickies and reminders" />
-    <meta property="og:description" content="A free, fully offline desktop app for notes, floating stickies and reminders on Windows and Linux." />
+    <meta
+      property="og:description"
+      content="A free, fully offline desktop app for notes, floating stickies and reminders on Windows and Linux."
+    />
     <meta property="og:url" content="https://emashiq.github.io/infinitynote/" />
     <meta property="og:image" content="https://emashiq.github.io/infinitynote/assets/og-image.png" />
-    <meta property="og:image:width" content="1100" />
-    <meta property="og:image:height" content="720" />
-    <meta property="og:image:alt" content="The Infinity Notes home screen with projects, pinned notes and recent notes" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The Infinity Notes logo and name" />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
-      <div class="wrap header-row">
-        <a class="brand" href="./">
-          <img src="assets/icon.png" alt="" width="28" height="28" />
-          <span>Infinity Notes</span>
-        </a>
-        <nav aria-label="Site">
-          <a href="#features">Features</a>
+      <div class="wrap">
+        <a class="brand" href="./"><img src="assets/logo.png" alt="" width="32" height="32" />Infinity Notes</a>
+        <nav class="site-nav" aria-label="Main">
           <a href="#download">Download</a>
+          <a href="#install">Install</a>
+          <a href="docs.html">How to use</a>
+          <a href="#about">About</a>
           <a href="https://github.com/emashiq/infinitynote">GitHub</a>
         </nav>
       </div>
     </header>
 
-    <main>
-      <section class="hero">
+    <main id="main">
+      <div class="hero">
         <div class="wrap">
-          <h1>Infinity Notes</h1>
-          <p class="lede">Offline notes, stickies and reminders for Windows and Linux.</p>
-          <p class="sub">Write notes, float any of them as a sticky on your desktop, and get reminded on time in any time zone. Free, private, and nothing ever leaves your computer.</p>
-          <div class="hero-actions">
-            <!-- Without JavaScript this jumps to the download links; the script below points it at the installer for this OS. -->
-            <a id="hero-download" class="button primary" href="#download">
-              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
-              <span id="hero-download-label">Download</span>
+          <img class="logo" src="assets/logo.png" alt="Infinity Notes logo" width="128" height="128" />
+          <h1>Notes, stickies and reminders.<br /><span class="accent">All on your own computer.</span></h1>
+          <p class="lede">
+            Write notes in projects and folders, float any of them as a sticky on your desktop, and
+            get reminded on time in any time zone. Infinity Notes works fully offline: nothing you
+            write ever leaves your computer.
+          </p>
+          <ul class="pills">
+            <li>Free to use</li>
+            <li>Fully offline</li>
+            <li>No account</li>
+            <li>No telemetry</li>
+            <li>Windows + Linux</li>
+          </ul>
+          <div class="cta">
+            <a class="btn primary" id="hero-download" href="#download">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16" />
+              </svg>
+              <span>Download</span>
             </a>
-            <a class="button" href="https://github.com/emashiq/infinitynote">View on GitHub</a>
+            <a class="btn" href="docs.html">Read the guide</a>
           </div>
-          <p class="fine"><span data-version>Latest release</span> · Windows 11 and Linux x64 · Free for personal and commercial use</p>
-          <picture class="shot hero-shot">
+          <p class="release-line" id="release-line">
+            Unsigned builds with SHA-256 checksums, published on GitHub Releases.
+          </p>
+          <picture>
             <source srcset="assets/home-dark.webp" media="(prefers-color-scheme: dark)" />
-            <img src="assets/home-light.webp" width="1100" height="720" alt="The Infinity Notes home screen: a notes tree with Common and projects, quick actions, a pinned note and recent notes" />
+            <img
+              class="shot hero-shot"
+              src="assets/home-light.webp"
+              width="1100"
+              height="720"
+              alt="The Infinity Notes window: a notes tree with Common and projects, quick actions, a pinned note and recent notes"
+            />
           </picture>
         </div>
+      </div>
+
+      <section id="download">
+        <div class="wrap">
+          <h2>Download</h2>
+          <p class="section-lede">
+            Pick your system. Each link downloads the newest build from
+            <a href="https://github.com/emashiq/infinitynote/releases">GitHub Releases</a>.
+          </p>
+
+          <div class="downloads">
+            <article class="card" id="card-windows">
+              <div class="card-head">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M3 5.1 10.4 4v7.1H3V5.1Zm0 13.8 7.4 1.1v-7.1H3v6Zm8.3 1.2L21 21.5v-8.6h-9.7v7.2Zm0-16.2v7.2H21V2.5l-9.7 1.4Z"
+                  />
+                </svg>
+                <h3>Windows</h3>
+              </div>
+              <p class="req">Windows 11 24H2 or newer, 64-bit (x64). Windows 10 is not supported.</p>
+              <ul class="dl-list">
+                <li>
+                  <a
+                    class="dl main"
+                    data-asset="windowsSetup"
+                    href="https://github.com/emashiq/infinitynote/releases/latest/download/Infinity-Notes-Setup-x64.exe"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16" />
+                    </svg>
+                    <span class="dl-text"
+                      ><strong>Installer (.exe)</strong
+                      ><small data-meta>Per-user install, no administrator rights</small></span
+                    >
+                  </a>
+                </li>
+              </ul>
+              <p class="fine">
+                The installer is not code-signed yet, so SmartScreen will warn. See
+                <a href="#install-windows">how to install</a>.
+              </p>
+            </article>
+
+            <article class="card" id="card-linux">
+              <div class="card-head">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="4" width="18" height="16" rx="2.5" />
+                  <path d="m7 9 3 3-3 3M12.5 15H17" />
+                </svg>
+                <h3>Linux</h3>
+              </div>
+              <p class="req">x64 with glibc 2.34 or newer. Ubuntu 24.04 or newer: use the .deb.</p>
+              <ul class="dl-list">
+                <li>
+                  <a
+                    class="dl main"
+                    data-asset="deb"
+                    href="https://github.com/emashiq/infinitynote/releases/latest/download/infinity-notes_amd64.deb"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16" />
+                    </svg>
+                    <span class="dl-text"
+                      ><strong>Debian / Ubuntu (.deb)</strong
+                      ><small data-meta>Recommended. Installs with apt, adds a menu entry</small></span
+                    >
+                  </a>
+                </li>
+                <li>
+                  <a
+                    class="dl"
+                    data-asset="appImage"
+                    href="https://github.com/emashiq/infinitynote/releases/latest/download/Infinity-Notes-x86_64.AppImage"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16" />
+                    </svg>
+                    <span class="dl-text"
+                      ><strong>AppImage</strong
+                      ><small data-meta>Other distributions, runs without installing</small></span
+                    >
+                  </a>
+                </li>
+              </ul>
+              <p class="fine">
+                The AppImage may not start on Ubuntu 24.04 and newer. See
+                <a href="#install-linux">how to install</a>.
+              </p>
+            </article>
+          </div>
+
+          <p class="note">
+            <strong>Check your download.</strong> Every release ships a
+            <a
+              data-asset="checksums"
+              href="https://github.com/emashiq/infinitynote/releases/latest/download/SHA256SUMS.txt"
+              >SHA256SUMS.txt</a
+            >. Compare it with <code>Get-FileHash .\Infinity-Notes-Setup-x64.exe</code> on Windows
+            or <code>sha256sum infinity-notes_amd64.deb</code> on Linux before you run anything.
+            Older versions and release notes:
+            <a href="https://github.com/emashiq/infinitynote/releases">all releases</a>.
+          </p>
+        </div>
       </section>
 
-      <section id="features" class="section">
+      <section id="install">
         <div class="wrap">
-          <h2>Everything stays on your desk</h2>
-          <div class="grid features">
-            <article class="card">
-              <svg class="icon accent" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M15 2v20"/><path d="M15 7h5"/><path d="M15 12h5"/><path d="M15 17h5"/></svg>
-              <h3>Notes and projects</h3>
-              <p>Rich or plain-text notes in Common or in projects with folders of any depth. Tabs, a Home dashboard, autosave, version history and a Trash you can restore from.</p>
+          <h2>Install</h2>
+          <p class="section-lede">A minute or two on either system. Your notes are kept when you update or uninstall.</p>
+
+          <div class="downloads">
+            <article class="card" id="install-windows">
+              <div class="card-head"><h3>Windows</h3></div>
+              <ol>
+                <li>Download <strong>Infinity-Notes-Setup-x64.exe</strong> and run it.</li>
+                <li>
+                  SmartScreen says “Windows protected your PC”: click <strong>More info</strong>,
+                  then <strong>Run anyway</strong>. This appears because the installer is not
+                  signed.
+                </li>
+                <li>
+                  The installer sets Infinity Notes up for your user only, so no administrator rights
+                  are needed. You can change the folder.
+                </li>
+                <li>Start <strong>Infinity Notes</strong> from the Start menu or the desktop shortcut.</li>
+              </ol>
+              <p class="fine">
+                <strong>Update:</strong> run a newer installer over the installed app.
+                <strong>Uninstall:</strong> Settings &gt; Apps &gt; Installed apps &gt; Infinity
+                Notes. Your notes stay in <code>%APPDATA%\Infinity Notes</code> until you delete
+                that folder yourself.
+              </p>
             </article>
-            <article class="card">
-              <svg class="icon accent" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"/><path d="M15 3v5a1 1 0 0 0 1 1h5"/></svg>
-              <h3>Floating stickies, live editing</h3>
-              <p>Float any note as its own small window. Type in the sticky or in the main window: both show the same note as you write. Colors, collapse and always on top.</p>
-            </article>
-            <article class="card">
-              <svg class="icon accent" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 14v2.2l1.6 1"/><path d="M16 2v3"/><path d="M21 7.338V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h2.338"/><path d="M3 9h5.859"/><path d="M8 2v3"/><circle cx="16" cy="16" r="6"/></svg>
-              <h3>Time-zone reminders and widget</h3>
-              <p>Reminders in any time zone, with repeats, follow-ups and quiet hours, shown in your own time too. A small widget lists what is due today, upcoming and overdue.</p>
-            </article>
-            <article class="card">
-              <svg class="icon accent" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></svg>
-              <h3>Reminders from what you type</h3>
-              <p>Write "submit this by tomorrow end of the day" and Infinity Notes suggests a reminder. Nothing is scheduled until you check the preview and confirm it.</p>
-            </article>
-            <article class="card">
-              <svg class="icon accent" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-              <h3>Links, backlinks and search</h3>
-              <p>Link notes and even single paragraphs, and see what links back. Tags and fast full-text search with Ctrl+K find anything in a moment.</p>
-            </article>
-            <article class="card">
-              <svg class="icon accent" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2"/><path d="M20 8v11a2 2 0 0 1-2 2h-2"/><path d="m9 15 3-3 3 3"/><path d="M12 12v9"/></svg>
-              <h3>Backup and restore</h3>
-              <p>Back up everything into one file, by hand or automatically. Restore checks the file first and keeps your previous data. Export, import and Markdown export too.</p>
+
+            <article class="card" id="install-linux">
+              <div class="card-head"><h3>Linux</h3></div>
+              <p class="req">Debian or Ubuntu package (recommended):</p>
+              <pre><code>sudo apt install ./infinity-notes_amd64.deb
+infinity-notes    # or use the app menu</code></pre>
+              <p class="req">AppImage, other distributions:</p>
+              <pre><code>chmod +x Infinity-Notes-x86_64.AppImage
+./Infinity-Notes-x86_64.AppImage</code></pre>
+              <p class="req">
+                The AppImage needs FUSE 2 (<code>sudo apt install libfuse2t64</code> on Ubuntu
+                24.04 and newer).
+              </p>
+              <p class="fine">
+                Infinity Notes always runs inside Chromium's sandbox. Ubuntu 24.04 and newer restrict
+                the user namespaces it uses; the .deb installs an AppArmor profile that allows them,
+                the AppImage cannot, so it may refuse to start there. Never start the app with
+                <code>--no-sandbox</code>. <strong>Uninstall:</strong>
+                <code>sudo apt remove infinity-notes</code>; your notes in
+                <code>~/.config/Infinity Notes</code> stay.
+              </p>
             </article>
           </div>
         </div>
       </section>
 
-      <section class="section alt" aria-labelledby="screens-title">
+      <section id="start">
+        <div class="wrap">
+          <h2>Your first note</h2>
+          <p class="section-lede">Infinity Notes opens ready to go. There is nothing to sign in to.</p>
+          <ol class="steps">
+            <li>
+              <strong>Create a note</strong>
+              <span>Press <kbd>Ctrl</kbd> <kbd>N</kbd>, type a title, press <kbd>Enter</kbd> and keep writing.</span>
+            </li>
+            <li>
+              <strong>Format it</strong>
+              <span>Select text for the toolbar, or type <kbd>/</kbd> for headings, lists, tables and files.</span>
+            </li>
+            <li>
+              <strong>Float it</strong>
+              <span>Right-click the text and choose <strong>Float as sticky</strong> to keep it on your desktop.</span>
+            </li>
+            <li>
+              <strong>Get reminded</strong>
+              <span>Type “tomorrow at 5” and confirm the suggested reminder, or add one from the note menu.</span>
+            </li>
+          </ol>
+
+          <h3 class="subhead">Handy shortcuts</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Action</th>
+                  <th>Keys</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>New note / new sticky</td>
+                  <td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td>
+                </tr>
+                <tr>
+                  <td>Search notes and commands</td>
+                  <td class="keys"><kbd>Ctrl</kbd>+<kbd>K</kbd></td>
+                </tr>
+                <tr>
+                  <td>Find in the note</td>
+                  <td class="keys"><kbd>Ctrl</kbd>+<kbd>F</kbd></td>
+                </tr>
+                <tr>
+                  <td>Insert menu</td>
+                  <td class="keys"><kbd>/</kbd> at the start of a line or after a space</td>
+                </tr>
+                <tr>
+                  <td>Next / previous tab, close tab</td>
+                  <td class="keys">
+                    <kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd>,
+                    <kbd>Ctrl</kbd>+<kbd>W</kbd>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Every shortcut</td>
+                  <td class="keys"><kbd>Ctrl</kbd>+<kbd>/</kbd></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="after-table">
+            The full walkthrough is in the <a href="docs.html">user guide</a>.
+          </p>
+        </div>
+      </section>
+
+      <section id="features">
+        <div class="wrap">
+          <h2>What it does</h2>
+          <p class="section-lede">Everything runs locally. No cloud, no sync, no sharing links.</p>
+          <div class="features">
+            <div class="feature">
+              <h3><span class="dot"></span>Notes and projects</h3>
+              <p>
+                Rich or plain-text notes in Common or in projects with folders of any depth. Tabs,
+                autosave, version history and a Trash you can restore from.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Formatting and tables</h3>
+              <p>
+                Headings, lists, checklists, fonts, sizes, text colors and highlights. Tables copy
+                and paste to and from spreadsheets.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Files in your notes</h3>
+              <p>
+                Copy a file into Infinity Notes so it travels with your backups, or just link to the
+                original where it is.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Locked notes</h3>
+              <p>
+                Lock a note with a password, and unlock it with Windows Hello too where available.
+                Its body is encrypted on disk, and earlier unencrypted copies are destroyed.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Floating stickies</h3>
+              <p>
+                Any note in its own small window, editable there and in the main window at once.
+                Any color you like, colored text, collapse and keep on top.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Time-zone reminders</h3>
+              <p>
+                Reminders in any time zone with repeats and follow-ups, suggested from what you type
+                and created only when you confirm. A small widget shows what is due.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Links and search</h3>
+              <p>
+                Link notes and single paragraphs, see what links back, and find anything with
+                <kbd>Ctrl</kbd>+<kbd>K</kbd>.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Backup and restore</h3>
+              <p>
+                Everything in one verified backup file, by hand or on a schedule. Restore keeps your
+                previous data. Export, import and Markdown export too.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="screens" aria-labelledby="screens-title">
         <div class="wrap">
           <h2 id="screens-title">A closer look</h2>
-          <div class="grid gallery">
+          <p class="section-lede">Light and dark themes follow your system.</p>
+          <div class="gallery">
             <figure>
-              <img class="shot" src="assets/suggestion.webp" width="1400" height="860" loading="lazy" alt="A reminder suggested from the phrase tomorrow end of the day, with date, time, time zone and repeat options" />
+              <img
+                class="shot"
+                src="assets/suggestion.webp"
+                width="1400"
+                height="860"
+                loading="lazy"
+                alt="A reminder suggested from the phrase tomorrow end of the day, with date, time, time zone and repeat options"
+              />
               <figcaption>A phrase in your note becomes a reminder only after you confirm it.</figcaption>
             </figure>
             <figure>
-              <img class="shot" src="assets/reminders-dark.webp" width="1400" height="860" loading="lazy" alt="A note with reminder chips in different time zones and the details panel in dark mode" />
-              <figcaption>Reminders in other time zones, also shown in your own time. Dark mode included.</figcaption>
+              <img
+                class="shot"
+                src="assets/reminders-dark.webp"
+                width="1400"
+                height="860"
+                loading="lazy"
+                alt="A note with reminder chips in different time zones and the details panel in dark mode"
+              />
+              <figcaption>Reminders in other time zones, also shown in your own time.</figcaption>
             </figure>
             <figure class="narrow">
-              <img class="shot" src="assets/sticky.webp" width="320" height="300" loading="lazy" alt="A yellow sticky window showing a note with its reminders" />
+              <img
+                class="shot"
+                src="assets/sticky.webp"
+                width="320"
+                height="300"
+                loading="lazy"
+                alt="A yellow sticky window showing a note with its reminders"
+              />
               <figcaption>Any note as a sticky on your desktop.</figcaption>
             </figure>
           </div>
         </div>
       </section>
 
-      <section id="download" class="section" aria-labelledby="download-title">
+      <section id="limits" aria-labelledby="limits-title">
         <div class="wrap">
-          <h2 id="download-title">Download</h2>
-          <p class="section-lede"><span data-version>Latest release</span>. Free for personal and commercial use. The files download directly from GitHub Releases.</p>
-          <div class="grid downloads">
-            <a class="download" data-os="windows" data-asset="Infinity-Notes-Setup-x64.exe" href="https://github.com/emashiq/infinitynote/releases/latest/download/Infinity-Notes-Setup-x64.exe">
-              <span class="download-os">Windows</span>
-              <span class="download-file">Installer (.exe), x64<span class="size"></span></span>
-            </a>
-            <a class="download" data-os="linux" data-asset="infinity-notes_amd64.deb" href="https://github.com/emashiq/infinitynote/releases/latest/download/infinity-notes_amd64.deb">
-              <span class="download-os">Linux <span class="badge">Recommended</span></span>
-              <span class="download-file">Ubuntu and Debian (.deb), x64<span class="size"></span></span>
-            </a>
-            <a class="download" data-asset="Infinity-Notes-x86_64.AppImage" href="https://github.com/emashiq/infinitynote/releases/latest/download/Infinity-Notes-x86_64.AppImage">
-              <span class="download-os">Linux</span>
-              <span class="download-file">AppImage, x64<span class="size"></span></span>
-            </a>
-            <div class="download disabled" aria-disabled="true">
-              <span class="download-os">macOS <span class="badge muted">Coming soon</span></span>
-              <span class="download-file">Planned for a later release</span>
-            </div>
-          </div>
-          <p class="fine">
-            Verify your download with <a href="https://github.com/emashiq/infinitynote/releases/latest/download/SHA256SUMS.txt">SHA256SUMS.txt</a>.
-            Older versions and release notes: <a href="https://github.com/emashiq/infinitynote/releases">all releases</a>.
-          </p>
-        </div>
-      </section>
-
-      <section class="section alt" aria-labelledby="privacy-title">
-        <div class="wrap privacy">
-          <svg class="icon accent big" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
-          <div>
-            <h2 id="privacy-title">Private by design</h2>
-            <p>Infinity Notes works fully offline. There are no accounts, no sync, no telemetry and no network access: your notes, stickies and reminders live in one data folder on your computer, and your backups are files you own. Uninstalling keeps your data.</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="section" aria-labelledby="install-title">
-        <div class="wrap">
-          <h2 id="install-title">Before you install</h2>
-          <div class="grid notes">
+          <h2 id="limits-title">Good to know</h2>
+          <p class="section-lede">What Infinity Notes does not do, so nothing surprises you.</p>
+          <div class="facts">
             <article class="card">
-              <h3>System requirements</h3>
+              <h3>Private by design</h3>
               <ul>
-                <li>Windows 11 24H2 or newer, x64. Installs per user, no administrator rights needed. Windows 10 is not supported.</li>
-                <li>Ubuntu 24.04 or newer, x64, or another Debian-based distribution: use the <strong>.deb</strong>.</li>
-                <li>Other x64 Linux distributions: the AppImage.</li>
+                <li>No accounts, no sync, no telemetry and no network access.</li>
+                <li>
+                  Your notes, files, stickies and reminders live in one data folder on your
+                  computer; backups are files you own.
+                </li>
+                <li>Uninstalling never deletes your data folder.</li>
               </ul>
-            </article>
-            <article class="card">
-              <h3>Unsigned builds</h3>
-              <p>The installers are not code-signed yet. Windows SmartScreen may say "Windows protected your PC": choose <strong>More info</strong>, then <strong>Run anyway</strong>. Some Linux desktops warn about an unknown publisher. Compare the file with SHA256SUMS.txt if you want to be sure it is the official build.</p>
             </article>
             <article class="card">
               <h3>Known limits</h3>
               <ul>
-                <li>Reminders arrive while the app runs, also in the background. A fully quit app shows missed reminders at the next start.</li>
-                <li>On Wayland desktops, window positions and always on top are up to the desktop; sizes are kept.</li>
-                <li>On Ubuntu 24.04 and newer the AppImage may not start; the .deb works.</li>
+                <li>
+                  Reminders arrive while the app runs, also in the background with only a sticky,
+                  the widget or the tray icon open. A fully quit app delivers nothing and shows what
+                  you missed at the next start.
+                </li>
+                <li>
+                  On Wayland desktops the window manager decides window positions and always on top;
+                  sizes are kept.
+                </li>
                 <li>Reminder suggestions understand English only.</li>
-                <li>Markdown export leaves out reminders, tags and sticky colors.</li>
-                <li>Sleep and wake, sign-in start, display scaling and multi-monitor are still being checked by hand on Windows 11.</li>
+                <li>Markdown export leaves out reminders, tags, colors and fonts.</li>
+                <li>A forgotten password for a locked note cannot be recovered.</li>
               </ul>
             </article>
           </div>
         </div>
       </section>
 
-      <section id="about" class="section alt" aria-labelledby="about-title">
-        <div class="wrap about">
-          <h2 id="about-title">About</h2>
-          <p>Infinity Notes is developed by <a href="https://github.com/emashiq">Ashiqur Rahman Emran</a>. It is freeware: free to download and use, for personal and commercial work. The source code is public for transparency, but it is not open source; see the <a href="https://github.com/emashiq/infinitynote/blob/main/LICENSE">license</a>.</p>
-          <p>Questions, ideas and bug reports are welcome on <a href="https://github.com/emashiq/infinitynote/issues">GitHub Issues</a>. Read the <a href="https://github.com/emashiq/infinitynote/blob/main/docs/USER_GUIDE.md">user guide</a> to get started.</p>
+      <section id="about">
+        <div class="wrap">
+          <h2>Who makes it</h2>
+          <p class="section-lede">Infinity Notes is built and maintained by one developer.</p>
+          <div class="author card">
+            <img src="assets/author.jpg" alt="Ashiqur Rahman Emran" width="96" height="96" />
+            <div class="author-body">
+              <h3>Ashiqur Rahman Emran</h3>
+              <p class="author-role">Staff Software Engineer at Cefalo · Dhaka, Bangladesh</p>
+              <ul class="author-skills">
+                <li>.NET</li>
+                <li>React</li>
+                <li>Angular</li>
+                <li>Rust</li>
+                <li>SQL</li>
+                <li>NoSQL</li>
+                <li>Azure</li>
+              </ul>
+              <p>
+                Infinity Notes is freeware: free to download and use for personal and commercial
+                work. The source is public for transparency, but it is not open source; see the
+                <a href="https://github.com/emashiq/infinitynote/blob/main/LICENSE">license</a>.
+                Questions, ideas and bug reports are welcome on
+                <a href="https://github.com/emashiq/infinitynote/issues">GitHub Issues</a>.
+              </p>
+              <div class="author-links">
+                <a class="btn" href="https://github.com/emashiq"
+                  ><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.58 9.58 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"
+                    /></svg
+                  ><span>GitHub</span></a
+                >
+                <a class="btn" href="https://www.linkedin.com/in/emashiq"
+                  ><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"
+                    /></svg
+                  ><span>LinkedIn</span></a
+                >
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
-      <div class="wrap footer-row">
-        <p>Developed by <a href="https://github.com/emashiq">Ashiqur Rahman Emran</a> · © 2026 Ashiqur Rahman Emran</p>
-        <nav aria-label="Project">
-          <a href="https://github.com/emashiq/infinitynote">GitHub</a>
-          <a href="https://github.com/emashiq/infinitynote/blob/main/docs/USER_GUIDE.md">User guide</a>
-          <a href="https://github.com/emashiq/infinitynote/blob/main/CHANGELOG.md">Changelog</a>
-          <a href="https://github.com/emashiq/infinitynote/blob/main/LICENSE">License</a>
-          <a href="https://github.com/emashiq/infinitynote/releases">Releases</a>
-        </nav>
+      <div class="wrap">
+        <span>
+          Developed by <a href="https://github.com/emashiq">Ashiqur Rahman Emran</a>. © 2026.
+          Freeware: free to use, not open source.
+        </span>
+        <span>
+          <a href="https://github.com/emashiq/infinitynote">Source</a> ·
+          <a href="https://github.com/emashiq/infinitynote/blob/main/LICENSE">License</a> ·
+          <a href="https://github.com/emashiq/infinitynote/blob/main/CHANGELOG.md">Changelog</a> ·
+          <a href="https://github.com/emashiq/infinitynote/issues">Report a problem</a>
+        </span>
       </div>
     </footer>
 
-    <script>
-      // Optional enhancement only: every download link above already works without JavaScript.
-      (() => {
-        const ua = navigator.userAgent;
-        const os = /Windows/.test(ua) ? 'windows' : /Linux/.test(ua) && !/Android/.test(ua) ? 'linux' : null;
-        const preferred = os && document.querySelector(`a.download[data-os="${os}"]`);
-        if (preferred) {
-          document.getElementById('hero-download').href = preferred.href;
-          document.getElementById('hero-download-label').textContent = os === 'windows' ? 'Download for Windows' : 'Download for Linux (.deb)';
-        }
-        fetch('https://api.github.com/repos/emashiq/infinitynote/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
-          .then((res) => (res.ok ? res.json() : null))
-          .then((release) => {
-            if (!release) return;
-            for (const el of document.querySelectorAll('[data-version]')) el.textContent = `Version ${release.tag_name.replace(/^v/, '')}`;
-            for (const link of document.querySelectorAll('a[data-asset]')) {
-              const asset = release.assets.find((a) => a.name === link.dataset.asset);
-              if (asset) link.querySelector('.size').textContent = ` · ${Math.round(asset.size / 1048576)} MB`;
-            }
-          })
-          .catch(() => {});
-      })();
-    </script>
+    <script src="app.js"></script>
   </body>
 </html>

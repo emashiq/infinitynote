@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chooseNoteMenu } from './editor-ui';
-import { dbFileOf, packagedExe, readMainLog, rendererSandbox } from './fixtures';
+import { dbFileOf, latestSchemaVersion, packagedExe, readMainLog, rendererSandbox } from './fixtures';
 import { useApp } from './harness';
 import { stickyPage } from './sticky-ui';
 import { activate, openFromTree, railGo } from './ui';
@@ -23,7 +23,7 @@ test('packaged app starts, reports diagnostics and persists the theme @packaged'
   });
   expect(info?.isPackaged).toBe(true);
   expect(info?.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
-  expect(info?.schemaVersion).toBe(7);
+  expect(info?.schemaVersion).toBe(latestSchemaVersion());
   expect(info?.startup).toEqual({ status: 'ok' });
 
   await railGo(page, 'Settings');
@@ -137,11 +137,15 @@ test('packaged reminder reaches the OS notification layer; reminder seams ignore
   });
   const autostart = await page.evaluate(async () => window.infinity.autostart.get());
   console.log(`packaged capabilities: notifications=${JSON.stringify(caps!.nativeNotifications)} autostart=${JSON.stringify(autostart)}`);
-  if (process.platform === 'win32') {
-    expect(autostart).toEqual({ ok: true, data: { enabled: false, capability: { status: 'supported', reason: 'login-items' } } });
-  } else {
-    expect(autostart).toMatchObject({ ok: true, data: { enabled: false, capability: { status: 'unsupported' } } });
-  }
+  // Launch at login: login items on Windows, an XDG autostart entry on a Linux desktop, none under WSL (no session
+  // autostart). The app sees this process's environment, so WSL_DISTRO_NAME tells the two Linux cases apart.
+  const autostartCapability =
+    process.platform === 'win32'
+      ? { status: 'supported', reason: 'login-items' }
+      : process.env.WSL_DISTRO_NAME
+        ? { status: 'unsupported', reason: 'wsl-no-session-autostart' }
+        : { status: 'supported', reason: 'xdg-autostart' };
+  expect(autostart).toEqual({ ok: true, data: { enabled: false, capability: autostartCapability } });
 
   // A reminder due at the next whole minute (UTC), dispatched by the real scheduler and adapter.
   const due = new Date(Math.ceil((Date.now() + 5_000) / 60_000) * 60_000);
@@ -160,8 +164,16 @@ test('packaged reminder reaches the OS notification layer; reminder seams ignore
     .toHaveLength(1);
   const [delivery] = h.all<{ outcome: string; detail: string | null }>('SELECT outcome, detail FROM alert_deliveries');
   console.log(`packaged delivery: ${JSON.stringify(delivery)}`);
-  if (caps!.nativeNotifications.status === 'unsupported') expect(delivery).toEqual({ outcome: 'unsupported', detail: caps!.nativeNotifications.reason });
-  else expect(delivery!.outcome).toBe('dispatched');
+  const notifications = caps!.nativeNotifications;
+  if (notifications.status === 'unsupported') expect(delivery).toEqual({ outcome: 'unsupported', detail: notifications.reason });
+  else if (notifications.status === 'supported') expect(delivery!.outcome).toBe('dispatched');
+  // Unknown: the session bus could not be asked (a headless CI runner has none). The real adapter ran and the OS layer
+  // answered; without a notification server it refuses at once (D-076).
+  else expect(['dispatched', 'failed']).toContain(delivery!.outcome);
+  // Every outcome but dispatched falls back to the in-app banner (D-076).
+  if (delivery!.outcome !== 'dispatched') {
+    await expect(page.getByRole('status', { name: 'Reminder alerts' })).toContainText('Reminder: Packaged reminder');
+  }
 });
 
 test('packaged build suggests a reminder from text @packaged', async () => {

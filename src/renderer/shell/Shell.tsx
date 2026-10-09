@@ -6,6 +6,7 @@ import { useServices, useStore } from '../state/use-store';
 import { TabPanel } from '../tabs/TabPanel';
 import { TabStrip } from '../tabs/TabStrip';
 import { TreePane } from '../tree/TreePane';
+import { dismissStartupLoader } from '../startup/startup-loader';
 import { DialogHost } from '../ui/DialogHost';
 import { Drawer } from './Drawer';
 import { GlobalShortcuts } from './GlobalShortcuts';
@@ -23,6 +24,8 @@ export function Shell() {
     void ready.then(() => {
       if (!cancelled) setReady(true);
     });
+    // The startup loader (D-109) goes as soon as the shell has its data, or could not get it.
+    void ready.catch(() => undefined).finally(() => dismissStartupLoader({ fade: true }));
     return () => {
       cancelled = true;
     };

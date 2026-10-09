@@ -1,3 +1,4 @@
+import { LOCK_MESSAGES } from '../../shared/contracts/locks';
 import type { NoteContentResponseType, NoteConvertRequestType } from '../../shared/contracts/notes';
 import { extractPlainText } from '../../shared/text/plain-text';
 import { textToDoc } from '../../shared/text/textarea-doc';
@@ -16,6 +17,8 @@ export class FormatService {
 
   convert(req: NoteConvertRequestType): NoteContentResponseType {
     return this.deps.ops.run(req, (row, now) => {
+      // A conversion keeps the previous content as a version, which a locked note never has (D-112).
+      if (row.locked === 1) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.noConvert);
       if (row.format === req.targetFormat) throw new AppError('VALIDATION_FAILED', `This note is already ${row.format === 'rich' ? 'rich text' : 'plain text'}`);
       const versionId = this.deps.versions.snapshot(row, 'conversion', now);
       const content =

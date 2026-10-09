@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { altFromName, kindOfFile } from '../../../../src/renderer/editor/uploader';
+import { kindOfFile } from '../../../../src/renderer/editor/file-sources';
+import { altFromName } from '../../../../src/renderer/editor/uploader';
 import { fail, ok, type Result } from '../../../../src/shared/contracts/envelope';
 import type { AttachmentDtoType } from '../../../../src/shared/contracts/attachments';
 import { makeEditor, tick } from './support';
@@ -102,7 +103,7 @@ describe('AttachmentUploader (INF-EDIT-08..10, INF-TABS-07)', () => {
 
   it('a file over the limit is refused before reading and nothing is inserted', async () => {
     const io = controlledImports();
-    const { editor, uploader, notices } = makeEditor({ content: '<p></p>', uploader: { importBytes: io.importBytes, limits: () => ({ imageMaxMb: 1, documentMaxMb: 2 }) } });
+    const { editor, uploader, notices } = makeEditor({ content: '<p></p>', uploader: { importBytes: io.importBytes, prefs: () => ({ imageMaxMb: 1, documentMaxMb: 2, addFiles: 'ask' }) } });
     await tick();
     const big = fileOf('big.png', 'image/png', 1024 * 1024 + 1);
     const bigDoc = fileOf('big.pdf', 'application/pdf', 2 * 1024 * 1024 + 1);
@@ -111,7 +112,7 @@ describe('AttachmentUploader (INF-EDIT-08..10, INF-TABS-07)', () => {
     expect(nodes(editor)).toEqual([]);
     expect(big.reads + bigDoc.reads).toBe(0);
     expect(io.calls).toHaveLength(0);
-    expect(notices).toEqual(['This image is larger than 1 MB. Change the limit in Settings or use a smaller image.', 'This file is larger than 2 MB. Change the limit in Settings or use a smaller file.']);
+    expect(notices).toEqual(['This image is larger than 1 MB. Change the limit in Settings or use a smaller image.', 'This file is larger than 2 MB, so it is not copied into Infinity Notes. Link to the original instead.']);
   });
 
   it('at most 20 files per action', async () => {

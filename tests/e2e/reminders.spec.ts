@@ -25,7 +25,6 @@ import {
 } from './reminder-ui';
 
 const h = useApp({ failOnMainErrors: true });
-const WIN = process.platform === 'win32';
 const at = (iso: string) => Date.parse(iso);
 const P1 = '1b4e28ba-2fa1-41d2-883f-0016d3cca427';
 const P2 = '2b4e28ba-2fa1-41d2-883f-0016d3cca427';
@@ -332,7 +331,7 @@ test('notification click opens the source note; in the background; summary opens
 });
 
 test('banner when notifications fail or are unsupported; Done in the banner (INF-SCHED-04, INF-REM-16)', async () => {
-  const { app, page } = await h.start(reminderEnv(WIN ? { caps: { nativeNotifications: 'unsupported' } } : {}));
+  const { app, page, forced } = await h.startUnsupported('nativeNotifications', reminderEnv());
   const caps = await page.evaluate(async () => (await window.infinity.capabilities.get()).ok);
   expect(caps).toBe(true);
   const id = await createNote(page, COMMON, 'Rent');
@@ -342,7 +341,7 @@ test('banner when notifications fail or are unsupported; Done in the banner (INF
   await expect(banner).toContainText('Reminder: Pay rent');
   for (const name of ['Open', 'Snooze', 'Done', 'Dismiss']) await expect(banner.getByRole('button', { name, exact: true })).toBeVisible();
   expect(await shownNotifications(app)).toEqual([]);
-  expect((await reminderRows(app)).deliveries).toMatchObject([{ outcome: 'unsupported', detail: WIN ? 'test-override' : 'no-notification-server' }]);
+  expect((await reminderRows(app)).deliveries).toMatchObject([{ outcome: 'unsupported', detail: forced ? 'test-override' : 'no-notification-server' }]);
   await activate(banner.getByRole('button', { name: 'Done', exact: true }));
   await expect.poll(async () => (await reminderRows(app)).occurrences[0]!.state).toBe('completed');
   await expect(banner).toHaveCount(0);

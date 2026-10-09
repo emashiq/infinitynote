@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RemindersRepo } from '../../src/main/db/repositories/reminders-repo';
-import { TIMER_CAP_MS } from '../../src/main/services/reminder-scheduler';
+import { LOCKED_REMINDER_TITLE, TIMER_CAP_MS } from '../../src/main/services/reminder-scheduler';
 import { overdueText, type ReminderCreateRequestType } from '../../src/shared/contracts/reminders';
 import { HOUR, MINUTE, T0, at, reminderInput, setupScheduler, settle, updateRequest } from './reminder-helpers';
 
@@ -516,5 +516,17 @@ describe('scheduler: single timer (INF-SCHED-01)', () => {
     await s.advance(60_000);
     expect(s.adapter.shown()).toHaveLength(1);
     expect(s.scheduler().timerState().delayMs).toBe(TIMER_CAP_MS);
+  });
+});
+
+describe('scheduler: locked notes (D-112)', () => {
+  it('a reminder of a locked note still fires; its notification shows the note title but not the reminder text', async () => {
+    const { s, note } = await withNote();
+    s.reminders.create(reminderInput(note.id));
+    await s.locks.lock({ noteId: note.id, password: 'correct horse battery', hello: false });
+    await s.start();
+    await s.advance(at('2026-10-09T11:00:00Z') - s.clock.now());
+    expect(s.adapter.shown()).toEqual([{ id: 1, ref: expect.any(String), title: LOCKED_REMINDER_TITLE, body: 'Due Fri 9 Oct, 17:00 · Quarterly', at: at('2026-10-09T11:00:00Z') }]);
+    expect(JSON.stringify(s.adapter.shown())).not.toContain('Submit report');
   });
 });

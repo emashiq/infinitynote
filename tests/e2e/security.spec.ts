@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { LINK_MESSAGES } from '../../src/shared/attachments/link-messages';
 import { PROD_CSP } from '../../src/shared/csp';
 import { makePng } from '../support/png';
 import { readMainLog, rendererSandbox } from './fixtures';
@@ -138,10 +139,12 @@ test('bridge surface', async () => {
       'collab',
       'drafts',
       'export',
+      'fileLink',
       'folder',
       'home',
       'import',
       'item',
+      'lock',
       'note',
       'notes',
       'occurrence',
@@ -168,17 +171,19 @@ test('bridge surface', async () => {
     ],
     namespaces: {
       app: ['flushed', 'getInfo', 'quit', 'showDataFolder'],
-      attachment: ['importBytes', 'importFromDialog', 'open', 'showInFolder'],
+      attachment: ['addPicked', 'importBytes', 'open', 'pickFiles', 'showInFolder'],
       autostart: ['get', 'set'],
       backup: ['chooseAutoFolder', 'create', 'deleteRollback', 'prepareRestore', 'restore', 'setAuto', 'status'],
       capabilities: ['get'],
       collab: ['flush', 'join', 'leave', 'pull', 'push'],
       drafts: ['list', 'resolve'],
       export: ['markdown', 'portable'],
+      fileLink: ['copyIn', 'createFromFile', 'isOnDisk', 'open', 'showInFolder', 'status'],
       folder: ['create', 'move', 'rename', 'trash'],
       home: ['summary'],
       import: ['portable'],
       item: ['setFavorite'],
+      lock: ['availability', 'changePassword', 'lockAll', 'lockNow', 'remove', 'set', 'setHello', 'status', 'unlock', 'unlockHello'],
       note: ['convertFormat', 'create', 'move', 'open', 'rename', 'save', 'setPinned', 'trash'],
       notes: ['pick'],
       occurrence: ['complete', 'snooze'],
@@ -192,7 +197,7 @@ test('bridge surface', async () => {
       settings: ['get', 'set'],
       shell: ['openExternal'],
       shortcut: ['getGlobal', 'setGlobal'],
-      sticky: ['dock', 'float', 'hide', 'remove', 'restore', 'setCollapsed', 'setColor', 'setPinned'],
+      sticky: ['dock', 'float', 'hide', 'remove', 'restore', 'setCollapsed', 'setColor', 'setPinned', 'setTextColor'],
       suggestion: ['dismiss', 'listDismissed'],
       tags: ['list', 'set'],
       trash: ['list', 'purge', 'restore'],
@@ -274,6 +279,25 @@ test('renderer cannot read files', async () => {
     { txt: toUrl(secretTxt), png: toUrl(secretPng) },
   );
   expect(outcome).toEqual({ viaFetch: 'blocked', viaXhr: 'blocked', viaImg: 'blocked' });
+
+  // D-115: page script cannot name a path to link (and then copy into the app and read): the bridge takes only a File,
+  // and only a File the user dropped from disk carries a path.
+  const linking = await page().evaluate(async (txt) => {
+    const fileLink = window.infinity.fileLink as unknown as Record<string, unknown> & typeof window.infinity.fileLink;
+    const named = new File(['x'], txt);
+    const withPath = new File(['x'], 'secret.txt');
+    Object.defineProperty(withPath, 'path', { value: txt });
+    const attempts = [named, withPath, { path: txt }, txt] as unknown as File[];
+    const results = [];
+    for (const file of attempts) {
+      const r = await fileLink.createFromFile(file);
+      results.push({ onDisk: fileLink.isOnDisk(file), ok: r.ok, message: r.ok ? '' : r.error.message });
+    }
+    return { rawCreate: typeof fileLink.create, pathOf: typeof fileLink.pathOf, results };
+  }, secretTxt);
+  expect(linking.rawCreate).toBe('undefined');
+  expect(linking.pathOf).toBe('undefined');
+  expect(linking.results).toEqual(Array(4).fill({ onDisk: false, ok: false, message: LINK_MESSAGES.noPath }));
 });
 
 test('attachment protocol', async () => {

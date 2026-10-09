@@ -49,6 +49,27 @@ describe('settings (INF-FND-06)', () => {
     expect(service.get(['appearance.theme'])).toEqual({ 'appearance.theme': 'light' });
   });
 
+  it('v0.2.0 file keys (D-108): "When adding files" defaults to Ask; the copy limit is 1-25 MB and older stored limits above 25 read as 25', async () => {
+    const { t, service, logger } = await setup();
+    expect(service.get(['attachments.addFiles', 'attachments.documentMaxMb'])).toEqual({ 'attachments.addFiles': 'ask', 'attachments.documentMaxMb': 25 });
+    expect(service.set('attachments.addFiles', 'link')).toMatchObject({ key: 'attachments.addFiles', value: 'link' });
+    expect(() => service.set('attachments.addFiles', 'move')).toThrow(AppError);
+    expect(() => service.set('attachments.documentMaxMb', 26)).toThrow(AppError);
+    const put = (v: string) =>
+      t.db.prepare<[string]>("INSERT INTO settings(key, value, updated_at) VALUES ('attachments.documentMaxMb', ?, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(v);
+    for (const [stored, read] of [['{"v":1,"value":50}', 25], ['{"v":1,"value":200}', 25], ['{"v":1,"value":10}', 10], ['{"v":2,"value":12}', 12]] as const) {
+      put(stored);
+      expect(service.getInternal('attachments.documentMaxMb'), stored).toBe(read);
+    }
+    for (const bad of ['{"v":2,"value":50}', '{"v":3,"value":10}', '{"v":1,"value":"big"}']) {
+      put(bad);
+      expect(service.getInternal('attachments.documentMaxMb'), bad).toBe(25);
+    }
+    expect(logger.lines.filter((l) => l.includes('settings: invalid stored value key=attachments.documentMaxMb')).length).toBe(3);
+    service.set('attachments.documentMaxMb', 20);
+    expect(t.db.prepare<[], { value: string }>("SELECT value FROM settings WHERE key = 'attachments.documentMaxMb'").get()?.value).toBe('{"v":2,"value":20}');
+  });
+
   it('falls back to the default and logs on invalid stored values, without rewriting', async () => {
     const { t, service, logger } = await setup();
     const put = (v: string) =>
@@ -157,12 +178,12 @@ describe('settings (INF-FND-06)', () => {
     expect(() => service.set('reminders.followupDefault', { enabled: true, intervalMinutes: 7, maxFollowups: 3 })).toThrow(AppError);
   });
 
-  it('limits bounds (INF-PREF-05): images 1-100 MB, documents 1-200 MB, whole megabytes only', async () => {
+  it('limits bounds (INF-PREF-05, D-108): images 1-100 MB, files to copy 1-25 MB, whole megabytes only', async () => {
     const { service } = await setup();
-    expect(service.get(['attachments.imageMaxMb', 'attachments.documentMaxMb'])).toEqual({ 'attachments.imageMaxMb': 20, 'attachments.documentMaxMb': 50 });
+    expect(service.get(['attachments.imageMaxMb', 'attachments.documentMaxMb'])).toEqual({ 'attachments.imageMaxMb': 20, 'attachments.documentMaxMb': 25 });
     for (const bad of [0, 101, 1.5, -1, '20', null]) expect(() => service.set('attachments.imageMaxMb', bad), String(bad)).toThrow(AppError);
-    for (const bad of [0, 201, 2.5]) expect(() => service.set('attachments.documentMaxMb', bad), String(bad)).toThrow(AppError);
-    for (const [key, value] of [['attachments.imageMaxMb', 1], ['attachments.imageMaxMb', 100], ['attachments.documentMaxMb', 1], ['attachments.documentMaxMb', 200]] as const) {
+    for (const bad of [0, 26, 2.5]) expect(() => service.set('attachments.documentMaxMb', bad), String(bad)).toThrow(AppError);
+    for (const [key, value] of [['attachments.imageMaxMb', 1], ['attachments.imageMaxMb', 100], ['attachments.documentMaxMb', 1], ['attachments.documentMaxMb', 25]] as const) {
       expect(service.set(key, value).value).toBe(value);
     }
   });

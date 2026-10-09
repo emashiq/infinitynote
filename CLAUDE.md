@@ -49,6 +49,15 @@ Never promise notifications while fully quit or guaranteed window positioning un
 
 - **Publishing (2026-10-09).** The user explicitly asked to push to https://github.com/emashiq/infinitynote (branch `main`), add a GitHub Actions release pipeline, publish the first release (v0.1.0, unsigned builds) and a GitHub Pages website. This overrides "never push" for that repository only. Nothing is ever force-pushed.
 
+- **v0.2.0 feature batch (2026-10-10).** The user asked for these, implemented autonomously and released as v0.2.0 (same push/release permission as above; progress in `docs/progress/release-0.2.0.md`):
+  - Note view: the editor fills the pane, its scrollbar sits at the pane's right edge, no empty gutter left of the text. Notes get tables.
+  - Formatting: font family, font size, text color and highlight in notes, table cells and stickies. Tables copy and paste in both directions (HTML table + TSV plain text; paste from spreadsheets/web).
+  - Files: adding a file asks "Copy into Infinity Notes" or "Link to the original"; a setting picks Ask (default) / Always copy / Always link. Files over 25 MB are never copied: a warning is shown and only linking is offered.
+  - Logo: `resources/brand/logo-source.png` (user-provided) is the app icon (Windows .ico, Linux PNG set, tray, title bar, About) and the website logo; the app shows a logo loader while it starts.
+  - Locked notes: lock a note with a password (all OSes) and/or the OS key (Windows Hello where available). Content is encrypted at rest. Locking is one-way for confidentiality: plaintext versions, drafts, search index and other plaintext copies made before locking are destroyed and cannot be rolled back; a forgotten password cannot be recovered. Never claim an OS-key option that the platform cannot verify.
+  - Stickies: title and project label aligned correctly in the header; color menu has a custom color picker (any color, not only named presets); sticky text can be colored.
+  - Website: rebuilt following https://github.com/emashiq/framecapt `website/` (index + docs pages, release-aware download cards, install help, about).
+
 ## Host notes (Windows development machine)
 
 - Windows has no Python (`python` is the Store alias); none is needed.

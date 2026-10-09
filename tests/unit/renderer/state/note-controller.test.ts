@@ -44,6 +44,24 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('NoteController: locked notes (D-111)', () => {
+  it('shows the lock screen state while locked, opens after the unlock and returns to it when the note locks again', async () => {
+    const { fake, make, note } = await setup();
+    await fake.bridge.lock.set({ noteId: note.id, password: 'correct horse', hello: false, acknowledged: true });
+    const c = make();
+    connect(fake, c);
+    await c.open();
+    expect(c.store.getState()).toMatchObject({ status: 'locked', content: null });
+    expect(fake.callsTo('collab:join')).toHaveLength(0);
+    await fake.bridge.lock.unlock({ noteId: note.id, password: 'correct horse' });
+    await c.reopen();
+    expect(c.store.getState()).toMatchObject({ status: 'ready', note: { locked: true } });
+    // Locked again (Lock now, idle, screen lock): main closes the session and the view finds the note locked.
+    await fake.bridge.lock.lockNow({ noteId: note.id });
+    await vi.waitFor(() => expect(c.store.getState().status).toBe('locked'));
+  });
+});
+
 describe('NoteController: open and save through live sync (INF-SAVE-01, D-103)', () => {
   it('opens a note: summary and drafts, then joins its session with the document main holds', async () => {
     const { fake, make, note } = await setup();

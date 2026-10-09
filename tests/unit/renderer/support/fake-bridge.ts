@@ -1,11 +1,13 @@
+import type { HexColor } from '../../../../src/shared/color';
 import type { BackupStatusType } from '../../../../src/shared/contracts/portability';
 import type { ShortcutStateType } from '../../../../src/shared/contracts/shortcuts';
 import type { CapabilitiesType } from '../../../../src/shared/contracts/app';
-import type { AttachmentDtoType, AttachmentImportDialogResponseType } from '../../../../src/shared/contracts/attachments';
+import type { AttachmentDtoType } from '../../../../src/shared/contracts/attachments';
 import type { InfinityBridge } from '../../../../src/shared/contracts/bridge';
 import { EVENT_CHANNELS, type EventChannel } from '../../../../src/shared/contracts/channel-names';
 import type { ChannelResponse } from '../../../../src/shared/contracts/channels';
 import { fail, ok, type ErrorCode, type Result } from '../../../../src/shared/contracts/envelope';
+import { LINK_MESSAGES } from '../../../../src/shared/attachments/link-messages';
 import type {
   FolderDtoType,
   NoteDtoType,
@@ -14,6 +16,7 @@ import type {
   TrashItemType,
 } from '../../../../src/shared/contracts/hierarchy';
 import type { HomeScopeType } from '../../../../src/shared/contracts/home';
+import { LOCK_MESSAGES, type LockStatusType, type OsKeyAvailabilityType } from '../../../../src/shared/contracts/locks';
 import { DEFAULT_SESSION, type TabSessionType } from '../../../../src/shared/contracts/session';
 import { SETTINGS, type SettingKey } from '../../../../src/shared/contracts/settings';
 import type { ContentOpBaseType, DraftsResolveResponseType, NoteContentResponseType } from '../../../../src/shared/contracts/notes';
@@ -116,10 +119,8 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const drafts: FakeDraft[] = [];
   const versions: FakeVersion[] = [];
   const imports: Array<{ kind: string; originalName?: string; size: number }> = [];
-  /** Each importFromDialog call takes the next entry; an empty queue means canceled. */
-  const dialogResults: AttachmentImportDialogResponseType[] = [];
   const shellCalls: string[] = [];
-  /** Attachment hand-offs the renderer asked for, as "open:<id>" or "show:<id>". */
+  /** Attachment and linked-file hand-offs the renderer asked for, as "open:<id>" or "show:<id>". */
   const handoffs: string[] = [];
   const noteTags = new Map<string, string[]>();
   const subscribers = new Map<string, Set<(payload: unknown) => void>>();
@@ -127,6 +128,8 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const calls: Array<{ channel: string; req: unknown }> = [];
   /** Notes whose sticky window is open, with its collapse and pin state. */
   const floating = new Map<string, { collapsed: boolean; alwaysOnTop: boolean; activation: number }>();
+  /** Default text colors of stickies (not part of the note DTO). */
+  const textColors = new Map<string, HexColor>();
   let windowState: WindowGetStateResponseType = { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } };
   /** Reminder state the tests arrange: the zone list, the view lists, the Home summary and each note's reminders. */
   const reminderData = {
@@ -150,6 +153,34 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   };
   let capabilities: CapabilitiesType | null = null;
   let clock = 1_000;
+  /** Locked notes (D-111): each one's password, whether it is unlocked and whether Windows Hello is set up. */
+  const lockData = {
+    locks: new Map<string, { password: string; unlocked: boolean; hello: boolean }>(),
+    osKey: { status: 'unsupported', reason: 'Linux has no OS key that Infinity Notes can verify. Use a password.' } as OsKeyAvailabilityType,
+  };
+  const lockStatus = (noteId: string): LockStatusType => {
+    const lock = lockData.locks.get(noteId);
+    return { noteId, locked: !!lock, unlocked: !!lock?.unlocked, hello: !!lock?.hello, retryInSeconds: 0 };
+  };
+  /** The note's lock after the password check, or the failure main would answer. */
+  const checkedLock = (noteId: string, password: string): { password: string; unlocked: boolean; hello: boolean } | Result<never> => {
+    const lock = lockData.locks.get(noteId);
+    if (!lock) return fail('VALIDATION_FAILED', LOCK_MESSAGES.notLocked);
+    if (lock.password !== password) return fail('VALIDATION_FAILED', LOCK_MESSAGES.wrongPassword, { wrongPassword: true, retryInSeconds: 0 });
+    return lock;
+  };
+  const isFailure = (v: unknown): v is Result<never> => typeof v === 'object' && v !== null && 'ok' in v;
+  const lockedOut = (noteId: string): Result<never> | null => {
+    const lock = lockData.locks.get(noteId);
+    return lock && !lock.unlocked ? fail('FORBIDDEN', LOCK_MESSAGES.locked, { locked: true }) : null;
+  };
+  const relock = (noteId: string) => {
+    const lock = lockData.locks.get(noteId);
+    if (!lock?.unlocked) return false;
+    lock.unlocked = false;
+    resetSession(noteId);
+    return true;
+  };
 
   const emit = (channel: EventChannel, payload: unknown) => {
     for (const cb of subscribers.get(channel) ?? []) cb(payload);
@@ -186,6 +217,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
       noteId: n.id,
       title: n.title,
       color: n.color ?? 'yellow',
+      textColor: textColors.get(n.id) ?? null,
       path: pathOf(pathIndex(), { projectId: n.projectId, folderId: n.folderId }),
       trashed: n.deletedAt === null ? null : { batchId: n.batch },
       ...w,
@@ -311,7 +343,9 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           };
           return ok({ attachment: dto });
         }),
-      importFromDialog: (req) => handle('attachment:importFromDialog', req, () => ok(dialogResults.shift() ?? { canceled: true, imported: [], rejected: [] })),
+      // The native picker is not faked: it is always canceled.
+      pickFiles: (req) => handle('attachment:pickFiles', req, () => ok({ canceled: true, pickId: null, files: [], truncated: false, rejected: [] })),
+      addPicked: (req) => handle('attachment:addPicked', req, () => fail('NOT_FOUND', 'The file could not be added.')),
       open: (req) =>
         handle('attachment:open', req, () => {
           handoffs.push(`open:${req.attachmentId}`);
@@ -322,6 +356,83 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           handoffs.push(`show:${req.attachmentId}`);
           return ok({ shown: true as const });
         }),
+    },
+    lock: {
+      availability: () => handle('lock:availability', {}, () => ok(lockData.osKey)),
+      status: (req) => handle('lock:status', req, () => ok(lockStatus(req.noteId))),
+      set: (req) =>
+        handle('lock:set', req, () => {
+          const n = notes.find((x) => x.id === req.noteId);
+          if (!n) return fail('NOT_FOUND', 'That item no longer exists.');
+          if (lockData.locks.has(n.id)) return fail('VALIDATION_FAILED', LOCK_MESSAGES.alreadyLocked);
+          lockData.locks.set(n.id, { password: req.password, unlocked: false, hello: req.hello });
+          n.locked = true;
+          resetSession(n.id);
+          treeChanged('lock');
+          return ok(lockStatus(n.id));
+        }),
+      unlock: (req) =>
+        handle('lock:unlock', req, () => {
+          const lock = checkedLock(req.noteId, req.password);
+          if (isFailure(lock)) return lock;
+          lock.unlocked = true;
+          return ok(lockStatus(req.noteId));
+        }),
+      unlockHello: (req) =>
+        handle('lock:unlockHello', req, () => {
+          const lock = lockData.locks.get(req.noteId);
+          if (!lock?.hello) return fail('VALIDATION_FAILED', LOCK_MESSAGES.helloOff);
+          lock.unlocked = true;
+          return ok(lockStatus(req.noteId));
+        }),
+      lockNow: (req) =>
+        handle('lock:lockNow', req, () => {
+          relock(req.noteId);
+          return ok(lockStatus(req.noteId));
+        }),
+      lockAll: () => handle('lock:lockAll', {}, () => ok({ locked: [...lockData.locks.keys()].filter((id) => relock(id)).length })),
+      changePassword: (req) =>
+        handle('lock:changePassword', req, () => {
+          const lock = checkedLock(req.noteId, req.currentPassword);
+          if (isFailure(lock)) return lock;
+          lock.password = req.newPassword;
+          return ok(lockStatus(req.noteId));
+        }),
+      setHello: (req) =>
+        handle('lock:setHello', req, () => {
+          const lock = checkedLock(req.noteId, req.password);
+          if (isFailure(lock)) return lock;
+          lock.hello = req.enabled;
+          return ok(lockStatus(req.noteId));
+        }),
+      remove: (req) =>
+        handle('lock:remove', req, () => {
+          const lock = checkedLock(req.noteId, req.password);
+          if (isFailure(lock)) return lock;
+          lockData.locks.delete(req.noteId);
+          const n = notes.find((x) => x.id === req.noteId);
+          if (n) n.locked = false;
+          resetSession(req.noteId);
+          treeChanged('lock');
+          return ok(lockStatus(req.noteId));
+        }),
+    },
+    fileLink: {
+      // jsdom files are never on disk, like a File made by page script (D-115).
+      createFromFile: async () => fail('VALIDATION_FAILED', LINK_MESSAGES.noPath),
+      isOnDisk: () => false,
+      status: (req) => handle('fileLink:status', req, () => ok({ path: null, sizeBytes: null, state: 'missing' as const })),
+      open: (req) =>
+        handle('fileLink:open', req, () => {
+          handoffs.push(`open:${req.linkId}`);
+          return ok({ opened: true as const });
+        }),
+      showInFolder: (req) =>
+        handle('fileLink:showInFolder', req, () => {
+          handoffs.push(`show:${req.linkId}`);
+          return ok({ shown: true as const });
+        }),
+      copyIn: (req) => handle('fileLink:copyIn', req, () => fail('NOT_FOUND', 'This linked file is no longer available')),
     },
     refs: {
       list: (req) =>
@@ -558,6 +669,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
             pinnedAt: null,
             favorite: false,
             revision: 0,
+            locked: false,
             createdAt: clock,
             updatedAt: clock,
             content: req.format === 'plain' ? '' : { type: 'doc', content: [{ type: 'paragraph' }] },
@@ -611,6 +723,8 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           const n = notes.find((x) => x.id === req.noteId);
           if (!n) return fail('NOT_FOUND', 'That item no longer exists.');
           if (n.deletedAt !== null) return fail('NOT_FOUND', 'This note is in Trash', { trashed: true, trashBatchId: n.batch });
+          const locked = lockedOut(n.id);
+          if (locked) return locked;
           return ok({ note: summary(n), format: n.format, content: n.content as never, revision: n.revision });
         }),
       save: (req) =>
@@ -657,6 +771,8 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           const n = notes.find((x) => x.id === req.noteId);
           if (!n) return fail('NOT_FOUND', 'That item no longer exists.');
           if (n.deletedAt !== null) return fail('NOT_FOUND', 'This note is in Trash', { trashed: true, trashBatchId: n.batch });
+          const locked = lockedOut(n.id);
+          if (locked) return locked;
           let sess = sessions.get(n.id);
           if (!sess) {
             // Like main, the session gives blocks their IDs once, so no editor has to (D-103).
@@ -840,6 +956,15 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           if (!n.sticky) return fail('VALIDATION_FAILED', 'This note is not a sticky');
           n.color = req.color;
           treeChanged('sticky');
+          return ok(floating.has(n.id) ? stickyState(n) : null);
+        }),
+      setTextColor: (req) =>
+        handle('sticky:setTextColor', req, () => {
+          const n = stickyNote(req.noteId);
+          if ('ok' in n) return n;
+          if (!n.sticky) return fail('VALIDATION_FAILED', 'This note is not a sticky');
+          if (req.textColor) textColors.set(n.id, req.textColor);
+          else textColors.delete(n.id);
           return ok(floating.has(n.id) ? stickyState(n) : null);
         }),
       setPinned: (req) =>
@@ -1059,7 +1184,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     /** The sticky window state a note would have in main. */
     stickyState: (noteId: string) => stickyState(notes.find((n) => n.id === noteId)!),
     /** Direct access for arranging state in tests. */
-    data: { reminders: reminderData, windows: windowData, portability: portabilityData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, settings, projects, folders, notes, sessions, drafts, versions, imports, dialogResults, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
+    data: { locks: lockData, reminders: reminderData, windows: windowData, portability: portabilityData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, settings, projects, folders, notes, sessions, drafts, versions, imports, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
   };
 }
 

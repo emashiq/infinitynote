@@ -5,6 +5,8 @@ import type { MenuItem } from '../ui/Menu';
 /** The note actions the editor's menus offer (D-102); an absent one is not offered where it cannot run. */
 export interface NoteActions {
   insertAttachment(kind: AttachmentKindType): void;
+  /** "Insert table…" (editable rich notes). */
+  insertTable?: () => void;
   /** "Link to note…" (editable rich notes in the main window; D-098). */
   insertReference?: () => void;
   /** "Add reminder…" (main window). */
@@ -16,6 +18,8 @@ export interface NoteActions {
   openVersions(): void;
   /** "Float as sticky" (tabs). */
   float?: () => void;
+  /** "Lock note…", or "Lock now" and "Lock settings…" for a locked note (main window; D-111). */
+  lock?: { locked: boolean; open(): void; lockNow(): void };
 }
 
 /** Flattens menu groups, drawing a separator before every group but the first. */
@@ -25,14 +29,18 @@ function grouped(...groups: MenuItem[][]): MenuItem[] {
     .flatMap((g, i) => g.map((item, j) => (i > 0 && j === 0 ? { ...item, separatorBefore: true } : item)));
 }
 
-/** The editor's context menu (right-click, Shift+F10): insert, reminders, then the note's own actions. */
-export function noteMenuItems(actions: NoteActions, opts: { format: 'rich' | 'plain'; editable: boolean }): MenuItem[] {
+/**
+ * The editor's context menu (right-click, Shift+F10): the table actions when the cursor is in a table, insert,
+ * reminders, then the note's own actions.
+ */
+export function noteMenuItems(actions: NoteActions, opts: { format: 'rich' | 'plain'; editable: boolean; table?: MenuItem[] }): MenuItem[] {
   const off = !opts.editable;
   const insert: MenuItem[] =
     opts.format === 'rich'
       ? [
           { id: 'image', label: 'Insert image', disabled: off, onSelect: () => actions.insertAttachment('image') },
           { id: 'file', label: 'Attach file', disabled: off, onSelect: () => actions.insertAttachment('document') },
+          ...(actions.insertTable ? [{ id: 'table', label: 'Insert table…', onSelect: actions.insertTable }] : []),
           ...(actions.insertReference ? [{ id: 'reference', label: 'Link to note…', onSelect: actions.insertReference }] : []),
         ]
       : [];
@@ -47,8 +55,18 @@ export function noteMenuItems(actions: NoteActions, opts: { format: 'rich' | 'pl
       : { id: 'convert', label: 'Convert to rich text', disabled: off, onSelect: () => actions.convert('rich') },
     { id: 'versions', label: 'Version history…', onSelect: actions.openVersions },
     ...(actions.float ? [{ id: 'float', label: 'Float as sticky', onSelect: actions.float }] : []),
+    ...lockItems(actions.lock),
   ];
-  return grouped(insert, reminders, note);
+  return grouped(opts.table ?? [], insert, reminders, note);
+}
+
+function lockItems(lock: NoteActions['lock']): MenuItem[] {
+  if (!lock) return [];
+  if (!lock.locked) return [{ id: 'lock', label: 'Lock note…', onSelect: lock.open }];
+  return [
+    { id: 'lockNow', label: 'Lock now', onSelect: lock.lockNow },
+    { id: 'lockSettings', label: 'Lock settings…', onSelect: lock.open },
+  ];
 }
 
 /** One entry of the insert menu that "/" opens in a rich note. */
@@ -59,7 +77,7 @@ export interface InsertItem {
   run(): void;
 }
 
-/** The insert menu's entries: block types, then images, files, note links and reminders. */
+/** The insert menu's entries: block types and tables, then images, files, note links and reminders. */
 export function insertItems(editor: Editor, actions: NoteActions): InsertItem[] {
   const chain = () => editor.chain().focus();
   return [
@@ -68,6 +86,7 @@ export function insertItems(editor: Editor, actions: NoteActions): InsertItem[] 
     { id: 'numbers', label: 'Numbered list', keywords: 'ol', run: () => void chain().toggleOrderedList().run() },
     { id: 'checklist', label: 'Checklist', keywords: 'todo task', run: () => void chain().toggleTaskList().run() },
     { id: 'codeBlock', label: 'Code block', run: () => void chain().toggleCodeBlock().run() },
+    ...(actions.insertTable ? [{ id: 'table', label: 'Table', keywords: 'grid rows columns', run: actions.insertTable }] : []),
     { id: 'image', label: 'Insert image', keywords: 'picture photo', run: () => actions.insertAttachment('image') },
     { id: 'file', label: 'Attach file', keywords: 'document', run: () => actions.insertAttachment('document') },
     ...(actions.insertReference ? [{ id: 'reference', label: 'Link to note…', keywords: 'reference', run: actions.insertReference }] : []),

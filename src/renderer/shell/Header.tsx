@@ -1,10 +1,11 @@
-import { Infinity as InfinityIcon, PanelLeft, PanelRight, Search } from 'lucide-react';
+import { PanelLeft, PanelRight, Search } from 'lucide-react';
 import { useServices, useStore } from '../state/use-store';
+import { AppLogo } from '../ui/AppLogo';
 import { IconButton } from '../ui/IconButton';
 import { AppMenuBar } from './AppMenuBar';
 
 /**
- * The main window's only title bar (D-097): app icon and name, the File, View and Help menus, the centered search box
+ * The main window's only title bar (D-097): the app logo (D-109) and name, the File, View and Help menus, the centered search box
  * and the panel toggles. The bar is the window's drag region; its controls are not. The OS draws minimize, maximize
  * and close over its right end (titleBarOverlay), so the bar leaves that area free.
  */
@@ -15,7 +16,7 @@ export function Header() {
     <header role="banner" className="app-header">
       <div className="header-start">
         <div className="brand">
-          <InfinityIcon size={18} strokeWidth={1.75} className="brand-icon" aria-hidden />
+          <AppLogo size={18} className="brand-icon" />
           <h1 className="app-title">Infinity Notes</h1>
         </div>
         <AppMenuBar />

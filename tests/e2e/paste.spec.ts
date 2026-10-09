@@ -190,6 +190,8 @@ test('document chip (INF-EDIT-14)', async () => {
   const size = fs.statSync(pdf).size;
   await queueDialog(app, [pdf]);
   await chooseNoteMenu(page, 'Attach file');
+  // "When adding files" is Ask by default (D-108).
+  await page.getByRole('dialog', { name: 'Add file' }).getByRole('button', { name: 'Copy into Infinity Notes' }).click();
   const chip = editor(page).locator('.file-chip');
   await expect(chip).toContainText('report.pdf');
   await expect(chip).toContainText(`${(size / 1024).toFixed(1)} KB`);

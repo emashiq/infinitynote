@@ -1,6 +1,8 @@
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Pin, Star, StickyNote, Trash } from 'lucide-react';
 import { useRef, useState, type MouseEvent } from 'react';
 import type { TreeNode, VisibleRow } from '../../shared/tree/tree-model';
+import { ColorDot } from '../ui/ColorDot';
+import { LockMark } from '../ui/LockMark';
 
 function NodeIcon({ node, expanded }: { node: TreeNode; expanded: boolean }) {
   const props = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
@@ -123,12 +125,13 @@ export function TreeRow({
         {row.hasChildren ? <Chevron size={14} strokeWidth={1.75} /> : null}
       </span>
       <NodeIcon node={node} expanded={row.expanded} />
-      {node.sticky && node.color ? <span className={`dot dot-${node.color}`} aria-hidden /> : null}
+      {node.sticky && node.color ? <ColorDot color={node.color} /> : null}
       {renaming ? (
         <RenameInput initial={renameInitial} onCommit={onRenameCommit} onCancel={onRenameCancel} />
       ) : (
         <span className="tree-label">{node.label}</span>
       )}
+      {node.locked ? <LockMark /> : null}
       {node.pinned ? <Pin size={12} strokeWidth={1.75} aria-label="Pinned" className="tree-pin" /> : null}
     </li>
   );

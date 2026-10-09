@@ -21,6 +21,15 @@ export interface SettingsServiceDeps {
 const isKey = (key: string): key is SettingKey => Object.prototype.hasOwnProperty.call(SETTINGS, key);
 const isPublic = (key: string): key is PublicSettingKey => isKey(key) && SETTINGS[key].public;
 
+/** The value of a stored record at the key's current version: as stored, upgraded from an older version, or undefined. */
+function storedValue(key: SettingKey, record: unknown): unknown {
+  if (record === null || typeof record !== 'object') return undefined;
+  const { v, value } = record as { v?: unknown; value?: unknown };
+  const entry: { version: number; upgrade?: (value: unknown) => unknown } = SETTINGS[key];
+  if (v === entry.version) return value;
+  return typeof v === 'number' && v < entry.version && entry.upgrade ? entry.upgrade(value) : undefined;
+}
+
 export class SettingsService {
   constructor(private readonly deps: SettingsServiceDeps) {}
 
@@ -29,9 +38,9 @@ export class SettingsService {
     const row = this.deps.repo.getRow(key);
     if (!row) return entry.default as SettingValue<K>;
     try {
-      const parsed: unknown = JSON.parse(row.value);
-      if (parsed !== null && typeof parsed === 'object' && (parsed as { v?: unknown }).v === entry.version) {
-        const result = entry.schema.safeParse((parsed as { value?: unknown }).value);
+      const value = storedValue(key, JSON.parse(row.value));
+      if (value !== undefined) {
+        const result = entry.schema.safeParse(value);
         if (result.success && settingValueProblem(key, result.data) === null) return result.data as SettingValue<K>;
       }
     } catch {

@@ -6,7 +6,7 @@ import { StickyState, StoredBounds } from '../../src/shared/contracts/stickies';
 import { AppOpenNoteEvent, WindowGetStateResponse } from '../../src/shared/contracts/windows';
 
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
-const state = { noteId: ID, title: 'Groceries', color: 'yellow', path: ['Common'], trashed: null, collapsed: false, alwaysOnTop: false, activation: 1 };
+const state = { noteId: ID, title: 'Groceries', color: 'yellow', textColor: null, path: ['Common'], trashed: null, collapsed: false, alwaysOnTop: false, activation: 1 };
 
 describe('Phase 04 contracts (D-062, D-063)', () => {
   it('sticky requests take a canonical note id, strictly', () => {
@@ -50,6 +50,8 @@ describe('Phase 04 contracts (D-062, D-063)', () => {
     expect(StickyState.safeParse({ ...state, activation: -1 }).success).toBe(false);
     expect(StickyState.safeParse({ ...state, activation: 1.5 }).success).toBe(false);
     expect(StickyState.safeParse({ ...state, extra: true }).success).toBe(false);
+    expect(StickyState.safeParse({ ...state, color: '#3a7bd5', textColor: '#ffffff' }).success).toBe(true);
+    expect(StickyState.safeParse({ ...state, textColor: 'white' }).success).toBe(false);
   });
 
   it('StoredBounds: integers, nullable position, size limits', () => {

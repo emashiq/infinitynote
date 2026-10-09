@@ -101,7 +101,7 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
     await t.call('sticky:float', { noteId: t.own.id });
     expect(await t.call('window:getState', {}, STICKY)).toMatchObject({
       ok: true,
-      data: { role: 'sticky', sticky: { noteId: t.own.id, title: 'Own', color: 'yellow', path: ['Common'], trashed: null, collapsed: false, alwaysOnTop: false, activation: 1 } },
+      data: { role: 'sticky', sticky: { noteId: t.own.id, title: 'Own', color: 'yellow', textColor: null, path: ['Common'], trashed: null, collapsed: false, alwaysOnTop: false, activation: 1 } },
     });
     expect(await t.call('window:getState', { noteId: t.other.id }, STICKY)).toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED' } });
   });
@@ -111,6 +111,7 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
     await t.call('sticky:float', { noteId: t.own.id });
     for (const [channel, payload] of [
       ['sticky:setColor', { noteId: t.other.id, color: 'blue' }],
+      ['sticky:setTextColor', { noteId: t.other.id, textColor: '#e03131' }],
       ['sticky:setPinned', { noteId: t.other.id, pinned: true }],
       ['sticky:setCollapsed', { noteId: t.other.id, collapsed: true }],
       ['sticky:hide', { noteId: t.other.id }],
@@ -150,6 +151,25 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
     const plain = t.s.note(null, null, 'plain');
     expect(await t.call('sticky:setColor', { noteId: plain.id, color: 'pink' })).toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED', message: 'This note is not a sticky' } });
     expect(await t.call('sticky:setColor', { noteId: t.other.id, color: 'pink' })).toEqual({ ok: true, data: null });
+  });
+
+  it('custom sticky colors and the default text color pass only as #rrggbb; nothing else is stored (v0.2.0)', async () => {
+    const t = await setup();
+    await t.call('sticky:float', { noteId: t.own.id });
+    expect(await t.call('sticky:setColor', { noteId: t.own.id, color: '#3a7bd5' }, STICKY)).toMatchObject({ ok: true, data: { color: '#3a7bd5' } });
+    expect(await t.call('sticky:setTextColor', { noteId: t.own.id, textColor: '#ffffff' }, STICKY)).toMatchObject({ ok: true, data: { textColor: '#ffffff' } });
+    for (const [channel, payload] of [
+      ['sticky:setColor', { noteId: t.own.id, color: '#3A7BD5' }],
+      ['sticky:setColor', { noteId: t.own.id, color: 'url(x)' }],
+      ['sticky:setColor', { noteId: t.own.id, color: '#3a7bd5; position: fixed' }],
+      ['sticky:setTextColor', { noteId: t.own.id, textColor: 'white' }],
+      ['sticky:setTextColor', { noteId: t.own.id }],
+      ['sticky:setTextColor', { noteId: t.own.id, textColor: '#fff', extra: 1 }],
+    ] as const) {
+      expect(await t.call(channel, payload, STICKY), JSON.stringify(payload)).toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED' } });
+    }
+    expect(t.s.row<{ color: string; text_color: string }>('SELECT color, text_color FROM notes WHERE id = ?', t.own.id)).toEqual({ color: '#3a7bd5', text_color: '#ffffff' });
+    expect(await t.call('window:getState', {}, STICKY)).toMatchObject({ data: { sticky: { color: '#3a7bd5', textColor: '#ffffff' } } });
   });
 
   it('pin answers UNSUPPORTED where always-on-top is unsupported and stores nothing', async () => {

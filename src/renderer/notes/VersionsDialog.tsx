@@ -11,17 +11,23 @@ export const VERSION_REASON_LABEL: Record<VersionReasonType, string> = {
   import: 'Before import',
 };
 
+/** What the history of a locked note says: it keeps none while locked (D-112). */
+export const LOCKED_NO_VERSIONS = 'Locked notes keep no version history. Earlier versions were deleted when the note was locked.';
+
 /** Minimal "Version history" (D-056): the saved versions, newest first, each with Restore. */
 export function VersionsDialog({
   load,
   now,
   canRestore,
+  locked,
   onRestore,
   onClose,
 }: {
   load: () => Promise<{ ok: true; data: { versions: VersionSummaryType[] } } | { ok: false; error: { message: string } }>;
   now: number;
   canRestore: boolean;
+  /** The note is locked. */
+  locked: boolean;
   onRestore: (version: VersionSummaryType) => void;
   onClose: () => void;
 }) {
@@ -50,7 +56,7 @@ export function VersionsDialog({
           Loading…
         </p>
       ) : versions.length === 0 ? (
-        <p className="muted">No versions yet</p>
+        <p className="muted">{locked ? LOCKED_NO_VERSIONS : 'No versions yet'}</p>
       ) : (
         <ul className="version-list" aria-label="Versions">
           {versions.map((v) => (

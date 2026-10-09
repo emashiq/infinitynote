@@ -22,6 +22,9 @@ describe('palette actions', () => {
       ['Link to note…', null],
       ['Float current note', null],
       ['Export note as Markdown…', null],
+      ['Lock note…', null],
+      ['Lock note now', null],
+      ['Lock all notes', null],
       ['Back up now…', null],
       ['Keyboard shortcuts', 'Ctrl+/'],
     ]);

@@ -13,6 +13,7 @@ export function registerStickyHandlers(router: IpcRouter, stickies: () => Sticky
     return {};
   });
   router.register('sticky:setColor', (req) => stickies().setColor(req.noteId, req.color));
+  router.register('sticky:setTextColor', (req) => stickies().setTextColor(req.noteId, req.textColor));
   router.register('sticky:setPinned', (req) => stickies().setPinned(req.noteId, req.pinned));
   router.register('sticky:setCollapsed', (req) => stickies().setCollapsed(req.noteId, req.collapsed));
   router.register('sticky:remove', async (req) => {

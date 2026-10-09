@@ -9,7 +9,8 @@ import { validateTitle, normalizeTitle } from '../../shared/names';
 import type { ContentSource, EditorHost } from '../editor/content';
 import { createDebouncer, createStore, type Store, type Timers } from '../state/store';
 
-export type NoteStatus = 'loading' | 'ready' | 'trashed' | 'missing' | 'error';
+/** `locked`: the note is locked and its key is not in main's memory; the tab shows the lock screen (D-111). */
+export type NoteStatus = 'loading' | 'ready' | 'trashed' | 'missing' | 'error' | 'locked';
 export type SaveStatus = 'saved' | 'pending' | 'saving' | 'retrying' | 'error';
 export type Busy = 'convert' | 'restore' | 'draft' | null;
 
@@ -174,8 +175,9 @@ export class NoteController implements EditorHost {
 
   private applyOpenFailure(error: ErrorEnvelope): void {
     this.epoch = '';
-    const details = error.details as { trashed?: boolean; trashBatchId?: string | null } | undefined;
-    if (error.code === 'NOT_FOUND' && details?.trashed) this.store.setState({ status: 'trashed', trashBatchId: details.trashBatchId ?? null, message: error.message });
+    const details = error.details as { trashed?: boolean; trashBatchId?: string | null; locked?: boolean } | undefined;
+    if (error.code === 'FORBIDDEN' && details?.locked) this.store.setState({ status: 'locked', message: undefined, content: null, save: 'saved' });
+    else if (error.code === 'NOT_FOUND' && details?.trashed) this.store.setState({ status: 'trashed', trashBatchId: details.trashBatchId ?? null, message: error.message });
     else if (error.code === 'NOT_FOUND') this.store.setState({ status: 'missing', message: error.message });
     else this.store.setState({ status: 'error', message: error.message });
   }

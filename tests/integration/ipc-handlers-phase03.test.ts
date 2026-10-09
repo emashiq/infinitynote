@@ -58,7 +58,10 @@ describe('Phase 03 IPC handlers (D-052)', () => {
       vi.spyOn(s.drafts, 'list'),
       vi.spyOn(s.drafts, 'resolve'),
       vi.spyOn(s.attachments, 'importBytes'),
-      vi.spyOn(s.attachments, 'importFromDialog'),
+      vi.spyOn(s.picker, 'pick'),
+      vi.spyOn(s.picker, 'add'),
+      vi.spyOn(s.links, 'create'),
+      vi.spyOn(s.links, 'open'),
     ];
     const op = { noteId: id(), viewId: id(), baseRevision: 0, requestId: id() };
     const bad: Array<[string, unknown]> = [
@@ -84,7 +87,14 @@ describe('Phase 03 IPC handlers (D-052)', () => {
       ['attachment:importBytes', { kind: 'video', bytes: new Uint8Array([1]) }],
       ['attachment:importBytes', { kind: 'image', bytes: new Uint8Array([1]), originalName: 'x'.repeat(256) }],
       ['attachment:importBytes', { kind: 'image', bytes: new Uint8Array([1]), path: 'C:/secret.png' }],
-      ['attachment:importFromDialog', { kind: 'image', path: '/etc' }],
+      ['attachment:pickFiles', { kind: 'image', path: '/etc' }],
+      ['attachment:addPicked', { pickId: id(), index: 20, action: 'copy' }],
+      ['attachment:addPicked', { pickId: id(), index: 0, action: 'move' }],
+      ['fileLink:create', { path: '' }],
+      ['fileLink:create', { path: '/notes/a\u0000.pdf' }],
+      ['fileLink:create', { path: 'x'.repeat(4097) }],
+      ['fileLink:open', { noteId: id(), linkId: 'not-a-uuid' }],
+      ['fileLink:open', { noteId: id(), linkId: id(), path: '/bin/sh' }],
       ['shell:openExternal', { url: '' }],
       ['shell:openExternal', { url: 'https://example.com', extra: 1 }],
       ['app:flushed', { flushId: 'x' }],
@@ -150,7 +160,8 @@ describe('Phase 03 IPC handlers (D-052)', () => {
     expect(ok).toMatchObject({ ok: true, data: { attachment: { kind: 'image', width: 3, height: 2, originalName: 'p.png' } } });
 
     expect(measureImport({ kind: 'image', bytes: new Uint8Array(1000) })).toBe(1000 + Buffer.byteLength('{"kind":"image","bytes":null}'));
-    expect(IMPORT_MAX_PAYLOAD_BYTES).toBe(200 * 1024 * 1024 + 64 * 1024);
+    // The largest configurable image limit (100 MB) is above the 25 MB copy limit for files (D-108).
+    expect(IMPORT_MAX_PAYLOAD_BYTES).toBe(100 * 1024 * 1024 + 64 * 1024);
     const spy = vi.spyOn(s.attachments, 'importBytes');
     const tooBig = new Uint8Array(IMPORT_MAX_PAYLOAD_BYTES);
     expect(await call('attachment:importBytes', { kind: 'document', bytes: tooBig })).toMatchObject({ ok: false, error: { code: 'LIMIT_EXCEEDED' } });
@@ -169,9 +180,9 @@ describe('Phase 03 IPC handlers (D-052)', () => {
     });
   });
 
-  it('attachment:importFromDialog passes the sender window to the dialog', async () => {
+  it('attachment:pickFiles passes the sender window to the dialog', async () => {
     const { call, s } = await setup();
-    expect(await call('attachment:importFromDialog', { kind: 'document' }, 2)).toEqual({ ok: true, data: { canceled: true, imported: [], rejected: [] } });
+    expect(await call('attachment:pickFiles', { kind: 'document' }, 2)).toEqual({ ok: true, data: { canceled: true, pickId: null, files: [], truncated: false, rejected: [] } });
     expect(s.dialogCalls).toEqual([{ webContentsId: 2, kind: 'document' }]);
   });
 
@@ -218,7 +229,8 @@ describe('Phase 03 IPC handlers (D-052)', () => {
       ['drafts:list', { noteId: id() }],
       ['drafts:resolve', { action: 'dismiss', noteId: id(), draftId: id() }],
       ['attachment:importBytes', { kind: 'image', bytes: new Uint8Array([1]) }],
-      ['attachment:importFromDialog', { kind: 'image' }],
+      ['attachment:pickFiles', { kind: 'image' }],
+      ['fileLink:status', { linkId: id() }],
     ];
     for (const [channel, payload] of valid) {
       expect(await none.call(channel, payload), channel).toEqual({ ok: false, error: { code: 'INTERNAL', message: 'Storage is unavailable' } });

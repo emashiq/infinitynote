@@ -68,7 +68,11 @@ export function createPortabilityCommands(deps: {
     },
     async exportAll() {
       await deps.flushActive();
-      await report(bridge.export.portable(), (r) => (r.canceled ? null : `Exported ${plural(r.counts.notes, 'note', 'notes')} to ${fileName(r.file)}`));
+      await report(bridge.export.portable(), (r) => {
+        if (r.canceled) return null;
+        const locked = r.skippedLocked > 0 ? `. ${plural(r.skippedLocked, 'locked note was', 'locked notes were')} not included` : '';
+        return `Exported ${plural(r.counts.notes, 'note', 'notes')} to ${fileName(r.file)}${locked}`;
+      });
     },
     async importNotes() {
       await report(bridge.import.portable(), (r) => {

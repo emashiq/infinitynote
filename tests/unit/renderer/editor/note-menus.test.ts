@@ -97,10 +97,11 @@ function actions(overrides: Partial<NoteActions> = {}): NoteActions {
 
 describe('note menus (D-102)', () => {
   it('the context menu of a tab offers insert, reminders and the note actions in groups', () => {
-    const items = noteMenuItems(actions({ insertReference: vi.fn(), addReminder: vi.fn(), createFromText: vi.fn(), float: vi.fn() }), { format: 'rich', editable: true });
+    const items = noteMenuItems(actions({ insertTable: vi.fn(), insertReference: vi.fn(), addReminder: vi.fn(), createFromText: vi.fn(), float: vi.fn() }), { format: 'rich', editable: true });
     expect(items.map((i) => [i.label, !!i.separatorBefore])).toEqual([
       ['Insert image', false],
       ['Attach file', false],
+      ['Insert table…', false],
       ['Link to note…', false],
       ['Add reminder…', true],
       ['Create reminder from text', false],
@@ -122,9 +123,36 @@ describe('note menus (D-102)', () => {
     expect(readOnly.filter((i) => i.disabled).map((i) => i.label)).toEqual(['Insert image', 'Attach file', 'Convert to plain text…']);
   });
 
+  it('offers "Lock note…", or "Lock now" and "Lock settings…" for a locked note (D-111)', () => {
+    const lock = { locked: false, open: vi.fn(), lockNow: vi.fn() };
+    const open = noteMenuItems(actions({ lock }), { format: 'rich', editable: true });
+    expect(open.slice(-1).map((i) => i.label)).toEqual(['Lock note…']);
+    open.at(-1)!.onSelect();
+    expect(lock.open).toHaveBeenCalledTimes(1);
+    const locked = noteMenuItems(actions({ lock: { ...lock, locked: true } }), { format: 'plain', editable: true });
+    expect(locked.slice(-2).map((i) => i.label)).toEqual(['Lock now', 'Lock settings…']);
+    locked.at(-2)!.onSelect();
+    expect(lock.lockNow).toHaveBeenCalledTimes(1);
+    expect(noteMenuItems(actions(), { format: 'rich', editable: true }).some((i) => i.label.startsWith('Lock'))).toBe(false);
+  });
+
+  it('in a table the context menu starts with the table actions', () => {
+    const table = [
+      { id: 'rowAfter', label: 'Add row below', onSelect: vi.fn() },
+      { id: 'deleteTable', label: 'Delete table', separatorBefore: true, onSelect: vi.fn() },
+    ];
+    const items = noteMenuItems(actions({ insertTable: vi.fn() }), { format: 'rich', editable: true, table });
+    expect(items.slice(0, 4).map((i) => [i.label, !!i.separatorBefore])).toEqual([
+      ['Add row below', false],
+      ['Delete table', true],
+      ['Insert image', true],
+      ['Attach file', false],
+    ]);
+  });
+
   it('the insert menu lists block types, attachments, note links and reminders, filtered by what is typed', () => {
     const editor = typed('');
-    const a = actions({ insertReference: vi.fn(), addReminder: vi.fn(), createFromText: vi.fn() });
+    const a = actions({ insertTable: vi.fn(), insertReference: vi.fn(), addReminder: vi.fn(), createFromText: vi.fn() });
     const items = insertItems(editor, a);
     expect(items.map((i) => i.label)).toEqual([
       'Heading 1',
@@ -134,6 +162,7 @@ describe('note menus (D-102)', () => {
       'Numbered list',
       'Checklist',
       'Code block',
+      'Table',
       'Insert image',
       'Attach file',
       'Link to note…',
@@ -143,6 +172,9 @@ describe('note menus (D-102)', () => {
     expect(filterActions(items, 'link').map((i) => i.id)).toEqual(['reference']);
     expect(filterActions(items, 'rem').map((i) => i.id)).toEqual(['reminder', 'fromText']);
     expect(filterActions(items, 'todo').map((i) => i.id)).toEqual(['checklist']);
+    expect(filterActions(items, 'table').map((i) => i.id)).toEqual(['table']);
+    items.find((i) => i.id === 'table')!.run();
+    expect(a.insertTable).toHaveBeenCalled();
     expect(filterActions(items, 'h2').map((i) => i.id)).toEqual(['h2']);
     items.find((i) => i.id === 'checklist')!.run();
     expect(editor.isActive('taskList')).toBe(true);

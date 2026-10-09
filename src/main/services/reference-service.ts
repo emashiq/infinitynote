@@ -58,7 +58,8 @@ export class ReferenceService {
       let blockText: string | null = null;
       if (!row.present) state = 'missing';
       else if (row.deleted_at !== null) state = 'trashed';
-      else if (blockId !== null) {
+      // A block of a locked note is not readable: the reference shows the note without the block's text (D-111).
+      else if (blockId !== null && row.locked !== 1) {
         const doc = row.format === 'rich' ? docOf(row.target_note_id, row.content_json) : null;
         if (!collectBlockIds(doc).has(blockId)) state = 'blockMissing';
         else blockText = clipText(textBlocksOf(doc).find((b) => b.id === blockId)?.text ?? '', MAX_REF_CONTEXT);

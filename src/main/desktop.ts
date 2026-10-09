@@ -27,6 +27,8 @@ export interface DesktopDeps {
   dialog: Pick<DialogAdapter, 'showCloseChoice'>;
   displays: DisplayProvider;
   windows: Omit<AppWindowFactoryOptions, 'windowHooks'>;
+  /** The tray icon sizes (resources/brand/tray-16, -24 and -32.png). */
+  trayIconDir: string;
   onStickyLayout?(entry: StickyLayoutEntry): void;
   /** Runs once the startup windows are back: after the main window's first load, or at once in a background start. */
   afterStartup?(): void;
@@ -144,7 +146,7 @@ export function createDesktop(deps: DesktopDeps): Desktop {
 
   const tray = new TrayController({
     tray: caps.tray,
-    iconPath: deps.windows.iconPath,
+    iconDir: deps.trayIconDir,
     platform: process.platform,
     openMainWindow: () => mainWindow.show(),
     newSticky,
@@ -152,6 +154,9 @@ export function createDesktop(deps: DesktopDeps): Desktop {
     quit: () => app.quit(),
     logger,
   });
+
+  // Preset sticky colors have a light and a dark variant; the windows' backgrounds follow the theme.
+  nativeTheme.on('updated', () => stickies?.themeChanged());
 
   // Linux shutdown or logoff: save without a dialog or a flush wait. Windows uses each window's session-end.
   if (process.platform === 'linux') powerMonitor.on('shutdown', () => lifecycle.markQuitting());

@@ -54,12 +54,12 @@ test('editor memory across tab cycles (perf record)', async () => {
   }
   // Images exist only for the active tab, and only through the attachment protocol.
   await expect.poll(() => activeTabLabel(page)).toBe('Perf 09');
-  await expect(page.locator('img')).toHaveCount(0);
+  await expect(page.locator('#tabpanel img')).toHaveCount(0);
   await page.keyboard.press('Control+Tab');
   await page.keyboard.press('Control+Tab');
   await expect.poll(() => activeTabLabel(page)).toBe('Perf 00');
   await expect(page.locator('#tabpanel img')).toHaveCount(20);
-  const srcs = await page.locator('img').evaluateAll((imgs) => imgs.map((i) => i.getAttribute('src') ?? ''));
+  const srcs = await page.locator('#tabpanel img').evaluateAll((imgs) => imgs.map((i) => i.getAttribute('src') ?? ''));
   expect(srcs.every((s) => s.startsWith('infinity-attachment://'))).toBe(true);
 
   fs.mkdirSync(path.dirname(OUT), { recursive: true });

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { expect } from 'vitest';
+import { APP_VERSION } from '../../src/shared/app-identity';
 import type { TreeChangedEventType } from '../../src/shared/contracts/hierarchy';
 import type { NoteRevisionEventType } from '../../src/shared/contracts/notes';
 import type { ReminderChangedEventType } from '../../src/shared/contracts/reminders';
@@ -11,7 +12,11 @@ import type { FakeClock } from '../../src/main/services/clock';
 import { memoryLogger } from '../../src/main/services/logger';
 import { createFixedZoneProvider } from '../../src/main/services/system-zone';
 import { LATEST } from '../../src/main/db/migrations';
+import type { KdfParams } from '../../src/main/locks/note-crypto';
 import { fixedClock, openFresh, randomIds, type TestDb } from './helpers';
+
+/** scrypt at its smallest accepted cost, so tests that lock notes stay fast (the app uses DEFAULT_KDF). */
+export const TEST_KDF: KdfParams = { name: 'scrypt', N: 1024, r: 8, p: 1 };
 
 /**
  * The production service graph (createMainServices) over a fresh temp database with an injectable clock, a
@@ -29,6 +34,8 @@ export async function setupServices(
     testDb?: TestDb;
     /** What a restore applied at this "start" did (backup tests). */
     restoreOutcome?: MainServicesDeps['restoreOutcome'];
+    /** Locked notes: the OS key, its protection and power events (cheap scrypt parameters unless given). */
+    locks?: MainServicesDeps['locks'];
   } = {},
 ) {
   const t = opts.testDb ?? (await openFresh());
@@ -77,7 +84,7 @@ export async function setupServices(
       showOpenFolder: pathDialog('folder'),
     },
     restorePaths: paths,
-    appVersion: '0.1.0',
+    appVersion: APP_VERSION,
     latestSchema: LATEST,
     restart: () => {
       restarts.count += 1;
@@ -109,6 +116,7 @@ export async function setupServices(
       reminderWrites.onWrite?.();
     },
     testFaults: opts.testFaults,
+    locks: { kdf: TEST_KDF, ...opts.locks },
   });
   const { hierarchy } = services;
   const repo = new HierarchyRepo(t.db);

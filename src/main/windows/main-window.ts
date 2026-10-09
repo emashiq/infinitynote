@@ -37,8 +37,13 @@ export function titleBarOverlay(dark: boolean): TitleBarOverlayOptions {
   return { color: tokenValue(tokens, '--bg'), symbolColor: tokenValue(tokens, '--text'), height: TITLE_BAR_HEIGHT - tokenPx(tokens, '--header-border') };
 }
 
+/** The page background of a theme (`--bg`): the window paints it before the renderer does, so a start never flashes white. */
+export function windowBackground(dark: boolean): string {
+  return tokenValue(dark ? DARK : LIGHT, '--bg');
+}
+
 /**
- * Pure description of the main window; unit tested (INF-SHELL-06, D-097): no OS title bar. The app draws one title bar
+ * Pure description of the main window; unit tested (INF-SHELL-06, D-097, D-109): no OS title bar. The app draws one title bar
  * (menus, search, drag region) and the OS draws minimize, maximize and close over its right end (titleBarOverlay).
  */
 export function mainWindowOptions(opts: { preloadPath: string; iconPath: string; platform?: NodeJS.Platform; dark?: boolean }): BrowserWindowConstructorOptions {
@@ -51,6 +56,7 @@ export function mainWindowOptions(opts: { preloadPath: string; iconPath: string;
     show: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: titleBarOverlay(opts.dark ?? false),
+    backgroundColor: windowBackground(opts.dark ?? false),
     ...((opts.platform ?? process.platform) === 'linux' ? { icon: opts.iconPath } : {}),
     webPreferences: secureWebPreferences(opts.preloadPath),
   };
@@ -65,10 +71,11 @@ export function createMainWindowFactory(options: AppWindowFactoryOptions): MainW
       const win = new BrowserWindow(windowOptions);
       // The in-app File, View and Help menus replace the OS menu bar (D-097).
       win.removeMenu();
-      // The caption buttons follow the theme (the app's setting drives nativeTheme.themeSource).
+      // The caption buttons and the window background follow the theme (the app's setting drives nativeTheme.themeSource).
       const followTheme = () => {
         const overlay = titleBarOverlay(nativeTheme.shouldUseDarkColors);
         win.setTitleBarOverlay(overlay);
+        win.setBackgroundColor(windowBackground(nativeTheme.shouldUseDarkColors));
         options.onTitleBarOverlay?.(overlay);
       };
       nativeTheme.on('updated', followTheme);

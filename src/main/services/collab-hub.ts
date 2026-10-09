@@ -16,6 +16,7 @@ import { docToText, textToDoc } from '../../shared/text/textarea-doc';
 import type { Db } from '../db/driver';
 import { DraftsRepo } from '../db/repositories/drafts-repo';
 import { NotesRepo, type ContentRow } from '../db/repositories/notes-repo';
+import type { NoteVault } from '../locks/note-vault';
 import { AppError, errorDetail } from './app-error';
 import type { Clock } from './clock';
 import type { IdGenerator } from './ids';
@@ -47,6 +48,8 @@ export interface CollabHubDeps {
   logger: Logger;
   content: NoteContent;
   versions: VersionService;
+  /** Opens and seals the content of locked notes (D-111). */
+  vault: NoteVault;
   emitRevision: (event: NoteRevisionEventType) => void;
   send: <C extends CollabEvent>(webContentsId: number, channel: C, payload: EventPayload<C>) => void;
   faults?: SaveFaults;
@@ -133,7 +136,7 @@ export class CollabHub {
         steps.push(step);
       }
     } catch (err) {
-      this.deps.logger.warn(`collab: refused steps note=${req.noteId} ${errorDetail(err)}`);
+      this.deps.logger.warn(`collab: refused steps note=${req.noteId} ${this.logDetail(req.noteId, err)}`);
       throw new AppError('VALIDATION_FAILED', STEPS_REFUSED);
     }
     if (doc.content.size > MAX_SESSION_DOC_SIZE) throw new AppError('LIMIT_EXCEEDED', NOTE_TOO_LARGE_MESSAGE);
@@ -208,6 +211,18 @@ export class CollabHub {
     this.restart(session, conflict);
   }
 
+  /**
+   * A note was locked (or locked again): its session saves what it holds and closes, dropping the document from memory,
+   * and its views start over (they find the note locked when they join again; D-111).
+   */
+  evict(noteId: string): void {
+    const session = this.sessions.get(noteId);
+    if (!session) return;
+    const members = [...new Set(session.members.values())];
+    this.close(session);
+    for (const webContentsId of members) this.deps.send(webContentsId, 'collab:reset', { noteId, conflict: null });
+  }
+
   /** The renderer document of a window went away: its views leave, and sessions without views close. */
   webContentsReset(webContentsId: number): void {
     for (const [viewId, bound] of [...this.bindings]) if (bound === webContentsId) this.bindings.delete(viewId);
@@ -241,6 +256,15 @@ export class CollabHub {
     return session && session.members.get(viewId) === webContentsId ? session : null;
   }
 
+  /**
+   * An error's details for the log. For a locked note only its kind: a schema or step error can quote the content
+   * ("Invalid content for node …"), and a locked note's text must never reach the log (D-111).
+   */
+  private logDetail(noteId: string, err: unknown): string {
+    if (!this.notes.isLocked(noteId)) return errorDetail(err);
+    return `(${err instanceof Error ? err.name : 'error'}; details withheld for a locked note)`;
+  }
+
   private open(noteId: string): Session {
     const session: Session = { noteId, ...this.load(noteId), members: new Map(), timer: null, saving: null };
     this.sessions.set(noteId, session);
@@ -253,12 +277,13 @@ export class CollabHub {
     if (!row) throw new AppError('NOT_FOUND', MSG.missing);
     if (row.deleted_at !== null) throw new AppError('NOT_FOUND', MSG.noteInTrash, { trashed: true, trashBatchId: row.trash_batch_id });
     const schema = noteSchema(row.format);
+    const serialized = this.deps.vault.serialized(row);
     let doc: PmNode;
     try {
-      doc = schema.nodeFromJSON(row.format === 'rich' ? JSON.parse(row.content_json ?? '{"type":"doc"}') : textToDoc(row.content_text ?? ''));
+      doc = schema.nodeFromJSON(row.format === 'rich' ? JSON.parse(serialized) : textToDoc(serialized));
       doc.check();
     } catch (err) {
-      this.deps.logger.error(`collab: stored note ${noteId} does not fit the editor schema ${errorDetail(err)}`);
+      this.deps.logger.error(`collab: stored note ${noteId} does not fit the editor schema ${this.logDetail(noteId, err)}`);
       throw new AppError('INTERNAL', UNREADABLE);
     }
     const prepared = row.format === 'rich' ? this.prepareRich(doc) : doc;
@@ -308,11 +333,11 @@ export class CollabHub {
     try {
       this.saveOnce(session);
     } catch (err) {
-      this.deps.logger.error(`collab: closing note ${session.noteId} could not save ${errorDetail(err)}; keeping a recovered draft`);
+      this.deps.logger.error(`collab: closing note ${session.noteId} could not save ${this.logDetail(session.noteId, err)}; keeping a recovered draft`);
       try {
         this.keepAsDraft(session);
       } catch (draftErr) {
-        this.deps.logger.error(`collab: the draft of note ${session.noteId} could not be kept ${errorDetail(draftErr)}`);
+        this.deps.logger.error(`collab: the draft of note ${session.noteId} could not be kept ${this.logDetail(session.noteId, draftErr)}`);
       }
     }
   }
@@ -336,33 +361,39 @@ export class CollabHub {
     session.timer = null;
   }
 
-  /** One save at a time per note; INTERNAL failures are retried, and every outcome is announced to the views. */
+  /**
+   * One save at a time per note. A save requested while another waits to retry joins it, because every attempt stores
+   * the document as it is then; once that save succeeded, edits that arrived after its last attempt are saved again.
+   * Joining keeps a flush within one retry window (FLUSH_TIMEOUT_MS), so a window whose save keeps failing answers
+   * "unsaved" instead of timing out (D-072).
+   */
   private save(session: Session): Promise<number> {
     this.cancelSave(session);
-    const previous = session.saving ?? Promise.resolve(0);
-    const run = previous
-      .catch(() => 0)
-      .then(async () => {
-        for (let attempt = 0; ; attempt += 1) {
-          try {
-            return this.saveOnce(session);
-          } catch (err) {
-            const error = err instanceof AppError ? err : new AppError('INTERNAL', 'Could not save the note');
-            if (error.code === 'INTERNAL' && attempt < SAVE_RETRIES && this.sessions.get(session.noteId) === session) {
-              this.announce(session, 'retrying', error.message);
-              await new Promise<void>((resolve) => this.timers.setTimeout(resolve, this.deps.retryDelayMs ?? SAVE_RETRY_DELAY_MS));
-              continue;
-            }
-            if (error.code !== 'CONFLICT') this.announce(session, 'error', error.message);
-            throw error;
-          }
-        }
-      });
+    if (session.saving) return session.saving.then(() => this.save(session));
+    const run = this.saveWithRetries(session);
     session.saving = run;
     void run.finally(() => {
       if (session.saving === run) session.saving = null;
     }).catch(() => undefined);
     return run;
+  }
+
+  /** INTERNAL failures are retried; every outcome is announced to the views. */
+  private async saveWithRetries(session: Session): Promise<number> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return this.saveOnce(session);
+      } catch (err) {
+        const error = err instanceof AppError ? err : new AppError('INTERNAL', 'Could not save the note');
+        if (error.code === 'INTERNAL' && attempt < SAVE_RETRIES && this.sessions.get(session.noteId) === session) {
+          this.announce(session, 'retrying', error.message);
+          await new Promise<void>((resolve) => this.timers.setTimeout(resolve, this.deps.retryDelayMs ?? SAVE_RETRY_DELAY_MS));
+          continue;
+        }
+        if (error.code !== 'CONFLICT') this.announce(session, 'error', error.message);
+        throw error;
+      }
+    }
   }
 
   /** Saves the document if it holds edits; returns the stored revision. Conflicts keep the edits as a draft. */
@@ -436,7 +467,7 @@ export class CollabHub {
       viewId: HUB_VIEW_ID,
       baseRevision: session.revision,
       format: session.format,
-      content: serialized,
+      content: this.deps.vault.draftText(session.noteId, this.notes.isLocked(session.noteId), serialized),
       reason: 'conflict',
       now: this.deps.clock.now(),
     });

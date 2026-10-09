@@ -17,6 +17,8 @@ export interface OutgoingRow {
   folder_id: string | null;
   format: 'rich' | 'plain' | null;
   content_json: string | null;
+  /** 1 when the target is locked: its blocks cannot be read (D-111). */
+  locked: number | null;
   deleted_at: number | null;
   trash_batch_id: string | null;
   /** 1 when the target note row exists. */
@@ -59,7 +61,7 @@ export class ReferencesRepo {
     return this.db
       .prepare<[string, number], OutgoingRow>(
         `SELECT r.target_note_id, r.target_block_id, r.target_title_snapshot,
-                n.title, n.project_id, n.folder_id, n.format, n.content_json, n.deleted_at, n.trash_batch_id,
+                n.title, n.project_id, n.folder_id, n.format, n.content_json, n.locked, n.deleted_at, n.trash_batch_id,
                 n.id IS NOT NULL AS present
            FROM note_references r LEFT JOIN notes n ON n.id = r.target_note_id
           WHERE r.source_note_id = ?

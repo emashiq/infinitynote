@@ -23,6 +23,8 @@ export interface ContentRow {
   content_text: string | null;
   plain_text: string;
   revision: number;
+  /** 1 while the note is locked: its content is then encrypted in note_locks and these columns are empty (D-111). */
+  locked: number;
   deleted_at: number | null;
   trash_batch_id: string | null;
 }
@@ -44,8 +46,8 @@ export interface CreateNoteInput {
 export interface WriteContentInput {
   id: string;
   format: 'rich' | 'plain';
-  /** Serialized content: document JSON for rich notes, the text for plain notes. */
-  content: string;
+  /** Serialized content: document JSON for rich notes, the text for plain notes; null for a locked note (D-111). */
+  content: string | null;
   plainText: string;
   /** New title, or null to keep the current one. */
   title: string | null;
@@ -81,7 +83,7 @@ export class NotesRepo {
   getContentRow(id: string): ContentRow | undefined {
     return this.db
       .prepare<[string], ContentRow>(
-        'SELECT id, title, format, content_json, content_text, plain_text, revision, deleted_at, trash_batch_id FROM notes WHERE id = ?',
+        'SELECT id, title, format, content_json, content_text, plain_text, revision, locked, deleted_at, trash_batch_id FROM notes WHERE id = ?',
       )
       .get(id);
   }
@@ -111,6 +113,22 @@ export class NotesRepo {
         input.expectedRevision,
       );
     return result.changes === 1;
+  }
+
+  isLocked(id: string): boolean {
+    return this.db.prepare<[string], { locked: number }>('SELECT locked FROM notes WHERE id = ?').get(id)?.locked === 1;
+  }
+
+  /** Empties a note's stored content and plain text (its search index row keeps only the title) before it is locked. */
+  clearContent(id: string): void {
+    this.db.prepare<[string]>("UPDATE notes SET content_json = NULL, content_text = NULL, plain_text = '' WHERE id = ?").run(id);
+  }
+
+  /** Puts content and plain text back into the row of a note whose lock was just removed (no new revision). */
+  restoreContent(id: string, format: 'rich' | 'plain', content: string, plainText: string): void {
+    this.db
+      .prepare<[string | null, string | null, string, string]>('UPDATE notes SET content_json = ?, content_text = ?, plain_text = ? WHERE id = ?')
+      .run(format === 'rich' ? content : null, format === 'plain' ? content : null, plainText, id);
   }
 
   /** 'live' or 'trashed' for each of the ids that still exists. */

@@ -2,6 +2,9 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import type Database from 'better-sqlite3';
 import { closeApp, dbFileOf, launchApp, makeUserDataDir, openDb, readMainLog, removeDir, type Launched } from './fixtures';
 
+/** The desktop capabilities a spec can need unsupported (each can be forced through INFINITY_NOTES_TEST_CAPS). */
+export type ForcibleCapability = 'windowPositioning' | 'alwaysOnTop' | 'tray' | 'nativeNotifications';
+
 export interface Harness {
   readonly userData: string;
   readonly page: Page;
@@ -10,6 +13,13 @@ export interface Harness {
   /** Closes the app (a real quit of the process) and starts it again on the same userData, with these extra variables. */
   restart(extraEnv?: Record<string, string>): Promise<Launched>;
   stop(): Promise<void>;
+  /**
+   * Starts the app with `capability` unsupported. Where this desktop already reports it unsupported (WSLg has no tray
+   * host, notification server, window positioning or pinning), that real detection is kept; elsewhere (Windows, X11)
+   * the app is started again with the capability forced through INFINITY_NOTES_TEST_CAPS. `forced` tells which, so a
+   * spec can expect the matching reason.
+   */
+  startUnsupported(capability: ForcibleCapability, extraEnv?: Record<string, string>): Promise<Launched & { forced: boolean }>;
   /** Read-only SQL against the live database file. */
   all<T = Record<string, unknown>>(sql: string, ...params: unknown[]): T[];
   one<T = Record<string, unknown>>(sql: string, ...params: unknown[]): T | undefined;
@@ -57,6 +67,14 @@ export function useApp(options: { failOnMainErrors?: boolean } = {}): Harness {
       await closeApp(launched?.app);
       launched = null;
       return h.start(extraEnv);
+    },
+    async startUnsupported(capability, extraEnv = {}) {
+      const natural = await h.start(extraEnv);
+      const reported = await natural.page.evaluate(() => window.infinity.capabilities.get());
+      if (!reported.ok) throw new Error('capabilities.get failed');
+      if (reported.data[capability].status === 'unsupported') return { ...natural, forced: false };
+      const caps = { ...(JSON.parse(extraEnv.INFINITY_NOTES_TEST_CAPS ?? '{}') as Record<string, string>), [capability]: 'unsupported' };
+      return { ...(await h.restart({ ...extraEnv, INFINITY_NOTES_TEST_CAPS: JSON.stringify(caps) })), forced: true };
     },
     async stop() {
       await closeApp(launched?.app);

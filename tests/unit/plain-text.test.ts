@@ -80,3 +80,25 @@ describe('extractPlainText', () => {
     expect(extractPlainText('rich', null)).toBe('');
   });
 });
+
+describe('extractPlainText: tables (v0.2.0)', () => {
+  const cell = (...c: unknown[]) => ({ type: 'tableCell', content: c });
+  const row = (...cells: unknown[]) => ({ type: 'tableRow', content: cells });
+
+  it('a table is one line per row with tab-separated cells; a cell with several blocks stays on one line', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        p(text('Before')),
+        { type: 'table', content: [row(cell(p(text('Name'))), cell(p(text('Note')))), row(cell(p(text('Ada'))), cell(p(text('two')), p(text('lines'))))] },
+        p(text('After')),
+      ],
+    };
+    expect(extractPlainText('rich', doc)).toBe('Before\nName\tNote\nAda\ttwo lines\nAfter');
+  });
+
+  it('empty cells keep their place', () => {
+    const doc = { type: 'doc', content: [{ type: 'table', content: [row(cell(p()), cell(p(text('b'))))] }] };
+    expect(extractPlainText('rich', doc)).toBe('\tb');
+  });
+});

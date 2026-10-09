@@ -229,14 +229,16 @@ test('header controls (INF-STKY-04)', async () => {
 
   // Color.
   await activate(header.getByRole('button', { name: 'Sticky color' }));
-  const colors = sp.getByRole('menu', { name: 'Sticky color' }).getByRole('menuitemradio');
+  const colors = sp.getByRole('radiogroup', { name: 'Sticky color' }).getByRole('radio');
   await expect(colors).toHaveCount(6);
-  await expect(colors).toHaveText(['Yellow', 'Green', 'Blue', 'Pink', 'Violet', 'Gray']);
-  const blue = colors.filter({ hasText: 'Blue' });
+  expect(await colors.evaluateAll((radios) => radios.map((r) => r.getAttribute('aria-label')))).toEqual(['Yellow', 'Green', 'Blue', 'Pink', 'Violet', 'Gray']);
+  const blue = sp.getByRole('radiogroup', { name: 'Sticky color' }).getByRole('radio', { name: 'Blue' });
   await blue.focus();
   await blue.press('Enter');
   await expect.poll(() => noteRow(id).color).toBe('blue');
   await expect(sp.locator('.sticky-window')).toHaveAttribute('data-sticky-color', 'blue');
+  await sp.keyboard.press('Escape');
+  await expect(sp.getByRole('dialog', { name: 'Sticky color' })).toBeHidden();
   await railGo(page, 'Stickies');
   await expect(page.locator('.sticky-row .dot-blue')).toBeVisible();
 
@@ -402,7 +404,7 @@ test('bounds persist and are clamped to connected displays (INF-STKY-06)', async
 });
 
 test('size only where positioning is unsupported (INF-STKY-06)', async () => {
-  const { app, page } = await h.start(WIN ? { INFINITY_NOTES_TEST_CAPS: JSON.stringify({ windowPositioning: 'unsupported' }) } : {});
+  const { app, page } = await h.startUnsupported('windowPositioning');
   expect((await capsOf(page)).windowPositioning.status).toBe('unsupported');
   const id = await createNote(page, COMMON, 'Compositor placed');
   await floatViaBridge(page, id);
@@ -652,7 +654,7 @@ test('reopen cycles leave one window and no extra listeners (INF-STKY-11)', asyn
 });
 
 test('unsupported pin is shown as unavailable (INF-STKY-13)', async () => {
-  const { app, page } = await h.start(WIN ? { INFINITY_NOTES_TEST_CAPS: JSON.stringify({ alwaysOnTop: 'unsupported' }) } : {});
+  const { app, page } = await h.startUnsupported('alwaysOnTop');
   const caps = await capsOf(page);
   expect(caps.alwaysOnTop.status).toBe('unsupported');
   const id = await createNote(page, COMMON, 'No pin');

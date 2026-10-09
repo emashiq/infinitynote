@@ -8,7 +8,7 @@ import { createFakeBridge } from './support/fake-bridge';
 import { setupDom } from './support/dom';
 
 const NOTE = '0f8fad5b-d9cb-469f-a165-70867728950e';
-const state: StickyStateType = { noteId: NOTE, title: 'Groceries', color: 'blue', path: ['Alpha', 'Plans'], trashed: null, collapsed: false, alwaysOnTop: false, activation: 1 };
+const state: StickyStateType = { noteId: NOTE, title: 'Groceries', color: 'blue', textColor: null, path: ['Alpha', 'Plans'], trashed: null, collapsed: false, alwaysOnTop: false, activation: 1 };
 
 const dom = setupDom();
 let root: Root | null = null;
@@ -20,6 +20,7 @@ afterEach(() => {
 async function renderHeader(over: Partial<{ state: StickyStateType; pinSupported: boolean; trashed: boolean }> = {}) {
   const actions: { [K in keyof StickyHeaderActions]: ReturnType<typeof vi.fn> } = {
     setColor: vi.fn(),
+    setTextColor: vi.fn(),
     togglePinned: vi.fn(),
     toggleCollapsed: vi.fn(),
     openInApp: vi.fn(),
@@ -49,6 +50,10 @@ async function renderHeader(over: Partial<{ state: StickyStateType; pinSupported
 }
 
 const menuItems = (role = 'menuitem') => [...document.querySelectorAll(`[role="menu"] [role="${role}"]`)].map((b) => b.textContent);
+const group = (label: string) => document.querySelector(`[role="radiogroup"][aria-label="${label}"]`)!;
+const radios = (label: string) => [...group(label).querySelectorAll('[role="radio"]')].map((r) => r.getAttribute('aria-label'));
+const checked = (label: string) => [...group(label).querySelectorAll('[role="radio"][aria-checked="true"]')].map((r) => r.getAttribute('aria-label'));
+const radio = (label: string, name: string) => group(label).querySelector(`[role="radio"][aria-label="${name}"]`);
 
 describe('sticky header (INF-STKY-04, D-070)', () => {
   it('is a toolbar with the color, title field, source badge, pin, collapse, actions and close controls', async () => {
@@ -125,22 +130,49 @@ describe('sticky header (INF-STKY-04, D-070)', () => {
     expect(disabled).toEqual(['Rename', 'Remove from stickies', 'Move to Trash']);
   });
 
-  it('the color menu has the six colors as radio items with the current one checked', async () => {
+  it('the color popover has the six presets and the text colors as radio groups with the current ones checked', async () => {
     const { button, actions } = await renderHeader();
     await dom.click(button('Sticky color'));
-    expect(document.querySelector('[role="menu"]')!.getAttribute('aria-label')).toBe('Sticky color');
-    expect(menuItems('menuitemradio')).toEqual(['Yellow', 'Green', 'Blue', 'Pink', 'Violet', 'Gray']);
-    const checked = [...document.querySelectorAll('[role="menuitemradio"][aria-checked="true"]')].map((b) => b.textContent);
-    expect(checked).toEqual(['Blue']);
-    await dom.click([...document.querySelectorAll('[role="menuitemradio"]')].find((b) => b.textContent === 'Pink')!);
+    expect(document.querySelector('[role="dialog"]')!.getAttribute('aria-label')).toBe('Sticky color');
+    expect(radios('Sticky color')).toEqual(['Yellow', 'Green', 'Blue', 'Pink', 'Violet', 'Gray']);
+    expect(checked('Sticky color')).toEqual(['Blue']);
+    expect(radios('Text color').slice(0, 3)).toEqual(['Automatic', 'Black', 'White']);
+    expect(checked('Text color')).toEqual(['Automatic']);
+    await dom.click(radio('Sticky color', 'Pink'));
     expect(actions.setColor).toHaveBeenCalledWith('pink');
+    await dom.click(radio('Text color', 'Red'));
+    expect(actions.setTextColor).toHaveBeenCalledWith('#e03131');
+    await dom.click(radio('Text color', 'Automatic'));
+    expect(actions.setTextColor).toHaveBeenLastCalledWith(null);
   });
 
-  it('Change color in the actions menu opens the color menu', async () => {
+  it('a custom sticky color is any #rrggbb typed in the hex field; anything else is refused with a message', async () => {
+    const { button, actions } = await renderHeader();
+    await dom.click(button('Sticky color'));
+    const field = document.querySelector<HTMLInputElement>('input[aria-label="Sticky color: custom color"]')!;
+    const apply = field.parentElement!.querySelector('button')!;
+    await dom.type(field, 'red');
+    await dom.click(apply);
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('Enter a color as #rrggbb, for example #3366ff.');
+    expect(actions.setColor).not.toHaveBeenCalled();
+    await dom.type(field, '#3A7BD5');
+    await dom.click(apply);
+    expect(actions.setColor).toHaveBeenCalledWith('#3a7bd5');
+  });
+
+  it('a custom color shows in the hex field and checks no preset', async () => {
+    const { button } = await renderHeader({ state: { ...state, color: '#3a7bd5', textColor: '#123456' } });
+    await dom.click(button('Sticky color'));
+    expect(checked('Sticky color')).toEqual([]);
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="Sticky color: custom color"]')!.value).toBe('#3a7bd5');
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="Text color: custom color"]')!.value).toBe('#123456');
+  });
+
+  it('Change color in the actions menu opens the color popover', async () => {
     const { button } = await renderHeader();
     await dom.click(button('Sticky actions'));
     await dom.click([...document.querySelectorAll('[role="menuitem"]')].find((b) => b.textContent === 'Change color')!);
-    expect(menuItems('menuitemradio')).toHaveLength(6);
+    expect(radios('Sticky color')).toHaveLength(6);
   });
 });
 

@@ -107,7 +107,7 @@ describe('Markdown and plain-text export (INF-PORT-05)', () => {
     expect(suggestedFileName('a/b\\c:d*e?f"g<h>i|j')).toBe('a b c d e f g h i j');
     expect(suggestedFileName('  ...  ')).toBe('Untitled');
     expect(suggestedFileName('')).toBe('Untitled');
-    const missing = richToMarkdown('', { content: [{ type: 'image', attrs: { attachmentId: id(), alt: 'gone' } }] }, { linkOf: () => null });
+    const missing = richToMarkdown('', { content: [{ type: 'image', attrs: { attachmentId: id(), alt: 'gone' } }] }, { linkOf: () => null, linkedFileUrl: () => null });
     expect(missing).toBe('*[gone: image unavailable]*\n');
   });
 });

@@ -6,6 +6,8 @@ import type { IpcRouter } from '../router';
 
 export interface AppHandlerDeps {
   getInfo(): AppInfoType;
+  /** Test hooks only (E2E): holds the answer back, so the startup loader stays up long enough to be seen. */
+  beforeInfo?: () => Promise<void>;
   getCapabilities(): CapabilitiesType;
   shell: ShellAdapter;
   dataDir: string;
@@ -16,7 +18,10 @@ export interface AppHandlerDeps {
 
 /** Channels that work even when the database failed to open. */
 export function registerAppHandlers(router: IpcRouter, deps: AppHandlerDeps): void {
-  router.register('app:getInfo', () => deps.getInfo());
+  router.register('app:getInfo', async () => {
+    await deps.beforeInfo?.();
+    return deps.getInfo();
+  });
   router.register('app:showDataFolder', async () => {
     const error = await deps.shell.openPath(deps.dataDir);
     if (error) throw new AppError('UNSUPPORTED', 'The data folder could not be opened on this desktop');

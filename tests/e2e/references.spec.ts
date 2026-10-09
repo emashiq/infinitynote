@@ -172,6 +172,7 @@ test('attached documents open only through the validated hand-off; programs are 
     await focusEditorEnd(page);
     await queueDialog(app, [pdf, exe]);
     await chooseNoteMenu(page, 'Attach file');
+    await page.getByRole('dialog', { name: 'Add 2 files' }).getByRole('button', { name: 'Copy into Infinity Notes' }).click();
     await expect(editor(page).locator('.file-chip')).toHaveCount(2);
     await waitSaved(page);
 

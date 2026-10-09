@@ -115,6 +115,20 @@ describe('note:save (INF-SAVE-01, INF-SAVE-02)', () => {
     expect(s.revisions).toEqual([]);
   });
 
+  it('a table over the table limits (the ~2,200-node span case) is VALIDATION_FAILED and stores nothing (D-116)', async () => {
+    const s = await setup();
+    const cell = (colspan: number) => ({ type: 'tableCell', attrs: { colspan }, content: [{ type: 'paragraph' }] });
+    const table = (span: number) => ({
+      type: 'table',
+      content: [{ type: 'tableRow', content: Array.from({ length: 100 }, () => cell(span)) }, ...Array.from({ length: 1000 }, () => ({ type: 'tableRow', content: [cell(1)] }))],
+    });
+    for (const span of [1000, 50]) {
+      const err = thrown(() => s.save({ content: { type: 'doc', content: [table(span)] } }));
+      expect(err, String(span)).toEqual({ code: 'VALIDATION_FAILED', message: 'This note contains content that cannot be saved', details: undefined });
+    }
+    expect(s.noteRow().revision).toBe(0);
+  });
+
   it('a note over 5 MB gives the exact too-large message', async () => {
     const s = await setup();
     const err = thrown(() => s.save({ content: textToDoc('x'.repeat(5 * 1024 * 1024 + 1)) }));
