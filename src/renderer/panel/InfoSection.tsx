@@ -1,29 +1,15 @@
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useState } from 'react';
 import { displayTitle } from '../../shared/names';
 import { useLiveNote } from '../notes/live-note';
 import type { NoteController } from '../notes/note-controller';
 import { useServices, useStore } from '../state/use-store';
 import { Switch } from '../ui/Switch';
+import { PanelSection } from './PanelSection';
+import { TagsEditor } from './TagsEditor';
 
 const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' });
 
 export function InfoSection({ controller }: { controller: NoteController | null }) {
-  const [open, setOpen] = useState(true);
-  const Chevron = open ? ChevronDown : ChevronRight;
-  return (
-    <section className="info-section">
-      <h2 className="panel-heading">
-        <button type="button" className="disclosure" aria-expanded={open} aria-controls="info-body" onClick={() => setOpen(!open)}>
-          <Chevron size={14} strokeWidth={1.75} aria-hidden />
-          Info
-        </button>
-      </h2>
-      <div id="info-body" hidden={!open}>
-        {controller ? <NoteInfo controller={controller} /> : <p className="muted">Open a note to see its details</p>}
-      </div>
-    </section>
-  );
+  return <PanelSection title="Info">{controller ? <NoteInfo controller={controller} /> : <p className="muted">Open a note to see its details</p>}</PanelSection>;
 }
 
 function NoteInfo({ controller }: { controller: NoteController }) {
@@ -56,6 +42,7 @@ function NoteInfo({ controller }: { controller: NoteController }) {
       </dl>
       <Switch label="Pinned to Home" checked={!!(live ? live.pinnedAt : note.pinnedAt)} onChange={(v) => void tree.setPinned(note.id, v).then(fail)} />
       <Switch label="Favorite" checked={live ? live.favorite : note.favorite} onChange={(v) => void tree.setFavorite('note', note.id, v).then(fail)} />
+      <TagsEditor noteId={note.id} />
     </>
   );
 }

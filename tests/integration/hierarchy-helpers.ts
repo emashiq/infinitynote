@@ -45,6 +45,9 @@ export async function setupServices(
   /** Each dialog call takes the next entry; null or an empty queue means the user canceled. */
   const dialogQueue: Array<string[] | null> = [];
   const dialogCalls: OpenFilesRequest[] = [];
+  /** What the services handed to the OS shell; openPath answers with `shellError` (empty means success). */
+  const shellCalls: Array<{ op: string; target: string }> = [];
+  const shellResult = { error: '' };
   const dataDir = path.join(t.dir, 'data');
   const services = createMainServices({
     db: t.db,
@@ -56,6 +59,18 @@ export async function setupServices(
       showOpenFiles: async (req) => {
         dialogCalls.push(req);
         return dialogQueue.shift() ?? null;
+      },
+    },
+    shell: {
+      openPath: async (p) => {
+        shellCalls.push({ op: 'openPath', target: p });
+        return shellResult.error;
+      },
+      openExternal: async (url) => {
+        shellCalls.push({ op: 'openExternal', target: url });
+      },
+      showItemInFolder: (p) => {
+        shellCalls.push({ op: 'showItemInFolder', target: p });
       },
     },
     onSettingsChanged: (p) => settingsEvents.push(p),
@@ -118,6 +133,8 @@ export async function setupServices(
     reminderWrites,
     dialogQueue,
     dialogCalls,
+    shellCalls,
+    shellResult,
     dataDir,
     repo,
     tick,

@@ -4,7 +4,7 @@ import type { ReminderViewType } from '../../shared/contracts/reminders';
 import type { WidgetStateType } from '../../shared/contracts/widget';
 import type { AppOpenNoteEventType } from '../../shared/contracts/windows';
 import { RemindersStore } from '../reminders/reminders-store';
-import type { EditorServices } from '../editor/editor-services';
+import type { EditorServices, ReferenceHost } from '../editor/editor-services';
 import type { AttachmentLimits } from '../editor/uploader';
 import { createCommandRunner, type CommandRunner } from './commands';
 import { browserHideEvents, createCoreServices } from './core-services';
@@ -102,6 +102,17 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     },
     deps.initialWidget ?? { open: false, collapsed: false, alwaysOnTop: false },
   );
+  // Reference chips show live titles from the tree and open their target in a tab (D-098).
+  const references: ReferenceHost = {
+    titleOf: (noteId) => {
+      const t = tree.store.getState();
+      if (t.status !== 'ready') return undefined;
+      return t.model.nodes.get(`note:${noteId}`)?.label ?? null;
+    },
+    subscribe: (listener) => tree.store.subscribe(listener),
+    open: (noteId, blockId) => void tabs.openNote(noteId, { blockId }),
+  };
+  const editor: EditorServices = { ...core.editor, references };
   let lastScope = home.store.getState().scope;
   let lastActive = tabs.store.getState().session.activeTabId;
 
@@ -197,7 +208,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     windowSettings,
     reminders,
     attachmentLimits: core.attachmentLimits,
-    editor: core.editor,
+    editor,
     ready,
     init: () => ready,
     async dispose() {

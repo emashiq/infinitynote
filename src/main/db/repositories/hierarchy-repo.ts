@@ -53,9 +53,9 @@ const SUBTREE_CTE = `WITH RECURSIVE sub(id, depth) AS (
   SELECT f.id, sub.depth + 1 FROM folders f JOIN sub ON f.parent_id = sub.id WHERE sub.depth < ${CTE_GUARD}
 )`;
 
-function scopeFilter(scope: HomeScopeType): { where: string; args: string[] } {
-  if (scope.kind === 'common') return { where: ' AND project_id IS NULL', args: [] };
-  if (scope.kind === 'project') return { where: ' AND project_id = ?', args: [scope.projectId] };
+export function scopeFilter(scope: HomeScopeType, column = 'project_id'): { where: string; args: string[] } {
+  if (scope.kind === 'common') return { where: ` AND ${column} IS NULL`, args: [] };
+  if (scope.kind === 'project') return { where: ` AND ${column} = ?`, args: [scope.projectId] };
   return { where: '', args: [] };
 }
 

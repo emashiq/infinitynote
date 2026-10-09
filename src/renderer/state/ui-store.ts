@@ -21,18 +21,22 @@ export type DialogState =
 export type FocusRequest =
   | { target: 'noteTitle'; noteId: string }
   | { target: 'noteFind'; noteId: string }
+  /** Opens the reference picker of the note's editor (palette "Link to note…"). */
+  | { target: 'noteReference'; noteId: string }
   | { target: 'treeRename'; key: string }
   | { target: 'tree' };
 
 export interface UiState {
   dialog: DialogState | null;
   paletteOpen: boolean;
+  /** The text the palette opens with (a missing reference's "Search" fills in its title). */
+  paletteQuery: string;
   menu: { key: string; anchor: { x: number; y: number } } | null;
   focusRequest: FocusRequest | null;
 }
 
 export class UiStore {
-  readonly store: Store<UiState> = createStore<UiState>({ dialog: null, paletteOpen: false, menu: null, focusRequest: null });
+  readonly store: Store<UiState> = createStore<UiState>({ dialog: null, paletteOpen: false, paletteQuery: '', menu: null, focusRequest: null });
 
   openDialog(dialog: DialogState): void {
     this.store.setState({ dialog, menu: null });
@@ -40,8 +44,8 @@ export class UiStore {
   closeDialog(): void {
     this.store.setState({ dialog: null });
   }
-  openPalette(): void {
-    this.store.setState({ paletteOpen: true, menu: null });
+  openPalette(query = ''): void {
+    this.store.setState({ paletteOpen: true, paletteQuery: query, menu: null });
   }
   closePalette(): void {
     this.store.setState({ paletteOpen: false });

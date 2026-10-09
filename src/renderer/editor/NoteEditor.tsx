@@ -9,10 +9,12 @@ import type { RichDocLike } from '../../shared/editor/doc-schema';
 import { isUserEdit, toSavable, type ContentSource, type EditorHost } from './content';
 import { registerEditor } from './editor-registry';
 import { plainExtensions, richExtensions } from './extensions';
+import type { FileActions } from './file-attachment';
 import { FindBar } from './FindBar';
 import { findPrefill } from './find-core';
 import { applyLink, LINK_OPEN_FAILED, linkHrefAt, removeLink, selectedLinkHref } from './link';
 import { LinkDialog } from './LinkDialog';
+import { ReferencePicker, type PickedReference } from './ReferencePicker';
 import { createPasteProps } from './paste';
 import type { CardRequest } from '../reminders/card-request';
 import { blockIdAtSelection, chipsMeta, findBlock, REMINDER_CHIP_EVENT, selectionAtBlockStart, type ChipInfo } from './reminder-chips';
@@ -53,6 +55,9 @@ export interface NoteEditorProps {
   /** A new request object opens the find bar (Ctrl+F); the editor then calls onFindRequestHandled. */
   findRequest: object | null;
   onFindRequestHandled: () => void;
+  /** A new request object opens the reference picker (palette "Link to note…"); then onReferenceRequestHandled. */
+  referenceRequest?: object | null;
+  onReferenceRequestHandled?: () => void;
   onConvert: (target: 'rich' | 'plain') => void;
   onOpenVersions: () => void;
   /** Receives the editor instance (for example to move focus into it from the title). */
@@ -81,6 +86,18 @@ export function NoteEditor(props: NoteEditorProps) {
     () => new AttachmentUploader({ importBytes: (req) => services.bridge.attachment.importBytes(req), limits: services.limits, notify: services.notify }),
   );
 
+  // Attached files open through main's validated hand-off on behalf of this note (INF-REF-08).
+  const [files] = useState<FileActions>(() => {
+    const report = (res: Promise<{ ok: boolean; error?: { message: string } }>) =>
+      void res.then((r) => {
+        if (!r.ok && r.error) services.notify(r.error.message);
+      });
+    return {
+      open: (attachmentId) => report(services.bridge.attachment.open({ noteId: host.noteId, attachmentId })),
+      showInFolder: (attachmentId) => report(services.bridge.attachment.showInFolder({ noteId: host.noteId, attachmentId })),
+    };
+  });
+
   const openLink = (href: string) => {
     void services.bridge.shell.openExternal({ url: href }).then((r) => {
       if (!r.ok) services.notify(LINK_OPEN_FAILED);
@@ -89,7 +106,8 @@ export function NoteEditor(props: NoteEditorProps) {
 
   const editor = useEditor(
     {
-      extensions: format === 'rich' ? richExtensions({ uploader, notify: services.notify }) : plainExtensions(),
+      extensions:
+        format === 'rich' ? richExtensions({ uploader, notify: services.notify, files, references: services.references ?? null }) : plainExtensions(),
       content: (format === 'rich' ? content : textToDoc(content as string)) as JSONContent,
       editable,
       immediatelyRender: true,
@@ -213,6 +231,29 @@ export function NoteEditor(props: NoteEditorProps) {
 
   const [linkDialog, setLinkDialog] = useState<{ href: string; editing: boolean } | null>(null);
 
+  // Note references (D-098): the picker inserts a chip followed by a space, so typing goes on after it.
+  const canReference = format === 'rich' && editable && services.references !== undefined;
+  const [picker, setPicker] = useState(false);
+  const insertReference = (ref: PickedReference) => {
+    setPicker(false);
+    if (!editor || editor.isDestroyed) return;
+    editor
+      .chain()
+      .focus()
+      .insertContent([{ type: 'noteRef', attrs: { ...ref } }, { type: 'text', text: ' ' }])
+      .run();
+  };
+  // A palette request opens the picker once (state adjusted while rendering); the request is then consumed.
+  const { referenceRequest, onReferenceRequestHandled } = props;
+  const [shownReferenceRequest, setShownReferenceRequest] = useState<object | null>(null);
+  if (referenceRequest && referenceRequest !== shownReferenceRequest) {
+    setShownReferenceRequest(referenceRequest);
+    if (canReference) setPicker(true);
+  }
+  useEffect(() => {
+    if (referenceRequest) onReferenceRequestHandled?.();
+  }, [referenceRequest, onReferenceRequestHandled]);
+
   // Reminder suggestions (D-091): one detector per editor instance; it follows the note's reminders.
   const { suggestions } = props;
   const suggestionSettings = useStore(services.suggestions.settings);
@@ -307,6 +348,7 @@ export function NoteEditor(props: NoteEditorProps) {
           openVersions: props.onOpenVersions,
           addReminder: props.onAddReminder,
           createFromText: suggestions ? () => void createFromText() : undefined,
+          insertReference: canReference ? () => setPicker(true) : undefined,
         }}
       />
       {find ? <FindBar key={find.nonce} editor={editor} prefill={find.prefill} onClose={() => setFind(null)} /> : null}
@@ -315,6 +357,16 @@ export function NoteEditor(props: NoteEditorProps) {
       </div>
       {suggestions && suggestionSettings.suggestFromText ? (
         <SuggestionBar editor={editor} settings={suggestionSettings} updateInApp={suggestions.openInApp !== undefined} onCreate={(live) => openLive(live)} onUpdate={updateLive} onDismiss={dismissLive} />
+      ) : null}
+      {picker ? (
+        <ReferencePicker
+          bridge={services.bridge}
+          onPick={insertReference}
+          onClose={() => {
+            setPicker(false);
+            editor.commands.focus();
+          }}
+        />
       ) : null}
       {linkDialog ? (
         <LinkDialog

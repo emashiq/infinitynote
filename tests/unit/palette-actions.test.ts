@@ -19,6 +19,7 @@ describe('palette actions', () => {
       ['Next tab', 'Ctrl+Tab'],
       ['Previous tab', 'Ctrl+Shift+Tab'],
       ['Find in note', 'Ctrl+F'],
+      ['Link to note…', null],
       ['Float current note', null],
     ]);
   });
@@ -30,6 +31,7 @@ describe('palette actions', () => {
     expect(filterActions(PALETTE_ACTIONS, 'plain').map((a) => a.id)).toEqual(['note.newPlain']);
     expect(filterActions(PALETTE_ACTIONS, 'tog tr').map((a) => a.id)).toEqual(['view.toggleTree']);
     expect(filterActions(PALETTE_ACTIONS, 'float').map((a) => a.id)).toEqual(['note.float']);
+    expect(filterActions(PALETTE_ACTIONS, 'link').map((a) => a.id)).toEqual(['note.insertReference']);
     expect(filterActions(PALETTE_ACTIONS, 'zzz')).toEqual([]);
   });
 });

@@ -46,7 +46,7 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-HIER-08 | Folder cycles rejected with clear message | 02 | I,E | integration/hierarchy.test › cycle rejected; e2e/tree.spec › cycle rejected | done |
 | INF-HIER-09 | Trash with batch soft delete, restore to original or nearest valid location, permanent delete with confirmation | 02 | I,E | integration/trash.test; e2e/tree.spec › trash and restore | done |
 | INF-HIER-10 | Pin notes to Home; favorite notes, folders and projects | 02 | I,E | e2e/home.spec › pin; e2e/tree.spec › favorites; integration/hierarchy.test | done |
-| INF-HIER-11 | Optional small tags (<=20 per note) usable as search filter | 07 | I,E | integration/tags.test; e2e/search.spec › tag filter | planned |
+| INF-HIER-11 | Optional small tags (<=20 per note) usable as search filter | 07 | I,E | integration/tags.test; e2e/search.spec › tag filter | done |
 | INF-HIER-12 | Keyboard navigation of the tree (ARIA tree, F2, Delete, Enter, arrows) | 02 | E,V | e2e/a11y-keyboard.spec › tree; › dialogs return focus; › accessibility structure on every view; unit/tree-model.test; unit/renderer/tree-pane.test | done |
 | INF-TABS-01 | Multiple note tabs; one tab per note, reopening focuses it | 02 | E | e2e/tabs.spec › no duplicate tabs; unit/tab-session.test | done |
 | INF-TABS-02 | Switch tabs by click and Ctrl+Tab/Ctrl+Shift+Tab | 02 | E | e2e/tabs.spec › ctrl+tab; › keyboard tablist; unit/renderer/tab-strip.test | done |
@@ -152,21 +152,21 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-SUG-08 | Source edit requires explicit Update; no silent move | 06 | I,E | integration/suggestions.test › source changed state; e2e/nlp.spec › source edit requires update | done |
 | INF-SUG-09 | Deleted source block keeps reminder note-linked with anchor unavailable | 06 | I | integration/suggestions.test › block deleted | done |
 | INF-SUG-10 | End-to-end phrase -> preview -> confirm -> side panel -> notification opens source | 06 | E | e2e/nlp.spec › full flow | done |
-| INF-REF-01 | Insert note link via searchable picker | 07 | E | e2e/references.spec › picker | planned |
-| INF-REF-02 | Stable block references to another note's block | 07 | I,E | integration/references.test › block ref | planned |
-| INF-REF-03 | Side panel shows outgoing references and backlinks | 07 | I,E | e2e/references.spec › backlinks | planned |
-| INF-REF-04 | Open reference in a tab and scroll to the block | 07 | E | e2e/references.spec › scroll to block | planned |
-| INF-REF-05 | Rename/move of target preserves links | 07 | I,E | integration/references.test › rename/move | planned |
-| INF-REF-06 | Missing/trashed target or block shows clear state with restore/search; no silent redirect | 07 | I,E | e2e/references.spec › trashed target | planned |
-| INF-REF-07 | Pasted/duplicated content never aliases block IDs | 07 | U,I | integration/references.test › duplicate content | planned |
-| INF-REF-08 | Attached documents opened via validated OS handoff; executables never launched | 07 | I,E | integration/handoff.test › blocked extensions | planned |
-| INF-REF-09 | Quick sticky creation inherits scope; no forced project | 07 | E | e2e/stickies.spec › quick sticky scope | planned |
-| INF-SRCH-01 | FTS5 search over titles and bodies including Bangla with prefix matching | 07 | I | integration/search.test › Bangla, prefix | planned |
-| INF-SRCH-02 | Index updates on edit, move, trash and restore | 07 | I | integration/search.test › index lifecycle | planned |
-| INF-SRCH-03 | Scope and tag filters in search | 07 | I,E | integration/search.test › scope filter | planned |
-| INF-SRCH-04 | Highlighted snippets rendered safely | 07 | U,E | unit/snippet.test › no HTML injection | planned |
-| INF-SRCH-05 | Debounced capped results (<=50); 10,000-note fixture measured | 07 | P,I | perf/search › p95 | planned |
-| INF-SRCH-06 | Ctrl+K palette opens exact note/tab without unsaved edit loss | 07 | E | e2e/palette.spec › open with pending edit | planned |
+| INF-REF-01 | Insert note link via searchable picker | 07 | E | e2e/references.spec › picker; integration/ipc-handlers-phase07.test | done |
+| INF-REF-02 | Stable block references to another note's block | 07 | I,E | integration/references.test › block ref; unit/doc-schema.test › note references; e2e/references.spec › scroll to block | done |
+| INF-REF-03 | Side panel shows outgoing references and backlinks | 07 | I,E | e2e/references.spec › backlinks; integration/references.test › block ref | done |
+| INF-REF-04 | Open reference in a tab and scroll to the block | 07 | E | e2e/references.spec › scroll to block | done |
+| INF-REF-05 | Rename/move of target preserves links | 07 | I,E | integration/references.test › rename/move; e2e/references.spec › trashed target (rename) | done |
+| INF-REF-06 | Missing/trashed target or block shows clear state with restore/search; no silent redirect | 07 | I,E | e2e/references.spec › trashed target; integration/references.test › trashed target | done |
+| INF-REF-07 | Pasted/duplicated content never aliases block IDs | 07 | U,I | integration/references.test › duplicate content; unit/doc-schema.test › repeated block ID; unit/renderer/editor/block-ids.test | done |
+| INF-REF-08 | Attached documents opened via validated OS handoff; executables never launched | 07 | I,E | integration/handoff.test › blocked extensions; e2e/references.spec › attached documents | done |
+| INF-REF-09 | Quick sticky creation inherits scope; no forced project | 07 | E | e2e/stickies.spec › quick sticky scope | done |
+| INF-SRCH-01 | FTS5 search over titles and bodies including Bangla with prefix matching | 07 | I | integration/search.test › Bangla, prefix; e2e/search.spec › highlighted snippets | done |
+| INF-SRCH-02 | Index updates on edit, move, trash and restore | 07 | I | integration/search.test › index lifecycle | done |
+| INF-SRCH-03 | Scope and tag filters in search | 07 | I,E | integration/search.test › scope filter; e2e/search.spec › tag filter | done |
+| INF-SRCH-04 | Highlighted snippets rendered safely | 07 | U,E | unit/renderer/snippet.test › no HTML injection; e2e/search.spec › highlighted snippets | done |
+| INF-SRCH-05 | Debounced capped results (<=50); 10,000-note fixture measured | 07 | P,I | integration/search.test › p95 (10,000 notes, measured p95 recorded in docs/progress/phase-07.md); release target in Phase 09 (INF-PERF-03) | done |
+| INF-SRCH-06 | Ctrl+K palette opens exact note/tab without unsaved edit loss | 07 | E | e2e/palette.spec › open with pending edit; e2e/search.spec › pinned and favorite notes | done |
 | INF-PORT-01 | Backup: consistent snapshot including WAL data, referenced attachments, manifest with hashes | 08 | I | integration/backup.test › WAL content present | planned |
 | INF-PORT-02 | Restore with preflight, staging and rollback; failed restore leaves data usable | 08 | I,E | integration/restore.test › failure rollback | planned |
 | INF-PORT-03 | Import rejects traversal, symlinks, oversized, bombs and unsupported schema | 08 | I | integration/import-security.test | planned |

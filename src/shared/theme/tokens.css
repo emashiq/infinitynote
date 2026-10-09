@@ -66,6 +66,7 @@
 :root {
   --rail-w: 52px;
   --header-h: 44px;
+  --header-border: 1px;
   --tabstrip-h: 36px;
   --panel-w: 300px;
 }

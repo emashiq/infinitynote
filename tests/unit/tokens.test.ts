@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const css = fs.readFileSync('src/renderer/styles/tokens.css', 'utf8');
+const css = fs.readFileSync('src/shared/theme/tokens.css', 'utf8');
 const spec = fs.readFileSync('docs/UX_SPEC.md', 'utf8');
 
 function block(selectorPattern: RegExp): string {

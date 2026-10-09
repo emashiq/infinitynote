@@ -67,6 +67,14 @@ export class AttachmentsRepo {
       .map((r) => r.attachment_id);
   }
 
+  isLinked(noteId: string, attachmentId: string): boolean {
+    return (
+      this.db
+        .prepare<[string, string], { found: number }>('SELECT 1 AS found FROM note_attachments WHERE note_id = ? AND attachment_id = ? LIMIT 1')
+        .get(noteId, attachmentId) !== undefined
+    );
+  }
+
   hasLinks(noteId: string): boolean {
     return this.db.prepare<[string], { found: number }>('SELECT 1 AS found FROM note_attachments WHERE note_id = ? LIMIT 1').get(noteId) !== undefined;
   }

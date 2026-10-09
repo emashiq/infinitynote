@@ -40,6 +40,13 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
     }
   }, [request, shown, controller.noteId, ui]);
   const findRequest = request?.target === 'noteFind' && request.noteId === controller.noteId ? request : null;
+  const referenceRequest = request?.target === 'noteReference' && request.noteId === controller.noteId ? request : null;
+  // A reference to this note may have brought the user here: offer to look for what they meant (INF-REF-06).
+  const searchButton = (
+    <button type="button" className="btn" onClick={() => ui.openPalette(state.title)}>
+      Search
+    </button>
+  );
 
   const report = (result: Promise<ActionResult>) => {
     void result.then((r) => {
@@ -79,6 +86,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
               Restore
             </button>
           ) : null}
+          {searchButton}
           <button type="button" className="btn" onClick={() => void tabs.close(tabId)}>
             Close tab
           </button>
@@ -93,6 +101,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         <h2 className="view-title">{state.status === 'missing' ? 'This note no longer exists' : 'This note could not be opened'}</h2>
         {state.message && state.status === 'error' ? <p className="muted">{state.message}</p> : null}
         <div className="button-row">
+          {state.status === 'missing' ? searchButton : null}
           <button type="button" className="btn" onClick={() => void tabs.close(tabId)}>
             Close tab
           </button>
@@ -163,6 +172,8 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         services={services.editor}
         findRequest={findRequest}
         onFindRequestHandled={() => ui.consumeFocus()}
+        referenceRequest={referenceRequest}
+        onReferenceRequestHandled={() => ui.consumeFocus()}
         editorRef={editorRef}
         onConvert={(target) => (target === 'plain' ? setDialog({ kind: 'convert' }) : report(controller.convert('rich')))}
         onOpenVersions={() => setDialog({ kind: 'versions' })}

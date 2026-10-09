@@ -30,6 +30,9 @@ import type { AutostartStateType, WidgetStateType } from '../../../../src/shared
 import { resolveLocal } from '../../../../src/shared/time/resolve';
 import type { WindowGetStateResponseType } from '../../../../src/shared/contracts/windows';
 import { extractPlainText } from '../../../../src/shared/text/plain-text';
+import { collectNoteRefs } from '../../../../src/shared/editor/doc-schema';
+import type { NotesPickResponseType } from '../../../../src/shared/contracts/references';
+import { textBlocksOf } from '../../../../src/shared/editor/text-blocks';
 import { textToDoc } from '../../../../src/shared/text/textarea-doc';
 import { buildPathIndex, pathOf } from '../../../../src/shared/tree/paths';
 
@@ -91,6 +94,9 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   /** Each importFromDialog call takes the next entry; an empty queue means canceled. */
   const dialogResults: AttachmentImportDialogResponseType[] = [];
   const shellCalls: string[] = [];
+  /** Attachment hand-offs the renderer asked for, as "open:<id>" or "show:<id>". */
+  const handoffs: string[] = [];
+  const noteTags = new Map<string, string[]>();
   const subscribers = new Map<string, Set<(payload: unknown) => void>>();
   const failures = new Map<string, Array<{ code: ErrorCode; message: string; details?: unknown }>>();
   const calls: Array<{ channel: string; req: unknown }> = [];
@@ -255,6 +261,76 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           return ok({ attachment: dto });
         }),
       importFromDialog: (req) => handle('attachment:importFromDialog', req, () => ok(dialogResults.shift() ?? { canceled: true, imported: [], rejected: [] })),
+      open: (req) =>
+        handle('attachment:open', req, () => {
+          handoffs.push(`open:${req.attachmentId}`);
+          return ok({ opened: true as const });
+        }),
+      showInFolder: (req) =>
+        handle('attachment:showInFolder', req, () => {
+          handoffs.push(`show:${req.attachmentId}`);
+          return ok({ shown: true as const });
+        }),
+    },
+    refs: {
+      list: (req) =>
+        handle('refs:list', req, () => {
+          const byId = new Map(notes.map((n) => [n.id, n]));
+          const outgoing = collectNoteRefs(byId.get(req.noteId)?.content).map((r) => {
+            const t = byId.get(r.targetNoteId);
+            const state = !t ? ('missing' as const) : t.deletedAt !== null ? ('trashed' as const) : ('ok' as const);
+            return { targetNoteId: r.targetNoteId, targetBlockId: r.targetBlockId, title: t?.title ?? r.label, path: [], state, trashBatchId: t?.batch ?? null, blockText: null };
+          });
+          const backlinks = liveNotes()
+            .filter((n) => n.id !== req.noteId)
+            .flatMap((n) =>
+              collectNoteRefs(n.content)
+                .filter((r) => r.targetNoteId === req.noteId)
+                .map((r) => ({ sourceNoteId: n.id, sourceBlockId: r.sourceBlockId, targetBlockId: r.targetBlockId, title: n.title, path: [], context: '' })),
+            );
+          return ok({ outgoing, backlinks });
+        }),
+    },
+    notes: {
+      pick: (req) =>
+        handle<NotesPickResponseType>('notes:pick', req, () => {
+          const n = notes.find((x) => x.id === req.noteId && x.deletedAt === null);
+          if (!n) return fail('NOT_FOUND', 'This note no longer exists');
+          if (n.format === 'plain') return ok({ format: 'plain' as const, blocks: [] });
+          const q = req.query.toLowerCase();
+          const blocks = textBlocksOf(n.content)
+            .filter((b) => b.text !== '' && b.text.toLowerCase().includes(q))
+            .map((b) => ({ blockId: b.id, kind: b.kind, text: b.text }));
+          return ok({ format: 'rich' as const, blocks });
+        }),
+    },
+    search: {
+      query: (req) =>
+        handle('search:query', req, () => {
+          const q = req.query.trim().toLowerCase();
+          if (!q) return ok({ results: [] });
+          const results = liveNotes()
+            .filter((n) => `${n.title} ${extractPlainText(n.format, n.content)}`.toLowerCase().includes(q))
+            .filter((n) => (req.tags ?? []).every((t) => (noteTags.get(n.id) ?? []).includes(t)))
+            .slice(0, req.limit ?? 50)
+            .map((n) => ({ note: summary(n), title: [{ text: n.title || 'Untitled', hit: false }], snippet: [{ text: extractPlainText(n.format, n.content).slice(0, 80), hit: false }] }));
+          return ok({ results });
+        }),
+    },
+    tags: {
+      list: (req) =>
+        handle('tags:list', req, () => {
+          if (req.noteId) return ok({ tags: (noteTags.get(req.noteId) ?? []).map((name) => ({ name, count: 1 })) });
+          const counts = new Map<string, number>();
+          for (const list of noteTags.values()) for (const name of list) counts.set(name, (counts.get(name) ?? 0) + 1);
+          return ok({ tags: [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => ({ name, count })) });
+        }),
+      set: (req) =>
+        handle('tags:set', req, () => {
+          const tags = [...new Set(req.tags)].sort();
+          noteTags.set(req.noteId, tags);
+          return ok({ tags });
+        }),
     },
     shell: {
       openExternal: (req) =>
@@ -869,7 +945,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     /** The sticky window state a note would have in main. */
     stickyState: (noteId: string) => stickyState(notes.find((n) => n.id === noteId)!),
     /** Direct access for arranging state in tests. */
-    data: { reminders: reminderData, windows: windowData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, heldElsewhere, settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
+    data: { reminders: reminderData, windows: windowData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, heldElsewhere, settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
   };
 }
 

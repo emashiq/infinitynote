@@ -287,7 +287,7 @@ test('page singletons', async () => {
   await railGo(page, 'Home');
   for (const label of ['Open Settings', 'Open Reminders', 'Open Stickies']) {
     await page.keyboard.press('Control+K');
-    await page.getByRole('combobox', { name: 'Type a command or note title' }).fill(label);
+    await page.getByRole('combobox', { name: 'Type a command or search notes' }).fill(label);
     await page.keyboard.press('Enter');
   }
   await expect.poll(() => tabLabels(page)).toEqual(['Home', 'Stickies', 'Reminders', 'Settings']);

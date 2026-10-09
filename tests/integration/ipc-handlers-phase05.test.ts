@@ -18,7 +18,7 @@ const app: AppHandlerDeps = {
   getCapabilities: () => {
     throw new Error('not used');
   },
-  shell: { openPath: async () => '', openExternal: async () => {} },
+  shell: { openPath: async () => '', openExternal: async () => {}, showItemInFolder: () => {} },
   dataDir: '/data',
   quit: () => {},
   flushed: () => false,

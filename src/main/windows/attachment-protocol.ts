@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { UUID_RE } from '../../shared/contracts/ids';
-import { isInside } from '../app-paths';
 import type { Db } from '../db/driver';
 import { AttachmentsRepo, type AttachmentRow } from '../db/repositories/attachments-repo';
+import { containedAttachmentFile } from '../services/attachment-files';
 import type { Logger } from '../services/logger';
 import { nullLogger } from '../services/logger';
 
@@ -26,18 +25,6 @@ export function createAttachmentHandler(options: {
 }): (request: Request) => Promise<Response> {
   const logger = options.logger ?? nullLogger;
   const repo = options.db ? new AttachmentsRepo(options.db) : null;
-  const root = path.join(options.dataDir, 'attachments');
-  let realRoot: string | null = null;
-
-  const containedFile = async (row: AttachmentRow): Promise<string | null> => {
-    const abs = path.resolve(options.dataDir, row.managed_relative_path);
-    if (!isInside(root, abs)) return null;
-    const stat = await fs.promises.lstat(abs);
-    if (stat.isSymbolicLink() || !stat.isFile()) return null;
-    realRoot ??= await fs.promises.realpath(root);
-    const real = await fs.promises.realpath(abs);
-    return isInside(realRoot, real) ? real : null;
-  };
 
   return async (request) => {
     if (request.method !== 'GET') return empty(405);
@@ -60,7 +47,7 @@ export function createAttachmentHandler(options: {
     if (row.kind !== 'image' || !IMAGE_MIME.has(row.mime)) return empty(404);
     let body: Buffer;
     try {
-      const file = await containedFile(row);
+      const file = await containedAttachmentFile(options.dataDir, row.managed_relative_path);
       if (!file) {
         logger.warn(`attachment: containment violation id=${id}`);
         return empty(404);

@@ -3,4 +3,6 @@ export interface ShellAdapter {
   openPath(path: string): Promise<string>;
   /** Opens an http(s) address in the default browser; callers validate it with parseExternalUrl first. */
   openExternal(url: string): Promise<void>;
+  /** Shows the file selected in the OS file manager (Electron shell.showItemInFolder); never launches it. */
+  showItemInFolder(path: string): void;
 }

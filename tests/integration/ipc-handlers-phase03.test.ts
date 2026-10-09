@@ -29,6 +29,7 @@ async function setup() {
       openExternal: async (url) => {
         opened.push(url);
       },
+      showItemInFolder: () => {},
     },
     dataDir: '/data',
     quit: () => {},
@@ -195,7 +196,7 @@ describe('Phase 03 IPC handlers (D-052)', () => {
       getCapabilities: () => {
         throw new Error('not used');
       },
-      shell: { openPath: async () => '', openExternal: async () => {} },
+      shell: { openPath: async () => '', openExternal: async () => {}, showItemInFolder: () => {} },
       dataDir: '/data',
       quit: () => {},
       flushed: () => false,

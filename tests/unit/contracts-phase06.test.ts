@@ -21,9 +21,8 @@ const source = { blockId: B, text: 'tomorrow end of the day', spanStart: 23, spa
 const input = { title: 'Have to submit this', zoneId: 'Asia/Dhaka', date: '2026-10-09', time: '17:00', recurrence: null, followup: null };
 
 describe('Phase 06 catalogue (D-089)', () => {
-  it('the four channels are appended after autostart:set in order: 71 invoke channels, no new event', () => {
-    expect(INVOKE_CHANNELS.slice(66)).toEqual(['autostart:set', 'reminder:createFromSuggestion', 'reminder:updateFromSource', 'suggestion:dismiss', 'suggestion:listDismissed']);
-    expect(INVOKE_CHANNELS).toHaveLength(71);
+  it('the four channels are appended after autostart:set in order, no new event', () => {
+    expect(INVOKE_CHANNELS.slice(66, 71)).toEqual(['autostart:set', 'reminder:createFromSuggestion', 'reminder:updateFromSource', 'suggestion:dismiss', 'suggestion:listDismissed']);
     expect(EVENT_CHANNELS).toHaveLength(12);
   });
 
@@ -36,7 +35,8 @@ describe('Phase 06 catalogue (D-089)', () => {
       expect(isChannelAllowed('sticky', channel), channel).toBe(false);
       expect(isChannelAllowed('main', channel), channel).toBe(true);
     }
-    expect(STICKY_ALLOWED_CHANNELS.size).toBe(35);
+    // 35 after Phase 06; Phase 07 adds attachment:open and attachment:showInFolder (D-098).
+    expect(STICKY_ALLOWED_CHANNELS.size).toBe(37);
     expect([...WIDGET_ALLOWED_CHANNELS]).toEqual([
       'app:getInfo',
       'app:quit',

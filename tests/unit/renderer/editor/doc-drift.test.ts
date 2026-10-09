@@ -46,12 +46,13 @@ describe('editor output and normalizeRichDoc stay in step (D-053)', () => {
     editor.commands.insertContentAt(editor.state.doc.content.size, [
       { type: 'image', attrs: { attachmentId: crypto.randomUUID(), alt: 'chart', size: 'small', width: 640, height: 480 } },
       { type: 'fileAttachment', attrs: { attachmentId: crypto.randomUUID(), name: 'report final.pdf', sizeBytes: 2048, mime: 'application/pdf' } },
+      { type: 'paragraph', content: [{ type: 'text', text: 'see ' }, { type: 'noteRef', attrs: { noteId: crypto.randomUUID(), blockId: crypto.randomUUID(), label: 'Design', excerpt: 'Goals' } }] },
       { type: 'paragraph', content: [{ type: 'text', text: 'বাংলা 😀 é' }] },
     ]);
 
     const json = editor.getJSON();
     const used = new Set(JSON.stringify(json).match(/"type":"[a-zA-Z]+"/g)!.map((t) => t.slice(8, -1)));
-    for (const type of ['heading', 'paragraph', 'bold', 'italic', 'strike', 'underline', 'code', 'link', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'blockquote', 'hardBreak', 'codeBlock', 'horizontalRule', 'image', 'fileAttachment']) {
+    for (const type of ['heading', 'paragraph', 'bold', 'italic', 'strike', 'underline', 'code', 'link', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'blockquote', 'hardBreak', 'codeBlock', 'horizontalRule', 'image', 'fileAttachment', 'noteRef']) {
       expect(used, type).toContain(type);
     }
     expect(JSON.stringify(json)).toContain('"checked":true');

@@ -43,7 +43,7 @@ export interface FakeView {
 /** What E2E specs read and set through `globalThis.__infinityTest` (app.evaluate). */
 export interface TestState {
   blockedRequests: string[];
-  shellCalls: Array<{ op: 'openPath'; path: string } | { op: 'openExternal'; url: string }>;
+  shellCalls: Array<{ op: 'openPath' | 'showItemInFolder'; path: string } | { op: 'openExternal'; url: string }>;
   /** Each file-dialog call takes the next entry; an empty queue means the user canceled. */
   dialogQueue: string[][];
   /** The next N `note:save` calls fail with INTERNAL. */
@@ -56,6 +56,8 @@ export interface TestState {
   closeChoices: CloseChoice[];
   /** The close questions that would have been shown. */
   closeDialogs: CloseDialogOptions[];
+  /** The caption-button overlay last applied to the main window (D-097). */
+  titleBarOverlay: { color?: string; symbolColor?: string; height?: number } | null;
   /** App-computed sticky placements (creation and display re-clamps). */
   stickyLog: StickyLayoutEntry[];
   /** Reads the database, so it resolves on a fresh macrotask (onFreshTask). */
@@ -198,6 +200,7 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     fakeView: null,
     closeChoices: [],
     closeDialogs: [],
+    titleBarOverlay: null,
     stickyLog: [],
     windows: async () => ({ main: null, stickies: [] }),
     listenerCounts: () => ({}),
@@ -222,6 +225,9 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
       },
       openExternal: async (url) => {
         state.shellCalls.push({ op: 'openExternal', url });
+      },
+      showItemInFolder: (p) => {
+        state.shellCalls.push({ op: 'showItemInFolder', path: p });
       },
     },
     dialog: {

@@ -7,9 +7,11 @@ import { BLOCK_ID_TYPES } from '../../shared/editor/doc-schema';
 import { parseExternalUrl } from '../../shared/url-policy';
 import { createBlockIdGuard, isPasteOrDrop } from './block-id-guard';
 import { createDocLimits } from './doc-limits';
-import { FileAttachment } from './file-attachment';
+import type { ReferenceHost } from './editor-services';
+import { FileAttachment, type FileActions } from './file-attachment';
 import { FindExtension } from './find';
 import { ManagedImage } from './managed-image';
+import { NoteRef } from './note-ref';
 import { ReminderChips } from './reminder-chips';
 import { SuggestionDecorations } from './suggestions';
 import { TaskToggle } from './task-toggle';
@@ -22,9 +24,15 @@ const newBlockId = () => crypto.randomUUID();
 
 /**
  * The rich-note schema (D-053): StarterKit, checklists, app image and file nodes, block IDs, find, size limits, the
- * reminder chips (D-080) and the reminder suggestion underlines (D-091); both are decorations only.
+ * reminder chips (D-080) and the reminder suggestion underlines (D-091); both are decorations only. Note references
+ * and file hand-off (D-098) act only where the window provides them.
  */
-export function richExtensions(deps: { uploader: AttachmentUploader; notify: (message: string) => void }): Extensions {
+export function richExtensions(deps: {
+  uploader: AttachmentUploader;
+  notify: (message: string) => void;
+  files: FileActions | null;
+  references: ReferenceHost | null;
+}): Extensions {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
@@ -43,7 +51,8 @@ export function richExtensions(deps: { uploader: AttachmentUploader; notify: (me
     TaskItem.configure({ nested: true }),
     TaskToggle,
     ManagedImage,
-    FileAttachment,
+    FileAttachment.configure({ files: deps.files }),
+    NoteRef.configure({ host: deps.references }),
     // Pasted and dropped slices already carry fresh IDs (BlockIdGuard); UniqueID's pass over them is quadratic (QA-2).
     UniqueID.configure({ types: [...BLOCK_ID_TYPES], generateID: newBlockId, filterTransaction: (tr) => !isPasteOrDrop(tr) }),
     createBlockIdGuard(newBlockId),

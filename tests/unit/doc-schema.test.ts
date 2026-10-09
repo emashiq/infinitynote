@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectAttachmentRefs, DocSchemaError, MAX_DOC_DEPTH, normalizeRichDoc } from '../../src/shared/editor/doc-schema';
+import { collectAttachmentRefs, collectNoteRefs, DocSchemaError, MAX_DOC_DEPTH, normalizeRichDoc } from '../../src/shared/editor/doc-schema';
 
 const ID1 = '11111111-1111-4111-8111-111111111111';
 const ID2 = '22222222-2222-4222-8222-222222222222';
@@ -12,22 +12,28 @@ function rejects(doc: unknown, message: RegExp): void {
   expect(() => normalizeRichDoc(doc)).toThrow(message);
 }
 
+/** A distinct block ID per call: a document never repeats one (INF-REF-07). */
+let seq = 0;
+const nextId = () => `33333333-3333-4333-8333-${(seq += 1).toString(16).padStart(12, '0')}`;
+
 describe('normalizeRichDoc (D-053)', () => {
   it('keeps every supported node, mark and attribute', () => {
+    const p = (...content: unknown[]) => ({ type: 'paragraph', attrs: { id: nextId() }, content });
+    const ref = { type: 'noteRef', attrs: { noteId: ATT, blockId: ID2, label: 'Design', excerpt: 'Goals' } };
     const doc = {
       type: 'doc',
       content: [
-        { type: 'heading', attrs: { id: ID1, level: 2 }, content: [text('Plan')] },
-        para(text('b', [{ type: 'bold' }, { type: 'italic' }, { type: 'strike' }, { type: 'underline' }]), text('c', [{ type: 'code' }])),
-        { type: 'paragraph', attrs: { id: ID2 }, content: [text('link', [{ type: 'link', attrs: { href: 'https://example.com/docs' } }]), { type: 'hardBreak' }] },
-        { type: 'bulletList', content: [{ type: 'listItem', attrs: { id: ID1 }, content: [para(text('one'))] }] },
-        { type: 'orderedList', attrs: { start: 3, type: null }, content: [{ type: 'listItem', attrs: { id: ID2 }, content: [para(text('two'))] }] },
-        { type: 'taskList', content: [{ type: 'taskItem', attrs: { id: ID1, checked: true }, content: [para(text('done'))] }] },
-        { type: 'codeBlock', attrs: { id: ID2, language: 'ts' }, content: [text('let a = 1;')] },
-        { type: 'blockquote', attrs: { id: ID1 }, content: [para(text('quote'))] },
+        { type: 'heading', attrs: { id: nextId(), level: 2 }, content: [text('Plan')] },
+        p(text('b', [{ type: 'bold' }, { type: 'italic' }, { type: 'strike' }, { type: 'underline' }]), text('c', [{ type: 'code' }])),
+        p(text('link', [{ type: 'link', attrs: { href: 'https://example.com/docs' } }]), { type: 'hardBreak' }, ref),
+        { type: 'bulletList', content: [{ type: 'listItem', attrs: { id: nextId() }, content: [p(text('one'))] }] },
+        { type: 'orderedList', attrs: { start: 3, type: null }, content: [{ type: 'listItem', attrs: { id: nextId() }, content: [p(text('two'))] }] },
+        { type: 'taskList', content: [{ type: 'taskItem', attrs: { id: nextId(), checked: true }, content: [p(text('done'))] }] },
+        { type: 'codeBlock', attrs: { id: nextId(), language: 'ts' }, content: [text('let a = 1;')] },
+        { type: 'blockquote', attrs: { id: nextId() }, content: [p(text('quote'))] },
         { type: 'horizontalRule' },
-        { type: 'image', attrs: { id: ID2, attachmentId: ATT, alt: 'chart', size: 'full', width: 800, height: 200 } },
-        { type: 'fileAttachment', attrs: { id: ID1, attachmentId: ATT, name: 'report.pdf', sizeBytes: 1234, mime: 'application/pdf' } },
+        { type: 'image', attrs: { id: nextId(), attachmentId: ATT, alt: 'chart', size: 'full', width: 800, height: 200 } },
+        { type: 'fileAttachment', attrs: { id: nextId(), attachmentId: ATT, name: 'report.pdf', sizeBytes: 1234, mime: 'application/pdf' } },
       ],
     };
     expect(normalizeRichDoc(doc)).toEqual(doc);
@@ -126,5 +132,45 @@ describe('collectAttachmentRefs', () => {
       { attachmentId: ID2, blockId: null },
     ]);
     expect(collectAttachmentRefs(null)).toEqual([]);
+  });
+});
+
+describe('note references in documents (INF-REF-02, INF-REF-07, D-098)', () => {
+  const ref = (attrs: Record<string, unknown>) => ({ type: 'noteRef', attrs });
+
+  it('keeps reference IDs, cuts long labels and refuses a reference without a note', () => {
+    const out = normalizeRichDoc({
+      type: 'doc',
+      content: [para(ref({ noteId: ATT, blockId: 'not-a-uuid', label: 'x'.repeat(201), excerpt: 'e'.repeat(81), extra: 1 }))],
+    });
+    expect(out.content).toEqual([{ type: 'paragraph', attrs: { id: ID1 }, content: [{ type: 'noteRef', attrs: { noteId: ATT, blockId: null, label: '', excerpt: null } }] }]);
+    rejects({ type: 'doc', content: [para(ref({ noteId: 'nope' }))] }, /Reference without a note/);
+    rejects({ type: 'doc', content: [ref({ noteId: ATT })] }, /not allowed here/);
+    rejects({ type: 'doc', content: [{ type: 'codeBlock', content: [ref({ noteId: ATT })] }] }, /not allowed here/);
+  });
+
+  it('a repeated block ID keeps only its first occurrence, so a copy never aliases the original block', () => {
+    const out = normalizeRichDoc({
+      type: 'doc',
+      content: [para(text('original')), para(text('pasted copy')), { type: 'bulletList', content: [{ type: 'listItem', attrs: { id: ID1 }, content: [{ type: 'paragraph', attrs: { id: ID2 }, content: [text('x')] }] }] }],
+    });
+    const ids = (out.content as Array<{ attrs?: { id?: string }; content?: unknown[] }>).map((n) => n.attrs?.id ?? null);
+    expect(ids).toEqual([ID1, null, null]);
+    expect(normalizeRichDoc(out)).toEqual(out);
+  });
+
+  it('collectNoteRefs lists references in order with the ID of the block that holds them', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        para(text('a'), ref({ noteId: ATT, blockId: null, label: 'A' })),
+        { type: 'bulletList', content: [{ type: 'listItem', attrs: { id: ID2 }, content: [{ type: 'paragraph', content: [ref({ noteId: ATT, blockId: ID1, label: 'B' })] }] }] },
+        { type: 'paragraph', content: [ref({ noteId: 'bad' })] },
+      ],
+    };
+    expect(collectNoteRefs(doc)).toEqual([
+      { sourceBlockId: ID1, targetNoteId: ATT, targetBlockId: null, label: 'A' },
+      { sourceBlockId: ID2, targetNoteId: ATT, targetBlockId: ID1, label: 'B' },
+    ]);
   });
 });

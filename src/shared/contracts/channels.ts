@@ -1,10 +1,13 @@
 import { z } from 'zod';
 import { AppFlushedRequest, AppFlushRequestEvent, AppInfo, Capabilities, ShellOpenExternalRequest, ShellOpenExternalResponse } from './app';
 import {
+  AttachmentHandoffRequest,
   AttachmentImportBytesRequest,
   AttachmentImportBytesResponse,
   AttachmentImportDialogRequest,
   AttachmentImportDialogResponse,
+  AttachmentOpenResponse,
+  AttachmentShowResponse,
 } from './attachments';
 import type { EventChannel, InvokeChannel } from './channel-names';
 import {
@@ -61,6 +64,9 @@ import {
   VersionsRestoreRequest,
 } from './notes';
 import { PaletteSearchRequest, PaletteSearchResponse } from './palette';
+import { NotesPickRequest, NotesPickResponse, RefsListRequest, RefsListResponse } from './references';
+import { SearchQueryRequest, SearchQueryResponse } from './search';
+import { TagsListRequest, TagsListResponse, TagsSetRequest, TagsSetResponse } from './tags';
 import {
   AppOpenRemindersEvent,
   OccurrenceIdRequest,
@@ -188,6 +194,13 @@ export const CHANNEL_SCHEMAS = {
   'reminder:updateFromSource': { request: ReminderUpdateFromSourceRequest, response: ReminderDto },
   'suggestion:dismiss': { request: SuggestionDismissRequest, response: SuggestionDismissResponse },
   'suggestion:listDismissed': { request: SuggestionListDismissedRequest, response: SuggestionListDismissedResponse },
+  'refs:list': { request: RefsListRequest, response: RefsListResponse },
+  'notes:pick': { request: NotesPickRequest, response: NotesPickResponse },
+  'search:query': { request: SearchQueryRequest, response: SearchQueryResponse },
+  'tags:list': { request: TagsListRequest, response: TagsListResponse },
+  'tags:set': { request: TagsSetRequest, response: TagsSetResponse },
+  'attachment:open': { request: AttachmentHandoffRequest, response: AttachmentOpenResponse },
+  'attachment:showInFolder': { request: AttachmentHandoffRequest, response: AttachmentShowResponse },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {

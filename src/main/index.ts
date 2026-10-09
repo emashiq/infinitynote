@@ -143,6 +143,9 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     return outcome;
   };
   const dialog = hooks ? hooks.dialog : createElectronDialogAdapter();
+  const shellAdapter: ShellAdapter = hooks
+    ? hooks.shell
+    : { openPath: (p) => shell.openPath(p), openExternal: (url) => shell.openExternal(url), showItemInFolder: (p) => shell.showItemInFolder(p) };
   // The reminder subsystem's seams (D-084): a frozen clock, a fixed computer zone and fake notifications under the hooks.
   const seams = hooks?.reminderSeams;
   const reminderClock = seams?.clock ?? systemClock;
@@ -160,6 +163,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       logger: log,
       dataDir: paths.dataDir,
       dialog,
+      shell: shellAdapter,
       onSettingsChanged: (payload) => {
         if (payload.key === 'appearance.theme') applyNativeTheme(payload.value);
         eventBus.broadcast('settings:changed', payload);
@@ -216,7 +220,6 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     startup,
   });
 
-  const shellAdapter: ShellAdapter = hooks ? hooks.shell : { openPath: (p) => shell.openPath(p), openExternal: (url) => shell.openExternal(url) };
   const router = createIpcRouter({
     ipcMain,
     senderPolicy: createSenderPolicy({ registry, devOrigin }),
@@ -237,6 +240,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       registry,
       logger: log,
       devUrl: devUrl ? `${devUrl}${devUrl.endsWith('/') ? '' : '/'}` : null,
+      onTitleBarOverlay: hooks ? (overlay) => (hooks.state.titleBarOverlay = overlay) : undefined,
     },
     onStickyLayout: hooks ? (entry) => hooks.state.stickyLog.push(entry) : undefined,
     // Started once the startup windows are back, so an overdue alert at startup has a window to fall back to.

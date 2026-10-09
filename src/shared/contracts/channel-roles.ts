@@ -8,7 +8,8 @@ import type { WindowRoleType } from './windows';
  * also confirm suggestions and add reminders by hand for its note: the zone list, `reminder:create`,
  * `reminder:createFromSuggestion` and the dismissal channels. Editing a reminder (`reminder:update`,
  * `reminder:updateFromSource`, `reminder:delete`) stays in the main window. The router allows a `noteId` only for the
- * sticky's own note. Everything else (tabs, the tree, trash, creation, moves, settings writes) is main-window only.
+ * sticky's own note. From Phase 07 (D-098) it may open or show its note's attached files. Everything else (tabs, the
+ * tree, trash, creation, moves, settings writes, references, search and tags) is main-window only.
  */
 export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<InvokeChannel>([
   'app:getInfo',
@@ -46,6 +47,8 @@ export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<Invok
   'reminder:createFromSuggestion',
   'suggestion:dismiss',
   'suggestion:listDismissed',
+  'attachment:open',
+  'attachment:showInFolder',
 ]);
 
 /**

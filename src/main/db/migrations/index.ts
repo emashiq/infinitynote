@@ -4,6 +4,7 @@ import trashReanchoredSql from './003_trash_reanchored.sql?raw';
 import windowStateSql from './004_window_state.sql?raw';
 import remindersSql from './005_reminders.sql?raw';
 import reminderSourcesSql from './006_reminder_sources.sql?raw';
+import referencesTagsSql from './007_references_tags.sql?raw';
 
 export interface Migration {
   version: number;
@@ -18,6 +19,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 4, name: 'window_state', sql: windowStateSql },
   { version: 5, name: 'reminders', sql: remindersSql },
   { version: 6, name: 'reminder_sources', sql: reminderSourcesSql },
+  { version: 7, name: 'references_tags', sql: referencesTagsSql },
 ];
 
 export const LATEST = MIGRATIONS[MIGRATIONS.length - 1]!.version;

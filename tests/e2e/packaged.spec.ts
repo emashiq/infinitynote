@@ -21,7 +21,7 @@ test('packaged app starts, reports diagnostics and persists the theme @packaged'
   });
   expect(info?.isPackaged).toBe(true);
   expect(info?.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
-  expect(info?.schemaVersion).toBe(6);
+  expect(info?.schemaVersion).toBe(7);
   expect(info?.startup).toEqual({ status: 'ok' });
 
   await railGo(page, 'Settings');

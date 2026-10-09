@@ -170,7 +170,7 @@ describe('Phase 02 shell (smoke)', () => {
     const palette = el.ownerDocument.querySelector('dialog[aria-label="Command palette"]');
     expect(palette).not.toBeNull();
     const input = palette!.querySelector('input[role="combobox"]') as HTMLInputElement;
-    expect(input.getAttribute('aria-label')).toBe('Type a command or note title');
+    expect(input.getAttribute('aria-label')).toBe('Type a command or search notes');
     expect(palette!.textContent).toContain('New note');
     await typeInto(input, 'zzzz');
     expect(palette!.textContent).toContain('No matches');

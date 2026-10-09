@@ -25,6 +25,8 @@ export interface InfinityBridge {
   readonly attachment: {
     importBytes: Call<'attachment:importBytes'>;
     importFromDialog: Call<'attachment:importFromDialog'>;
+    open: Call<'attachment:open'>;
+    showInFolder: Call<'attachment:showInFolder'>;
   };
   readonly settings: {
     get(req: { keys: PublicSettingKey[] }): Res<{ values: Partial<{ [K in PublicSettingKey]: SettingValue<K> }> }>;
@@ -90,6 +92,19 @@ export interface InfinityBridge {
   };
   readonly palette: {
     searchTitles: Call<'palette:searchTitles'>;
+  };
+  readonly refs: {
+    list: Call<'refs:list'>;
+  };
+  readonly notes: {
+    pick: Call<'notes:pick'>;
+  };
+  readonly search: {
+    query: Call<'search:query'>;
+  };
+  readonly tags: {
+    list: Call<'tags:list'>;
+    set: Call<'tags:set'>;
   };
   readonly sticky: {
     float: Call<'sticky:float'>;

@@ -48,7 +48,7 @@ export function Shell() {
         <TabPanel />
         <Notices />
       </main>
-      {panelDocked ? <ContextPanel /> : null}
+      {panelDocked ? <ContextPanel onClose={() => layout.togglePanel()} /> : null}
       {state.treeMode === 'drawer' && state.treeDrawerOpen ? (
         <Drawer side="left" label="Notes" onClose={() => layout.closeDrawers()}>
           <TreePane />

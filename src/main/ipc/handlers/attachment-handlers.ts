@@ -1,4 +1,5 @@
 import { DOCUMENT_MAX_MB_RANGE, maxBytes } from '../../../shared/attachments/limits';
+import type { AttachmentHandoff } from '../../services/attachment-handoff';
 import type { AttachmentService } from '../../services/attachment-service';
 import { jsonByteLength, type IpcRouter } from '../router';
 
@@ -14,10 +15,12 @@ export function measureImport(payload: unknown): number {
   return bytes + jsonByteLength(p && typeof p === 'object' ? { ...p, bytes: null } : p);
 }
 
-export function registerAttachmentHandlers(router: IpcRouter, attachments: () => AttachmentService): void {
+export function registerAttachmentHandlers(router: IpcRouter, attachments: () => AttachmentService, handoff: () => AttachmentHandoff): void {
   router.register('attachment:importBytes', (req) => attachments().importBytes(req), {
     maxPayloadBytes: IMPORT_MAX_PAYLOAD_BYTES,
     measurePayload: measureImport,
   });
   router.register('attachment:importFromDialog', (req, ctx) => attachments().importFromDialog(req.kind, ctx));
+  router.register('attachment:open', (req) => handoff().open(req.noteId, req.attachmentId));
+  router.register('attachment:showInFolder', (req) => handoff().showInFolder(req.noteId, req.attachmentId));
 }

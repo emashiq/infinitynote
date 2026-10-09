@@ -20,7 +20,7 @@ interface PmNode {
   type?: unknown;
   text?: unknown;
   content?: unknown;
-  attrs?: { name?: unknown } | null;
+  attrs?: { name?: unknown; label?: unknown } | null;
 }
 
 function endsWithNewline(out: string[]): boolean {
@@ -37,6 +37,11 @@ function walk(node: unknown, depth: number, out: string[]): void {
   }
   if (n.type === 'hardBreak') {
     out.push('\n');
+    return;
+  }
+  // A note reference reads as the title it showed when inserted (search and conversion keep it as text).
+  if (n.type === 'noteRef') {
+    if (typeof n.attrs?.label === 'string') out.push(n.attrs.label);
     return;
   }
   const isBlock = typeof n.type === 'string' && BLOCK_NODES.has(n.type);

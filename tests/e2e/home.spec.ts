@@ -12,7 +12,7 @@ test('one Home tab after relaunch', async () => {
   await railGo(page, 'Home');
   await railGo(page, 'Home');
   await page.keyboard.press('Control+K');
-  await page.getByRole('combobox', { name: 'Type a command or note title' }).fill('Go to Home');
+  await page.getByRole('combobox', { name: 'Type a command or search notes' }).fill('Go to Home');
   await page.keyboard.press('Enter');
   await expect(homeTab(page)).toHaveCount(1);
   await h.stop();

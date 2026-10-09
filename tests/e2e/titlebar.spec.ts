@@ -97,3 +97,25 @@ test('frameless sticky and widget: the header is the drag region and × closes t
   await pressClosing(w.getByRole('button', { name: 'Hide widget' }));
   await expect.poll(() => app.windows().filter((p) => !p.isClosed() && p.url().endsWith('#/widget')).length).toBe(0);
 });
+
+test('the caption-button overlay matches the bar in each theme and stops above its bottom border (D-097)', async () => {
+  const { app, page } = await h.start();
+  await page.locator('#app-shell[data-ready="true"]').waitFor();
+  const hex = (rgb: string) => `#${rgb.match(/\d+/g)!.slice(0, 3).map((n) => Number(n).toString(16).padStart(2, '0')).join('')}`;
+  const bar = async () => {
+    const s = await page.locator('.app-header').evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { bg: cs.backgroundColor, fg: cs.color, height: el.getBoundingClientRect().height, border: parseFloat(cs.borderBottomWidth) };
+    });
+    return { color: hex(s.bg), symbolColor: hex(s.fg), height: s.height - s.border };
+  };
+  const applied = () => app.evaluate(() => globalThis.__infinityTest!.titleBarOverlay);
+  for (const theme of ['dark', 'light', 'dark'] as const) {
+    await page.evaluate((t) => window.infinity.settings.set({ key: 'appearance.theme', value: t }), theme);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const expected = await bar();
+    expect(expected.color, theme).toBe(theme === 'dark' ? '#17181d' : '#ffffff');
+    await expect.poll(applied, { message: theme }).toEqual(expected);
+  }
+  expect((await bar()).height).toBe(43);
+});

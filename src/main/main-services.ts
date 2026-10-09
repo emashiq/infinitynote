@@ -4,6 +4,7 @@ import type { ReminderChangedEventType } from '../shared/contracts/reminders';
 import type { SettingsChangedPayload } from '../shared/contracts/settings';
 import type { Db } from './db/driver';
 import { SettingsRepo } from './db/repositories/settings-repo';
+import { AttachmentHandoff } from './services/attachment-handoff';
 import { AttachmentService } from './services/attachment-service';
 import type { Clock } from './services/clock';
 import { ContentIndexer } from './services/content-indexer';
@@ -20,12 +21,16 @@ import { NoteContent } from './services/note-content';
 import { NoteReader } from './services/note-reader';
 import { NoteWriter, type SaveFaults } from './services/note-writer';
 import { PaletteService } from './services/palette-service';
+import { ReferenceService } from './services/reference-service';
 import { ReminderAnchors } from './services/reminder-anchors';
 import { ReminderService } from './services/reminder-service';
+import { SearchService } from './services/search-service';
 import { SessionService } from './services/session-service';
+import type { ShellAdapter } from './services/shell-adapter';
 import { SettingsService } from './services/settings-service';
 import { StickyService } from './services/sticky-service';
 import { SuggestionService } from './services/suggestion-service';
+import { TagService } from './services/tag-service';
 import type { SystemZoneProvider } from './services/system-zone';
 import { WidgetStateStore } from './services/widget-state';
 import { TrashService } from './services/trash-service';
@@ -46,6 +51,10 @@ export interface MainServices {
   drafts: DraftService;
   formats: FormatService;
   attachments: AttachmentService;
+  handoff: AttachmentHandoff;
+  references: ReferenceService;
+  search: SearchService;
+  tags: TagService;
   stickies: StickyService;
   reminders: ReminderService;
   suggestions: SuggestionService;
@@ -62,6 +71,8 @@ export interface MainServicesDeps {
   /** `<userData>/data` (attachments live under it). */
   dataDir: string;
   dialog: Pick<DialogAdapter, 'showOpenFiles'>;
+  /** Opens attached files and shows them in the file manager (a recording fake under test hooks). */
+  shell: ShellAdapter;
   onSettingsChanged: (payload: SettingsChangedPayload) => void;
   onTreeChanged: (event: TreeChangedEventType) => void;
   onNoteRevision: (event: NoteRevisionEventType) => void;
@@ -116,6 +127,10 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     suggestions: new SuggestionService({ db, clock: reminderClock, logger, reminders }),
     sessions: new SessionService(db, settings, clock),
     palette: new PaletteService(db),
+    references: new ReferenceService(db),
+    search: new SearchService(db),
+    tags: new TagService(db, logger),
+    handoff: new AttachmentHandoff(db, { dataDir: deps.dataDir, shell: deps.shell, logger }),
     reader: new NoteReader(db),
     writer: new NoteWriter({ db, leases, clock, ids, logger, content, versions, emit: onNoteRevision, faults: deps.testFaults?.save }),
     leases,

@@ -3,16 +3,30 @@ import { ReactNodeViewRenderer } from '@tiptap/react';
 import { UUID_RE } from '../../shared/contracts/ids';
 import { FileChipView } from './FileChipView';
 
+/** Opening an attached file through main's validated OS hand-off (INF-REF-08). */
+export interface FileActions {
+  open(attachmentId: string): void;
+  showInFolder(attachmentId: string): void;
+}
+
+export interface FileAttachmentOptions {
+  files: FileActions | null;
+}
+
 /**
- * A managed document shown as a chip (INF-EDIT-14). Only the attachment ID and display facts are stored; the
- * file is never opened in Phase 03 (Phase 07 adds the OS hand-off).
+ * A managed document shown as a chip (INF-EDIT-14). Only the attachment ID and display facts are stored; the chip
+ * offers Open and Show in folder, which main validates (D-098).
  */
-export const FileAttachment = Node.create({
+export const FileAttachment = Node.create<FileAttachmentOptions>({
   name: 'fileAttachment',
   group: 'block',
   atom: true,
   draggable: true,
   selectable: true,
+
+  addOptions() {
+    return { files: null };
+  },
 
   addAttributes() {
     return {

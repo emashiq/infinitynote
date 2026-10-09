@@ -1,5 +1,3 @@
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useState } from 'react';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
 import { updateRequestFromText } from '../editor/suggestion-requests';
 import { useLiveNote } from '../notes/live-note';
@@ -10,26 +8,17 @@ import { BLOCK_REMOVED } from '../reminders/ReminderChipBar';
 import { ReminderBadges } from '../reminders/ReminderRow';
 import { SnoozeButton } from '../reminders/SnoozeMenu';
 import { useServices, useStore } from '../state/use-store';
+import { PanelSection } from './PanelSection';
 
 /**
  * The active note's reminders in the context panel (plan section 9.10): add, Done, Snooze, Edit, Delete, re-anchor, and
  * for a reminder whose source text changed, Update from text or Keep current time (Phase 06, D-092).
  */
 export function RemindersSection({ controller }: { controller: NoteController | null }) {
-  const [open, setOpen] = useState(true);
-  const Chevron = open ? ChevronDown : ChevronRight;
   return (
-    <section className="info-section reminders-section">
-      <h2 className="panel-heading">
-        <button type="button" className="disclosure" aria-expanded={open} aria-controls="reminders-body" onClick={() => setOpen(!open)}>
-          <Chevron size={14} strokeWidth={1.75} aria-hidden />
-          Reminders
-        </button>
-      </h2>
-      <div id="reminders-body" hidden={!open}>
-        {controller ? <NoteRemindersList controller={controller} /> : <p className="muted">Open a note to see its reminders</p>}
-      </div>
-    </section>
+    <PanelSection title="Reminders" className="reminders-section">
+      {controller ? <NoteRemindersList controller={controller} /> : <p className="muted">Open a note to see its reminders</p>}
+    </PanelSection>
   );
 }
 

@@ -108,7 +108,7 @@ test('bridge surface', async () => {
     const keys = (o: unknown) => Object.keys(o as object).sort();
     let subscribeError = '';
     try {
-      window.infinity.subscribe('refs:list' as never, () => {});
+      window.infinity.subscribe('note:trashed' as never, () => {});
     } catch (e) {
       subscribeError = (e as Error).message;
     }
@@ -140,17 +140,21 @@ test('bridge surface', async () => {
       'item',
       'lease',
       'note',
+      'notes',
       'occurrence',
       'palette',
       'project',
+      'refs',
       'reminder',
       'reminders',
+      'search',
       'session',
       'settings',
       'shell',
       'sticky',
       'subscribe',
       'suggestion',
+      'tags',
       'trash',
       'tree',
       'versions',
@@ -160,7 +164,7 @@ test('bridge surface', async () => {
     ],
     namespaces: {
       app: ['flushed', 'getInfo', 'quit', 'showDataFolder'],
-      attachment: ['importBytes', 'importFromDialog'],
+      attachment: ['importBytes', 'importFromDialog', 'open', 'showInFolder'],
       autostart: ['get', 'set'],
       capabilities: ['get'],
       drafts: ['list', 'resolve'],
@@ -169,16 +173,20 @@ test('bridge surface', async () => {
       item: ['setFavorite'],
       lease: ['acquire', 'release', 'take'],
       note: ['convertFormat', 'create', 'move', 'open', 'rename', 'save', 'setPinned', 'trash'],
+      notes: ['pick'],
       occurrence: ['complete', 'snooze'],
       palette: ['searchTitles'],
       project: ['create', 'rename', 'trash'],
+      refs: ['list'],
       reminder: ['create', 'createFromSuggestion', 'delete', 'listForNote', 'open', 'undoDelete', 'update', 'updateFromSource'],
       reminders: ['listView', 'summary'],
+      search: ['query'],
       session: ['get', 'set'],
       settings: ['get', 'set'],
       shell: ['openExternal'],
       sticky: ['dock', 'float', 'hide', 'remove', 'restore', 'setCollapsed', 'setColor', 'setPinned'],
       suggestion: ['dismiss', 'listDismissed'],
+      tags: ['list', 'set'],
       trash: ['list', 'purge', 'restore'],
       tree: ['list'],
       versions: ['list', 'restore'],

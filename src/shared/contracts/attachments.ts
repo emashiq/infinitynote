@@ -37,3 +37,14 @@ export const AttachmentImportDialogResponse = z.strictObject({
   rejected: z.array(RejectedFile).max(MAX_REJECTED_FILES),
 });
 export type AttachmentImportDialogResponseType = z.infer<typeof AttachmentImportDialogResponse>;
+
+/** Opening a stored file in its OS app, or showing it in the file manager (INF-REF-08). The note must link the file. */
+export const AttachmentHandoffRequest = z.strictObject({ noteId: Uuid, attachmentId: Uuid });
+export const AttachmentOpenResponse = z.strictObject({ opened: z.literal(true) });
+export const AttachmentShowResponse = z.strictObject({ shown: z.literal(true) });
+
+export const HANDOFF_MESSAGES = {
+  blocked: 'This kind of file is not opened from Infinity Notes. Use Show in folder.',
+  missing: 'This file is no longer available',
+  failed: 'This file could not be opened on this desktop',
+} as const;

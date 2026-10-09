@@ -12,6 +12,7 @@ import { registerHomeHandlers } from './handlers/home-handlers';
 import { registerNoteHandlers } from './handlers/note-handlers';
 import { registerPaletteHandlers } from './handlers/palette-handlers';
 import { registerReminderHandlers } from './handlers/reminder-handlers';
+import { registerRetrievalHandlers } from './handlers/retrieval-handlers';
 import { registerSessionHandlers } from './handlers/session-handlers';
 import { registerSettingsHandlers } from './handlers/settings-handlers';
 import { registerStickyHandlers } from './handlers/sticky-handlers';
@@ -54,7 +55,8 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
   registerPaletteHandlers(router, use('palette'));
   registerNoteHandlers(router, { reader: use('reader'), writer: use('writer'), leases: use('leases'), formats: use('formats') });
   registerContentHandlers(router, { versions: use('versions'), drafts: use('drafts') });
-  registerAttachmentHandlers(router, use('attachments'));
+  registerAttachmentHandlers(router, use('attachments'), use('handoff'));
+  registerRetrievalHandlers(router, { references: use('references'), search: use('search'), tags: use('tags') });
   registerStickyHandlers(router, stickies);
   registerWindowHandlers(router, {
     mainWindow: desktop.mainWindow,

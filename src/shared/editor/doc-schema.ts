@@ -34,10 +34,13 @@ export const IMAGE_SIZES = ['small', 'medium', 'full'] as const;
 export type ImageSize = (typeof IMAGE_SIZES)[number];
 
 export const MAX_DOC_DEPTH = 64;
+/** Longest stored reference label (the target's title) and block excerpt of a noteRef node. */
+export const MAX_REF_LABEL = 200;
+export const MAX_REF_EXCERPT = 80;
 export const MAX_DOC_NODES = 100_000;
 
 const BLOCK = ['paragraph', 'heading', 'codeBlock', 'blockquote', 'bulletList', 'orderedList', 'taskList', 'horizontalRule', 'image', 'fileAttachment'];
-const INLINE = ['text', 'hardBreak'];
+const INLINE = ['text', 'hardBreak', 'noteRef'];
 
 /** Allowed child types per node type; an empty list is a leaf. */
 const CHILDREN: Record<string, readonly string[]> = {
@@ -53,6 +56,7 @@ const CHILDREN: Record<string, readonly string[]> = {
   taskItem: BLOCK,
   horizontalRule: [],
   hardBreak: [],
+  noteRef: [],
   image: [],
   fileAttachment: [],
   text: [],
@@ -98,6 +102,15 @@ function nodeAttrs(type: string, raw: Json): Json {
       const dim = (v: unknown) => (intIn(v, 1, 100_000) ? v : null);
       return { id, attachmentId: raw.attachmentId, alt: shortString(raw.alt, 500), size, width: dim(raw.width), height: dim(raw.height) };
     }
+    case 'noteRef': {
+      if (!isUuid(raw.noteId)) throw new DocSchemaError('Reference without a note');
+      return {
+        noteId: raw.noteId,
+        blockId: isUuid(raw.blockId) ? raw.blockId : null,
+        label: shortString(raw.label, MAX_REF_LABEL) ?? '',
+        excerpt: shortString(raw.excerpt, MAX_REF_EXCERPT),
+      };
+    }
     case 'fileAttachment': {
       if (!isUuid(raw.attachmentId)) throw new DocSchemaError('File without an attachment');
       if (typeof raw.name !== 'string' || raw.name.length < 1 || raw.name.length > 255) throw new DocSchemaError('File name is invalid');
@@ -139,9 +152,12 @@ function normalizeMarks(raw: unknown): RichMark[] | undefined {
 /**
  * Validates and normalizes a rich document. Throws DocSchemaError for an unknown node or mark type, a node in a
  * place the schema does not allow, a missing required attribute, depth over 64 or more than 100,000 nodes.
+ * A block ID that already appeared earlier in the document is dropped, so copied content never aliases a block
+ * (INF-REF-07); the editor gives the block a fresh ID when the note is next opened.
  */
 export function normalizeRichDoc(doc: unknown): RichDocLike {
   let count = 0;
+  const seenIds = new Set<string>();
 
   const visit = (raw: unknown, depth: number, allowed: readonly string[]): RichNode | null => {
     if (!isObject(raw) || typeof raw.type !== 'string') throw new DocSchemaError('Node without a type');
@@ -160,7 +176,12 @@ export function normalizeRichDoc(doc: unknown): RichDocLike {
       return marks ? { type, text: raw.text, marks } : { type, text: raw.text };
     }
     const node: RichNode = { type };
-    const attrs = withoutUndefined(nodeAttrs(type, isObject(raw.attrs) ? raw.attrs : {}));
+    const known = nodeAttrs(type, isObject(raw.attrs) ? raw.attrs : {});
+    if (typeof known.id === 'string') {
+      if (seenIds.has(known.id)) known.id = undefined;
+      else seenIds.add(known.id);
+    }
+    const attrs = withoutUndefined(known);
     if (attrs) node.attrs = attrs;
     const content = visitContent(raw.content, depth, children);
     if (content) node.content = content;
@@ -217,4 +238,32 @@ export function collectBlockIds(doc: unknown): Set<string> {
     if ((BLOCK_ID_TYPES as readonly unknown[]).includes(node.type) && isObject(node.attrs) && isUuid(node.attrs.id)) ids.add(node.attrs.id);
   });
   return ids;
+}
+
+export interface NoteRefLink {
+  /** The block holding the reference (its paragraph or heading), or null when it has no ID yet. */
+  sourceBlockId: string | null;
+  targetNoteId: string;
+  targetBlockId: string | null;
+  label: string;
+}
+
+/** Every note reference in a document, in document order, with the ID of the block that holds it. */
+export function collectNoteRefs(doc: unknown): NoteRefLink[] {
+  const refs: NoteRefLink[] = [];
+  const walk = (node: unknown, depth: number, blockId: string | null): void => {
+    if (!isObject(node) || depth > MAX_DOC_DEPTH) return;
+    const attrs = isObject(node.attrs) ? node.attrs : {};
+    if (node.type === 'noteRef') {
+      if (isUuid(attrs.noteId)) {
+        const label = typeof attrs.label === 'string' ? attrs.label.slice(0, MAX_REF_LABEL) : '';
+        refs.push({ sourceBlockId: blockId, targetNoteId: attrs.noteId, targetBlockId: isUuid(attrs.blockId) ? attrs.blockId : null, label });
+      }
+      return;
+    }
+    const own = (BLOCK_ID_TYPES as readonly unknown[]).includes(node.type) && isUuid(attrs.id) ? attrs.id : blockId;
+    if (Array.isArray(node.content)) for (const child of node.content) walk(child, depth + 1, own);
+  };
+  walk(doc, 0, null);
+  return refs;
 }

@@ -54,13 +54,16 @@ describe('import boundaries', () => {
     expect(files.filter((f) => /\buseEditor\(/.test(f.text)).map((f) => f.file)).toEqual(['editor/NoteEditor.tsx']);
   });
 
-  it('the preload surface and router expose no Phase 07 channels', async () => {
+  it('the preload surface and router expose the Phase 07 channels and nothing outside the catalogue (D-098)', async () => {
     const fs = await import('node:fs');
     const preload = fs.readFileSync('src/preload/index.ts', 'utf8');
     expect(preload).toContain("call('sticky:float')");
     expect(preload).toContain("call('reminder:create')");
     expect(preload).toContain("call('reminder:createFromSuggestion')");
-    expect(preload).not.toMatch(/refs:list|search:query|notes:pick|attachment:open|attachment:showInFolder|tags:list|tags:set|note:trashed/);
+    for (const name of ['refs:list', 'notes:pick', 'search:query', 'tags:list', 'tags:set', 'attachment:open', 'attachment:showInFolder']) {
+      expect(preload).toContain(`call('${name}')`);
+    }
+    expect(preload).not.toMatch(/note:trashed|sticky:removeSticky|attachment:importImageBytes/);
     expect(preload).not.toMatch(/exposeInMainWorld\('(?!infinity')/);
     const ipcSources = fs
       .readdirSync('src/main/ipc', { recursive: true, encoding: 'utf8' })
@@ -71,7 +74,9 @@ describe('import boundaries', () => {
     expect(ipcSources).toContain("router.register('sticky:float'");
     expect(ipcSources).toContain("router.register('reminder:create'");
     expect(ipcSources).toContain("router.register('suggestion:listDismissed'");
-    expect(ipcSources).not.toMatch(/'(refs:list|search:query|notes:pick|attachment:open|attachment:showInFolder|tags:list|tags:set|note:trashed)'/);
+    expect(ipcSources).toContain("router.register('refs:list'");
+    expect(ipcSources).toContain("router.register('attachment:open'");
+    expect(ipcSources).not.toMatch(/'(note:trashed|sticky:removeSticky|attachment:importImageBytes)'/);
   });
 
   it('no hard-coded reminder zone (INF-REM-02, D-079): no Asia/Dhaka literal, UTC only as the disclosed fallback', async () => {

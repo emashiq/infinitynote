@@ -38,6 +38,8 @@ export interface ContentSource {
 
 /** The controller side the editor talks to; implemented by NoteController. */
 export interface EditorHost {
+  /** The note the editor shows (attached files are opened on its behalf). */
+  readonly noteId: string;
   attachSource(source: ContentSource): void;
   detachSource(source: ContentSource): void;
   markDirty(): void;

@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: { alias: moduleAliases(__dirname) },
   test: {
+    // Main reads the design tokens as raw text (D-097); Vitest returns other CSS as empty modules.
+    css: { include: [/shared[\\/]theme[\\/]tokens\.css/] },
     projects: [
       {
         extends: true,

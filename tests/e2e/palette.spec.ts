@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { useApp } from './harness';
-import { createFolder, createNote, createProject, reloadUi } from './seed';
-import { activeTabLabel, dialogByName, primaryNav, tabs } from './ui';
+import { editorText, focusEditorEnd } from './editor-ui';
+import { COMMON, createFolder, createNote, createProject, reloadUi } from './seed';
+import { activeTabLabel, dialogByName, openByPalette, primaryNav, tabs } from './ui';
 
 const h = useApp();
 
@@ -20,7 +21,7 @@ test('actions and titles', async () => {
   await page.keyboard.press('Control+K');
   const palette = dialogByName(page, 'Command palette');
   await expect(palette).toBeVisible();
-  const input = palette.getByRole('combobox', { name: 'Type a command or note title' });
+  const input = palette.getByRole('combobox', { name: 'Type a command or search notes' });
   await expect(input).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(palette).toHaveCount(0);
@@ -64,4 +65,33 @@ test('actions and titles', async () => {
   await page.keyboard.press('Enter');
   await expect(palette).toHaveCount(0);
   await expect(tabs(page)).toHaveCount(2);
+});
+
+test('open with pending edit: the palette opens the exact note tab and no typed text is lost (INF-SRCH-06)', async () => {
+  const { page } = await h.start();
+  const alpha = await createNote(page, COMMON, 'Alpha note');
+  await createNote(page, COMMON, 'Beta note');
+  await reloadUi(page);
+  await openByPalette(page, 'Alpha note');
+  await focusEditorEnd(page);
+  // Typed and switched away at once, before the lazy save runs.
+  await page.keyboard.insertText('unsaved words');
+  await page.keyboard.press('Control+K');
+  const palette = dialogByName(page, 'Command palette');
+  const input = palette.getByRole('combobox', { name: 'Type a command or search notes' });
+  await input.fill('Beta note');
+  await expect(palette.getByRole('option').filter({ hasText: 'Beta note' })).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => activeTabLabel(page)).toBe('Beta note');
+  await expect.poll(() => h.one<{ plain_text: string }>('SELECT plain_text FROM notes WHERE id = ?', alpha)!.plain_text).toBe('unsaved words');
+
+  // Full-text: a word of the body finds the note; Enter activates its existing tab, with the text in place.
+  await page.keyboard.press('Control+K');
+  await input.fill('unsaved');
+  const hit = palette.getByRole('option').filter({ hasText: 'Alpha note' });
+  await expect(hit.locator('mark')).toHaveText(['unsaved']);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => activeTabLabel(page)).toBe('Alpha note');
+  await expect(tabs(page)).toHaveCount(3);
+  expect(await editorText(page)).toBe('unsaved words');
 });

@@ -49,3 +49,13 @@ export function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'gif', 'webp']);
+
+/**
+ * Whether a stored file may be handed to the OS to open (INF-REF-08): only the known document types and the app's
+ * image types. Anything else (programs, scripts, shortcuts, unknown types) is never launched; Show in folder still works.
+ */
+export function isOpenableExtension(ext: string): boolean {
+  return Object.hasOwn(DOCUMENT_MIME, ext) || IMAGE_EXTENSIONS.has(ext);
+}

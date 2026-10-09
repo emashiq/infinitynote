@@ -54,7 +54,7 @@ test('db diagnostics', async () => {
   expect(info).not.toBeNull();
   expect(info!.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
   expect(info!.sqlite!.version).toMatch(/^3\.\d+\.\d+$/);
-  expect(info!.schemaVersion).toBe(6);
+  expect(info!.schemaVersion).toBe(7);
   expect(info!.startup).toEqual({ status: 'ok' });
   expect(info!.isPackaged).toBe(false);
   expect(info!.versions.electron).toBe('44.7.0');

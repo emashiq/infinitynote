@@ -71,6 +71,13 @@ export const INVOKE_CHANNELS = [
   'reminder:updateFromSource',
   'suggestion:dismiss',
   'suggestion:listDismissed',
+  'refs:list',
+  'notes:pick',
+  'search:query',
+  'tags:list',
+  'tags:set',
+  'attachment:open',
+  'attachment:showInFolder',
 ] as const;
 
 export const EVENT_CHANNELS = [

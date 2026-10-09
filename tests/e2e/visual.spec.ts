@@ -90,7 +90,7 @@ test('tab overflow and context menu', async () => {
   await reloadUi(page);
   await page.keyboard.press('Control+K');
   for (let i = 0; i < 14; i += 1) {
-    await page.getByRole('combobox', { name: 'Type a command or note title' }).fill(`Overflow note ${String(i + 1).padStart(2, "0")}`);
+    await page.getByRole('combobox', { name: 'Type a command or search notes' }).fill(`Overflow note ${String(i + 1).padStart(2, "0")}`);
     await expect(page.getByRole('option', { name: new RegExp(`Overflow note ${String(i + 1).padStart(2, '0')}`) }).first()).toBeVisible();
     await page.keyboard.press('Enter');
     await expect(tabItem(page, `Overflow note ${String(i + 1).padStart(2, "0")}`)).toBeVisible();

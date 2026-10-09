@@ -2,7 +2,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { appArgs, appEnv, appExecutable, readMainLog, spawnAndWait } from './fixtures';
 import { useApp } from './harness';
 import { COMMON, createFolder, createNote, createProject, reloadUi, saveText } from './seed';
-import { activate, chooseMenu, confirmDialog, dialogByName, openFromTree, railGo, tabs, titleInput, treeByKey } from './ui';
+import { activate, chooseMenu, confirmDialog, dialogByName, openByPalette, openFromTree, railGo, tabs, titleInput, treeByKey } from './ui';
 import { editor, editorText, paletteAction } from './editor-ui';
 import {
   closeWindowByUrl,
@@ -735,4 +735,35 @@ test('windows hook stays safe while windows close (F04-A2)', async () => {
   expect(polls).toBeGreaterThan(100);
   expect(noteRow(id).plain_text.endsWith(' r14')).toBe(true);
   expect(draftCount()).toBe(0);
+});
+
+test('quick sticky scope: Ctrl+Shift+N files the sticky where the user works, with no project question (INF-REF-09)', async () => {
+  const { app, page } = await h.start();
+  const alpha = await createProject(page, 'Alpha');
+  const plans = await createFolder(page, { projectId: alpha, parentId: null }, 'Plans');
+  const inPlans = await createNote(page, { projectId: alpha, folderId: plans }, 'Roadmap');
+  await reloadUi(page);
+  const created = (known: string[]) =>
+    h.one<{ id: string; project_id: string | null; folder_id: string | null; sticky_enabled: number }>(
+      `SELECT id, project_id, folder_id, sticky_enabled FROM notes WHERE id NOT IN (${known.map(() => '?').join(', ')})`,
+      ...known,
+    );
+
+  // From an open note in Alpha › Plans: the sticky inherits that folder.
+  await openByPalette(page, 'Roadmap');
+  await expect(tabs(page).filter({ hasText: 'Roadmap' })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Control+Shift+N');
+  await expect.poll(() => created([inPlans])?.id ?? null).not.toBeNull();
+  const first = created([inPlans])!;
+  expect(first).toMatchObject({ project_id: alpha, folder_id: plans, sticky_enabled: 1 });
+  await stickyPage(app, first.id);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  // From Home with the All scope: the Common root, still without asking.
+  await page.bringToFront();
+  await railGo(page, 'Home');
+  await page.keyboard.press('Control+Shift+N');
+  await expect.poll(() => created([inPlans, first.id])?.id ?? null).not.toBeNull();
+  expect(created([inPlans, first.id])).toMatchObject({ project_id: null, folder_id: null, sticky_enabled: 1 });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });

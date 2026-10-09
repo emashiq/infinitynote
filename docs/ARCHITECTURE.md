@@ -63,7 +63,7 @@ Catalogue (later phase plans may add channels but must update this list):
 | 04 | `sticky:float\|dock\|hide\|setColor\|setPinned\|setCollapsed\|remove\|restore`, `window:getState` (D-063) | `sticky:state` (one sticky window only; carries the trash state, so `note:trashed` is not added); `app:openNote` (main window only; moved from 05 by D-063) |
 | 05 | `zones:list`, `reminder:create\|update\|delete\|undoDelete\|listForNote\|open`, `reminders:listView\|summary`, `occurrence:complete\|snooze`, `widget:show\|hide\|setPinned\|setCollapsed`, `autostart:get\|set` (moved from 08, D-082); `reminder:listView` of the Phase 00 list is named `reminders:listView` (D-074) | `reminder:changed`, `reminder:alert`, `widget:state`, `app:openReminders`; notification clicks reuse `app:openNote` from 04, which gains `blockId`; the main window's `window:getState` answer carries `openReminders` and the widget state (D-086) |
 | 06 | `reminder:createFromSuggestion`, `reminder:updateFromSource`, `suggestion:dismiss\|listDismissed` (appended in this order; 71 invoke channels; `listDismissed` also returns main's `asOf`, computer zone and default zone, D-089); `ReminderDto` gains `source` | none added; `reminder:changed {anchor}` also covers source-state changes |
-| 07 | `refs:list`, `search:query`, `notes:pick`, `attachment:open\|showInFolder`, `tags:list\|set` (`shell:openExternal` moved to 03, D-052) | |
+| 07 | `refs:list`, `search:query`, `notes:pick`, `attachment:open\|showInFolder`, `tags:list\|set` (`shell:openExternal` moved to 03, D-052; contracts in D-098; stickies get the two attachment channels for their own note) | |
 | 08 | `backup:create\|restore`, `export:markdown\|portable`, `import:portable`, `shortcut:setGlobal` (`autostart:set` moved to 05, D-082) | |
 
 Test-only hooks (fake clock control, captured notifications, simulated notification click) exist only when `!app.isPackaged && process.env.INFINITY_NOTES_E2E === '1'`. Every hook that reads or writes the database resolves on a fresh macrotask (D-084, F04-A2).
@@ -221,11 +221,11 @@ Phase 06 implementation (D-090 to D-093):
 
 ## 11. Search
 
-FTS5 table with tokenizer `unicode61 remove_diacritics 2 categories 'L* N* Co M*'` (D-029), prefix queries, title substring fallback for 1-2 character queries, results capped at 50, query debounce 150 ms. Snippets are built from text with highlight markers, never raw HTML. Index updates inside the same transaction as the note write, and on move, trash and restore.
+FTS5 table with tokenizer `unicode61 remove_diacritics 2 categories 'L* N* Co M*'` (D-029), prefix queries, title substring fallback for 1-2 character queries, results capped at 50, query debounce 150 ms. Snippets are built from text with highlight markers, never raw HTML: main returns `{text, hit}` segments and the renderer renders text nodes (D-098). Each word is a quoted prefix term, so FTS operators in user text are never interpreted. Index updates inside the same transaction as the note write, and on move, trash and restore.
 
 ## 12. References
 
-References are ID-based (`note_references`) with a target title snapshot for missing-target display and optional block IDs. Plain-text notes support note-level references and note-level reminders only in V1, never character offsets. Renaming or moving a target preserves links; a missing or trashed target shows a clear state with Restore or Search and never silently redirects. Pasted and duplicated content never aliases block IDs.
+References are ID-based (`note_references`) with a target title snapshot for missing-target display and optional block IDs. Plain-text notes support note-level references and note-level reminders only in V1, never character offsets. Renaming or moving a target preserves links; a missing or trashed target shows a clear state with Restore or Search and never silently redirects. Pasted and duplicated content never aliases block IDs: the editor gives pasted blocks fresh IDs and `normalizeRichDoc` drops a repeated block ID. References are rich-text `noteRef` nodes indexed in the save transaction; a purged target keeps its last title through a trigger (D-098).
 
 ## 13. Backup, restore and export
 

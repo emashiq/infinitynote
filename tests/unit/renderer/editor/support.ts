@@ -41,7 +41,7 @@ export function makeEditor(opts: { format?: 'rich' | 'plain'; content?: Content;
   document.body.appendChild(element);
   const editor = new Editor({
     element,
-    extensions: format === 'rich' ? richExtensions({ uploader, notify: (m) => notices.push(m) }) : plainExtensions(),
+    extensions: format === 'rich' ? richExtensions({ uploader, notify: (m) => notices.push(m), files: null, references: null }) : plainExtensions(),
     content: opts.content ?? null,
     enableContentCheck: true,
     editorProps: createPasteProps({ format, uploader, notify: (m) => notices.push(m), flushPending: opts.flushPending ?? (async () => {}) }),

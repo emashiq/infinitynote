@@ -6,6 +6,7 @@ export type CommandId =
   | 'note.new'
   | 'note.newPlain'
   | 'note.find'
+  | 'note.insertReference'
   | 'note.float'
   | 'sticky.new'
   | 'project.new'
@@ -97,6 +98,11 @@ export function createCommandRunner(
           // Only a note tab has a find bar (D-058).
           const noteId = activeNoteId();
           if (noteId) ui.requestFocus({ target: 'noteFind', noteId });
+          return;
+        }
+        case 'note.insertReference': {
+          const noteId = activeNoteId();
+          if (noteId) ui.requestFocus({ target: 'noteReference', noteId });
           return;
         }
         case 'note.float': {

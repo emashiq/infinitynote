@@ -23,6 +23,8 @@ export interface ToolbarActions {
   addReminder?: () => void;
   /** More "Create reminder from text" (rich and plain notes, tabs and stickies; D-091). */
   createFromText?: () => void;
+  /** More "Link to note…" (rich notes in the main window; D-098). */
+  insertReference?: () => void;
 }
 
 /** The reminder items of the More menu. */
@@ -138,6 +140,7 @@ export function Toolbar({ editor, format, editable, actions }: { editor: Editor;
   const moreItems: MenuItem[] = [
     { id: 'code', label: 'Inline code', checked: s.code, disabled: off, onSelect: run(() => editor.chain().focus().toggleCode().run()) },
     { id: 'attach', label: 'Attach file', disabled: off, onSelect: () => actions.insertAttachment('document') },
+    ...(actions.insertReference ? [{ id: 'reference', label: 'Link to note…', disabled: off, onSelect: actions.insertReference }] : []),
     { id: 'find', label: 'Find in note', onSelect: actions.openFind },
     { id: 'convert', label: 'Convert to plain text…', disabled: off, onSelect: () => actions.convert('plain') },
     { id: 'versions', label: 'Version history…', onSelect: actions.openVersions },
