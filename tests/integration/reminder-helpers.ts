@@ -5,6 +5,7 @@ import { createFakeClock, type FakeClock } from '../../src/main/services/clock';
 import { capabilityGate, createFakeNotificationAdapter } from '../../src/main/services/notification-adapter';
 import { createFakePowerEvents } from '../../src/main/services/power-events';
 import { ReminderScheduler, type SchedulerTestHooks } from '../../src/main/services/reminder-scheduler';
+import type { TestDb } from './helpers';
 import { setupServices } from './hierarchy-helpers';
 
 /** The reference instant of the Phase 05 tests: 2026-10-08 13:00 in Asia/Dhaka (plan section 12.1). */
@@ -37,16 +38,20 @@ export function reminderInput(noteId: string, over: Partial<ReminderCreateReques
 }
 
 /** The production services at T0 with the computer zone Asia/Dhaka, plus an editable note helper. */
-export async function setupReminders(opts: { now?: number; zone?: string | null } = {}) {
-  const s = await setupServices({ clock: createFakeClock(opts.now ?? T0), zone: opts.zone });
+export async function setupReminders(opts: { now?: number; zone?: string | null; testDb?: TestDb } = {}) {
+  const s = await setupServices({ clock: createFakeClock(opts.now ?? T0), zone: opts.zone, testDb: opts.testDb });
 
   /** A note this test edits through the real save path (lease, writer, conversions and version restores). */
   function editable(title: string, format: 'rich' | 'plain' = 'rich') {
-    const note = s.hierarchy.createNote({ projectId: null, folderId: null }, false, title, format).note;
+    return edit(s.hierarchy.createNote({ projectId: null, folderId: null }, false, title, format).note);
+  }
+
+  /** Takes the lease of a stored note (after a restart, for example) to edit it like editable() does. */
+  function edit<N extends { id: string }>(note: N) {
     const viewId = randomUUID();
     const lease = s.leases.acquire(note.id, viewId, WC);
     if (!lease.granted) throw new Error('lease');
-    let revision = 0;
+    let revision = s.row<{ revision: number }>('SELECT revision FROM notes WHERE id = ?', note.id)!.revision;
     const op = () => ({ noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision: revision, requestId: randomUUID() });
     return {
       note,
@@ -73,7 +78,7 @@ export async function setupReminders(opts: { now?: number; zone?: string | null 
       'SELECT id, due_at_utc, state, next_alert_at_utc, original_local_date_time, completed_at FROM occurrences WHERE reminder_id = ? ORDER BY due_at_utc',
       reminderId,
     );
-  return { ...s, editable, count, occurrences };
+  return { ...s, editable, edit, count, occurrences };
 }
 
 /**
@@ -114,6 +119,7 @@ export interface SchedulerOptions {
   zone?: string | null;
   capability?: CapabilityStatusType;
   testHooks?: SchedulerTestHooks;
+  testDb?: TestDb;
 }
 
 /**
@@ -121,7 +127,7 @@ export interface SchedulerOptions {
  * driven by the frozen clock. Reminder writes wake the scheduler like main does.
  */
 export async function setupScheduler(opts: SchedulerOptions = {}) {
-  const s = await setupReminders({ now: opts.now, zone: opts.zone });
+  const s = await setupReminders({ now: opts.now, zone: opts.zone, testDb: opts.testDb });
   const clock = s.clock as FakeClock;
   const timers = manualTimers(clock);
   const adapter = createFakeNotificationAdapter(clock, timers);

@@ -7,13 +7,24 @@ import { Switch } from '../ui/Switch';
 export const FULLY_QUIT_TEXT =
   'Reminders only fire while Infinity Notes is running: with a window open, in the background or in the tray. After you quit, nothing is sent until you start the app again, and then overdue reminders are shown.';
 export const NO_NOTIFICATIONS_TEXT = 'This desktop has no notification service. Reminders appear inside Infinity Notes and in the reminder widget instead.';
+export const ENGLISH_ONLY_TEXT = 'Suggestions understand English dates and times only. Your text is read on this computer and is not sent anywhere.';
 
 type Values = {
   defaultZone: SettingValue<'reminders.defaultZone'>;
   followup: SettingValue<'reminders.followupDefault'>;
   quiet: SettingValue<'reminders.quietHours'>;
+  suggest: SettingValue<'reminders.suggestFromText'>;
+  endOfDay: SettingValue<'reminders.endOfDayTime'>;
+  dateOnly: SettingValue<'reminders.dateOnlyTime'>;
 };
-const KEYS = { defaultZone: 'reminders.defaultZone', followup: 'reminders.followupDefault', quiet: 'reminders.quietHours' } as const;
+const KEYS = {
+  defaultZone: 'reminders.defaultZone',
+  followup: 'reminders.followupDefault',
+  quiet: 'reminders.quietHours',
+  suggest: 'reminders.suggestFromText',
+  endOfDay: 'reminders.endOfDayTime',
+  dateOnly: 'reminders.dateOnlyTime',
+} as const;
 
 function Select({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (v: string) => void }) {
   const id = useId();
@@ -45,7 +56,10 @@ function TimeField({ label, value, onChange }: { label: string; value: string; o
   );
 }
 
-/** Settings > Reminders (D-083): default zone, follow-up defaults, quiet hours and what happens when the app is quit. */
+/**
+ * Settings > Reminders (D-083, D-094): default zone, follow-up defaults, quiet hours, what happens when the app is quit,
+ * and the reminder suggestions from note text with their default times.
+ */
 export function ReminderSettings({ notificationsSupported }: { notificationsSupported: boolean }) {
   const { bridge, notices } = useServices();
   const [zones, setZones] = useState<ZonesListResponseType | null>(null);
@@ -67,6 +81,9 @@ export function ReminderSettings({ notificationsSupported }: { notificationsSupp
         defaultZone: (v[KEYS.defaultZone] as Values['defaultZone'] | undefined) ?? null,
         followup: (v[KEYS.followup] as Values['followup'] | undefined) ?? SETTINGS[KEYS.followup].default,
         quiet: (v[KEYS.quiet] as Values['quiet'] | undefined) ?? SETTINGS[KEYS.quiet].default,
+        suggest: (v[KEYS.suggest] as Values['suggest'] | undefined) ?? SETTINGS[KEYS.suggest].default,
+        endOfDay: (v[KEYS.endOfDay] as Values['endOfDay'] | undefined) ?? SETTINGS[KEYS.endOfDay].default,
+        dateOnly: (v[KEYS.dateOnly] as Values['dateOnly'] | undefined) ?? SETTINGS[KEYS.dateOnly].default,
       });
     });
     const off = bridge.subscribe('settings:changed', ({ key, value }: SettingsChangedPayload) => apply(key, value));
@@ -134,6 +151,33 @@ export function ReminderSettings({ notificationsSupported }: { notificationsSupp
       ) : null}
       <p className="muted">{FULLY_QUIT_TEXT}</p>
       {notificationsSupported ? null : <p className="muted">{NO_NOTIFICATIONS_TEXT}</p>}
+      <Switch
+        label="Suggest reminders from dates in notes"
+        checked={values.suggest}
+        onChange={(suggest) => {
+          setValues({ ...values, suggest });
+          save(bridge.settings.set({ key: KEYS.suggest, value: suggest }));
+        }}
+      />
+      <div className="form-row">
+        <TimeField
+          label="End of day"
+          value={values.endOfDay}
+          onChange={(endOfDay) => {
+            setValues({ ...values, endOfDay });
+            save(bridge.settings.set({ key: KEYS.endOfDay, value: endOfDay }));
+          }}
+        />
+        <TimeField
+          label="Time for date-only phrases"
+          value={values.dateOnly}
+          onChange={(dateOnly) => {
+            setValues({ ...values, dateOnly });
+            save(bridge.settings.set({ key: KEYS.dateOnly, value: dateOnly }));
+          }}
+        />
+      </div>
+      <p className="muted">{ENGLISH_ONLY_TEXT}</p>
     </>
   );
 }

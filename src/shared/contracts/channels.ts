@@ -83,6 +83,15 @@ import {
 } from './reminders';
 import { SessionGetResponse, SessionSetRequest, SessionSetResponse } from './session';
 import {
+  ReminderCreateFromSuggestionRequest,
+  ReminderCreateFromSuggestionResponse,
+  ReminderUpdateFromSourceRequest,
+  SuggestionDismissRequest,
+  SuggestionDismissResponse,
+  SuggestionListDismissedRequest,
+  SuggestionListDismissedResponse,
+} from './suggestions';
+import {
   StickyFloatResponse,
   StickyNoteRequest,
   StickySetCollapsedRequest,
@@ -175,6 +184,10 @@ export const CHANNEL_SCHEMAS = {
   'widget:setCollapsed': { request: WidgetSetCollapsedRequest, response: WidgetState },
   'autostart:get': { request: Empty, response: AutostartState },
   'autostart:set': { request: AutostartSetRequest, response: AutostartState },
+  'reminder:createFromSuggestion': { request: ReminderCreateFromSuggestionRequest, response: ReminderCreateFromSuggestionResponse },
+  'reminder:updateFromSource': { request: ReminderUpdateFromSourceRequest, response: ReminderDto },
+  'suggestion:dismiss': { request: SuggestionDismissRequest, response: SuggestionDismissResponse },
+  'suggestion:listDismissed': { request: SuggestionListDismissedRequest, response: SuggestionListDismissedResponse },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {

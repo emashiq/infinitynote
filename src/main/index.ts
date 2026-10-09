@@ -18,7 +18,6 @@ import { registerIpcHandlers } from './ipc/register-handlers';
 import { createIpcRouter } from './ipc/router';
 import { createSenderPolicy } from './ipc/sender-policy';
 import { createMainServices, type MainServices } from './main-services';
-import { buildMenu } from './menu';
 import { errorMessage } from './services/app-error';
 import { createAutostartControl, createXdgAutostart, type AutostartAdapter } from './services/autostart';
 import { applyCapabilityOverride, collectCapabilityInputs, detectCapabilities, type CapabilityInputs } from './services/capabilities';
@@ -193,6 +192,12 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     void services.attachments.sweepTmp(systemClock.now()).then((removed) => {
       if (removed > 0) log.info(`attachments: removed ${removed} stale temporary file(s)`);
     });
+    // Housekeeping only: a failure (already logged by the transaction) must not stop the app from starting.
+    try {
+      services.suggestions.pruneDismissals();
+    } catch {
+      log.warn('suggestions: pruning dismissals failed');
+    }
   }
 
   const startup: StartupStateType = opened.ok ? { status: 'ok' } : { status: 'error', code: opened.code };
@@ -291,7 +296,8 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   });
   hooks?.attachDesktop({ desktop: windowsSide, registry, services, inspector: createElectronInspector() });
 
-  Menu.setApplicationMenu(buildMenu(isPackaged));
+  // No OS menu bar: the main window draws its own File, View and Help menus (D-097).
+  Menu.setApplicationMenu(null);
   windowsSide.start();
 
   app.on('will-quit', () => {

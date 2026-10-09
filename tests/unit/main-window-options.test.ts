@@ -1,17 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('electron', () => ({ BrowserWindow: class {} }));
+vi.mock('electron', () => ({ BrowserWindow: class {}, nativeTheme: {} }));
 
-const { mainWindowOptions } = await import('../../src/main/windows/main-window');
+const { mainWindowOptions, TITLE_BAR_HEIGHT } = await import('../../src/main/windows/main-window');
 
 describe('mainWindowOptions (INF-SHELL-06)', () => {
   const opts = mainWindowOptions({ preloadPath: '/p/preload.js', iconPath: '/i/icon.png', platform: 'linux' });
 
-  it('uses the native frame and menu bar behaviour', () => {
+  it('has no OS title bar: the app draws it and the OS draws the caption buttons over it in the theme colors (D-097)', () => {
     expect(opts).not.toHaveProperty('frame');
-    expect(opts).not.toHaveProperty('titleBarStyle');
     expect(opts).not.toHaveProperty('transparent');
-    expect(opts.autoHideMenuBar).toBe(true);
+    expect(opts).not.toHaveProperty('autoHideMenuBar');
+    expect(opts.titleBarStyle).toBe('hidden');
+    expect(TITLE_BAR_HEIGHT).toBe(44);
+    expect(opts.titleBarOverlay).toEqual({ color: '#ffffff', symbolColor: '#1d2030', height: 44 });
+    expect(mainWindowOptions({ preloadPath: 'x', iconPath: 'y', dark: true }).titleBarOverlay).toEqual({ color: '#17181d', symbolColor: '#e7e8ee', height: 44 });
   });
 
   it('keeps the sizes and the secure web preferences', () => {

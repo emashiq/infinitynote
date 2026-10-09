@@ -6,7 +6,7 @@ import { rendererUrl, secureWebPreferences, trackWindow } from './secure-window'
 import type { StickyWindowFactory, StickyWindowSpec } from './sticky-manager';
 
 /**
- * Pure description of a sticky window (D-070): native frame, the shared hardened preferences, the sticky color as
+ * Pure description of a sticky window (D-070, D-097): frameless (its header is the title bar), the shared hardened preferences, the sticky color as
  * background (no white flash), a position only where it was computed, and always-on-top only where allowed.
  */
 export function stickyWindowOptions(spec: StickyWindowSpec & { preloadPath: string; iconPath: string; platform?: NodeJS.Platform }): BrowserWindowConstructorOptions {
@@ -19,7 +19,7 @@ export function stickyWindowOptions(spec: StickyWindowSpec & { preloadPath: stri
     minHeight: STICKY_MIN.height,
     show: false,
     title: spec.title,
-    autoHideMenuBar: true,
+    frame: false,
     fullscreenable: false,
     ...(spec.alwaysOnTop ? { alwaysOnTop: true } : {}),
     backgroundColor: spec.backgroundColor,

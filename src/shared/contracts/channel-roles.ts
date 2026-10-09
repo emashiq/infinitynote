@@ -4,8 +4,11 @@ import type { WindowRoleType } from './windows';
 /**
  * The channels a sticky window may call (plan section 6.4, D-064): its note's content, lease, versions, drafts and
  * attachments, links, settings reads, capabilities, the flush acknowledgment, quit, its window state and its own
- * sticky actions, and its note's reminders (listed, or opened in the main window; D-074).
- * Everything else (tabs, the tree, trash, creation, moves, settings writes) is main-window only.
+ * sticky actions, and its note's reminders (listed, or opened in the main window; D-074). From Phase 06 (D-089) it may
+ * also confirm suggestions and add reminders by hand for its note: the zone list, `reminder:create`,
+ * `reminder:createFromSuggestion` and the dismissal channels. Editing a reminder (`reminder:update`,
+ * `reminder:updateFromSource`, `reminder:delete`) stays in the main window. The router allows a `noteId` only for the
+ * sticky's own note. Everything else (tabs, the tree, trash, creation, moves, settings writes) is main-window only.
  */
 export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<InvokeChannel>([
   'app:getInfo',
@@ -38,6 +41,11 @@ export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<Invok
   'sticky:restore',
   'reminder:listForNote',
   'reminder:open',
+  'zones:list',
+  'reminder:create',
+  'reminder:createFromSuggestion',
+  'suggestion:dismiss',
+  'suggestion:listDismissed',
 ]);
 
 /**

@@ -52,7 +52,8 @@ test('copied blocks get new IDs (INF-EDIT-06)', async () => {
   await reloadUi(page);
   await openFromTree(page, id);
   const domIds = () => editor(page).locator('p').evaluateAll((ps) => ps.map((p) => p.getAttribute('data-id')));
-  await expect.poll(async () => (await domIds()).length).toBe(2);
+  // Both paragraphs exist and the editor's load-time ID pass has stamped them.
+  await expect.poll(async () => (await domIds()).filter((x) => x !== null).length).toBe(2);
   const original = await domIds();
   await editor(page).click();
   await page.keyboard.press('Control+A');

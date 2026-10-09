@@ -54,12 +54,13 @@ describe('import boundaries', () => {
     expect(files.filter((f) => /\buseEditor\(/.test(f.text)).map((f) => f.file)).toEqual(['editor/NoteEditor.tsx']);
   });
 
-  it('the preload surface and router expose no Phase 06 channels', async () => {
+  it('the preload surface and router expose no Phase 07 channels', async () => {
     const fs = await import('node:fs');
     const preload = fs.readFileSync('src/preload/index.ts', 'utf8');
     expect(preload).toContain("call('sticky:float')");
     expect(preload).toContain("call('reminder:create')");
-    expect(preload).not.toMatch(/reminder:createFromSuggestion|suggestion:dismiss|reminder:updateFromSource|note:trashed/);
+    expect(preload).toContain("call('reminder:createFromSuggestion')");
+    expect(preload).not.toMatch(/refs:list|search:query|notes:pick|attachment:open|attachment:showInFolder|tags:list|tags:set|note:trashed/);
     expect(preload).not.toMatch(/exposeInMainWorld\('(?!infinity')/);
     const ipcSources = fs
       .readdirSync('src/main/ipc', { recursive: true, encoding: 'utf8' })
@@ -69,7 +70,8 @@ describe('import boundaries', () => {
     // Positive control: the pattern below must be able to see how channels are registered.
     expect(ipcSources).toContain("router.register('sticky:float'");
     expect(ipcSources).toContain("router.register('reminder:create'");
-    expect(ipcSources).not.toMatch(/'(reminder:createFromSuggestion|suggestion:dismiss|reminder:updateFromSource|note:trashed)'/);
+    expect(ipcSources).toContain("router.register('suggestion:listDismissed'");
+    expect(ipcSources).not.toMatch(/'(refs:list|search:query|notes:pick|attachment:open|attachment:showInFolder|tags:list|tags:set|note:trashed)'/);
   });
 
   it('no hard-coded reminder zone (INF-REM-02, D-079): no Asia/Dhaka literal, UTC only as the disclosed fallback', async () => {
@@ -80,7 +82,29 @@ describe('import boundaries', () => {
       .map((f) => ({ file: f.replace(/\\/g, '/'), text: fs.readFileSync(`src/${f}`, 'utf8') }));
     const quoted = (zone: string) => new RegExp(`['"\`]${zone.replace('/', '\\/')}['"\`]`);
     expect(sources.filter((s) => quoted('UTC').test(s.text)).map((s) => s.file)).toEqual(['shared/time/zones.ts']);
-    for (const { file, text } of sources) expect(text, file).not.toMatch(quoted('Asia/Dhaka'));
+    for (const { file, text } of sources) {
+      // The abbreviation table names Asia/Dhaka only as the second suggestion for "BST", never as a default (D-096).
+      const checked = file === 'shared/nlp/abbreviations.ts' ? text.replace(/^ {2}BST: \[\['Europe\/London'\], \['Asia\/Dhaka'\]\],$/m, '') : text;
+      expect(checked, file).not.toMatch(quoted('Asia/Dhaka'));
+    }
+  });
+
+  it('natural-language parsing is local and English-only (INF-NLP-01, INF-NLP-14)', async () => {
+    const fs = await import('node:fs');
+    const read = (dir: string) =>
+      fs
+        .readdirSync(dir, { recursive: true, encoding: 'utf8' })
+        .filter((f) => /\.(ts|tsx)$/.test(f))
+        .map((f) => ({ file: `${dir}/${f.replace(/\\/g, '/')}`, text: fs.readFileSync(`${dir}/${f}`, 'utf8') }));
+    const chronoImports = read('src').flatMap(({ file, text }) => [...text.matchAll(/from '(chrono-node[^']*)'/g)].map((m) => `${file} ${m[1]}`));
+    expect(chronoImports).toEqual(['src/shared/nlp/parse.ts chrono-node/en']);
+    for (const { file, text } of read('src/main')) expect(text, file).not.toMatch(/chrono-node|nlp\/parse'/);
+    const nlp = read('src/shared/nlp');
+    expect(nlp.map((f) => f.file)).toEqual(expect.arrayContaining(['src/shared/nlp/parse.ts', 'src/shared/nlp/resolve-candidate.ts', 'src/shared/nlp/source-text.ts']));
+    const suggestionUi = read('src/renderer').filter((f) => /suggest|card-request/i.test(f.file));
+    for (const { file, text } of [...nlp, ...suggestionUi]) {
+      expect(text, file).not.toMatch(/\bfetch\(|XMLHttpRequest|WebSocket|from '(node:)?(https?|net)'/);
+    }
   });
 
   it('one scheduler timer (INF-SCHED-01): no per-reminder timers in the reminder modules', async () => {

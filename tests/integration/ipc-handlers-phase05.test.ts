@@ -77,7 +77,7 @@ describe('Phase 05 reminder channels (D-074)', () => {
     expect((await t.call('reminders:listView', { view: 'later' }, MAIN)).error?.code).toBe('VALIDATION_FAILED');
   });
 
-  it('a sticky lists and opens only its own note’s reminders; every other reminder channel is forbidden to it', async () => {
+  it('a sticky lists, opens and (from Phase 06, D-089) adds only its own note’s reminders; every other reminder channel is forbidden to it', async () => {
     const t = await setup();
     const mine = (await t.call('reminder:create', reminderInput(t.own.id), MAIN)).data;
     const theirs = (await t.call('reminder:create', reminderInput(t.other.id), MAIN)).data;
@@ -86,9 +86,10 @@ describe('Phase 05 reminder channels (D-074)', () => {
     expect(await t.call('reminder:open', { reminderId: mine.id }, STICKY)).toEqual({ ok: true, data: {} });
     expect(await t.call('reminder:open', { reminderId: theirs.id }, STICKY)).toEqual({ ok: false, error: { code: 'FORBIDDEN', message: 'Not allowed' } });
     expect(t.opened).toEqual([{ noteId: t.own.id, blockId: null }]);
+    expect(await t.call('zones:list', {}, STICKY)).toMatchObject({ ok: true, data: { systemZone: 'Asia/Dhaka', asOf: T0 } });
+    expect(await t.call('reminder:create', reminderInput(t.own.id, { title: 'From the sticky' }), STICKY)).toMatchObject({ ok: true, data: { noteId: t.own.id, title: 'From the sticky' } });
+    expect(await t.call('reminder:create', reminderInput(t.other.id, { title: 'Not mine' }), STICKY)).toEqual({ ok: false, error: { code: 'FORBIDDEN', message: 'Not allowed' } });
     const forbidden: Array<[string, unknown]> = [
-      ['zones:list', {}],
-      ['reminder:create', reminderInput(t.own.id)],
       ['reminder:update', updateRequest(mine.id, 1)],
       ['reminder:delete', { reminderId: mine.id }],
       ['reminder:undoDelete', { reminderId: mine.id }],
@@ -98,7 +99,11 @@ describe('Phase 05 reminder channels (D-074)', () => {
       ['occurrence:snooze', { occurrenceId: mine.current.occurrenceId, preset: 5 }],
     ];
     for (const [channel, payload] of forbidden) expect(await t.call(channel, payload, STICKY), channel).toEqual({ ok: false, error: { code: 'FORBIDDEN', message: 'Not allowed' } });
-    expect(t.s.count('reminders')).toBe(2);
+    expect(t.s.rows<{ note_id: string; title: string }>('SELECT note_id, title FROM reminders ORDER BY created_at, title')).toEqual(
+      expect.arrayContaining([{ note_id: t.own.id, title: 'From the sticky' }]),
+    );
+    expect(t.s.count('reminders')).toBe(3);
+    expect(t.s.rows('SELECT id FROM reminders WHERE title = ?', 'Not mine')).toEqual([]);
   });
 
   it('without storage every reminder channel answers INTERNAL "Storage is unavailable"', async () => {

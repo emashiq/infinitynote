@@ -285,3 +285,97 @@
 .dialog-hint {
   margin-right: auto;
 }
+
+/* Reminder suggestions (UX_SPEC sections 5 and 6, Phase 06) */
+
+.suggestion-card .source-phrase {
+  margin: 0 0 8px;
+}
+
+.suggestion-card .phrase {
+  font-style: italic;
+}
+
+.suggestion-card .choice-group,
+.suggestion-card .abbreviation-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+}
+
+.suggestion-card .choice-group legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.suggestion-card .abbreviation-choice p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.suggestion-card .date-line {
+  margin: -4px 0 4px;
+}
+
+.suggestion-card .disclosure {
+  margin: 0 0 8px;
+}
+
+/* Detected phrases: a dotted accent underline, decoration only (D-091). */
+.nlp-candidate {
+  text-decoration: underline dotted var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.nlp-candidate-choice {
+  text-decoration-color: var(--warning);
+}
+
+/* Overlays the bottom of the editor: no layout shift while typing. */
+.suggestion-bar {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  box-shadow: var(--shadow-popover);
+  font-size: 12px;
+}
+
+.suggestion-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A reminder whose source text changed (D-092): its chip and its panel row say so. */
+.reminder-chip-changed {
+  border-style: dashed;
+  border-color: var(--warning);
+}
+
+.source-changed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--warning);
+}

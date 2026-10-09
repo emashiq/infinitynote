@@ -13,6 +13,19 @@ export interface ChipInfo {
   state: 'pending' | 'overdue' | 'snoozed' | 'done';
   /** "Reminder: <title>, <primary due line>". */
   ariaLabel: string;
+  /** The text the reminder was created from changed (D-092): the chip says so. */
+  sourceChanged: boolean;
+}
+
+/** Added to the accessible name of a reminder whose source text changed (UX_SPEC section 6). */
+export const SOURCE_CHANGED_SUFFIX = ', its text changed';
+
+/** A chip's accessible name and classes, shared by in-text chips and the chip bar. */
+export function chipLook(chip: Pick<ChipInfo, 'state' | 'ariaLabel' | 'sourceChanged'>): { className: string; ariaLabel: string } {
+  return {
+    className: `reminder-chip reminder-chip-${chip.state}${chip.sourceChanged ? ' reminder-chip-changed' : ''}`,
+    ariaLabel: chip.sourceChanged ? `${chip.ariaLabel}${SOURCE_CHANGED_SUFFIX}` : chip.ariaLabel,
+  };
 }
 
 interface ChipsState {
@@ -50,10 +63,11 @@ function chipDom(chip: ChipInfo): HTMLElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.setAttribute('contenteditable', 'false');
-  button.className = `reminder-chip reminder-chip-${chip.state}`;
+  const look = chipLook(chip);
+  button.className = look.className;
   button.dataset.reminderId = chip.reminderId;
-  button.setAttribute('aria-label', chip.ariaLabel);
-  button.title = chip.ariaLabel;
+  button.setAttribute('aria-label', look.ariaLabel);
+  button.title = look.ariaLabel;
   button.append(bellIcon(), document.createTextNode(chip.label));
   button.addEventListener('mousedown', (e) => e.preventDefault());
   button.addEventListener('click', (e) => {
@@ -120,7 +134,7 @@ function buildDecorations(doc: PmNode, chips: readonly ChipInfo[], reveal: strin
         decorations.push(
           Decoration.widget(at, () => chipDom(chip), {
             side: node.isAtom ? -1 : 1 + i,
-            key: `${chip.reminderId}:${chip.label}:${chip.state}:${chip.ariaLabel}`,
+            key: `${chip.reminderId}:${chip.label}:${chip.state}:${chip.ariaLabel}:${chip.sourceChanged}`,
             ignoreSelection: true,
             stopEvent: () => true,
           }),

@@ -378,7 +378,7 @@ test('settings explain the lifecycle; follow-ups and quiet hours store their val
   await expect(startup).toHaveAttribute('title', 'Available in the installed app');
   await activate(page.getByRole('switch', { name: 'Quiet hours' }));
   await expect.poll(() => h.setting('reminders.quietHours')).toEqual({ v: 1, value: { enabled: true, start: '22:00', end: '07:00', zoneId: 'Asia/Dhaka' } });
-  await expect(page.getByLabel('From')).toHaveValue('22:00');
+  await expect(page.getByLabel('From', { exact: true })).toHaveValue('22:00');
 
   // Follow-ups: off by default in the dialog; switched on they start at 15 minutes, twice.
   const id = await openNote(page, 'Follow');

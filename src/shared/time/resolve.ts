@@ -98,3 +98,15 @@ export function isoWeekday(date: string): number {
   const day = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
   return day === 0 ? 7 : day;
 }
+
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+/** `YYYY-MM-DD` of a year, month and day (not validated). */
+export function localDateOf(year: number, month: number, day: number): string {
+  return `${String(year).padStart(4, '0')}-${pad2(month)}-${pad2(day)}`;
+}
+
+/** `HH:mm` of an hour and minute (not validated). */
+export function localTimeOf(hour: number, minute: number): string {
+  return `${pad2(hour)}:${pad2(minute)}`;
+}

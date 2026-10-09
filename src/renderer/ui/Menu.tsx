@@ -7,6 +7,10 @@ export interface MenuItem {
   checked?: boolean;
   /** Draws a separator line above this item. */
   separatorBefore?: boolean;
+  /** One choice of a group (a menuitemradio with its checked state) in a menu of commands. */
+  radio?: boolean;
+  /** The keyboard shortcut shown at the end of the item ("Ctrl+N"). */
+  shortcut?: string;
   onSelect: () => void;
 }
 
@@ -93,8 +97,9 @@ export function Menu({
           {item.separatorBefore ? <div role="separator" className="menu-separator" /> : null}
           <button
             type="button"
-            role={itemRole}
-            aria-checked={itemRole === 'menuitemradio' ? !!item.checked : undefined}
+            role={item.radio ? 'menuitemradio' : itemRole}
+            aria-checked={itemRole === 'menuitemradio' || item.radio ? !!item.checked : undefined}
+            aria-keyshortcuts={item.shortcut}
             disabled={item.disabled}
             tabIndex={-1}
             className="menu-item"
@@ -104,6 +109,11 @@ export function Menu({
             }}
           >
             {item.label}
+            {item.shortcut ? (
+              <span className="menu-shortcut" aria-hidden>
+                {item.shortcut}
+              </span>
+            ) : null}
           </button>
         </Fragment>
       ))}

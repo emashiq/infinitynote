@@ -18,7 +18,7 @@ const doc = {
     { type: 'image', attrs: { id: IMG, attachmentId: ATT, alt: null, size: 'medium', width: null, height: null } },
   ],
 };
-const chip = (reminderId: string, blockId: string): ChipInfo => ({ reminderId, blockId, label: 'Fri 9 Oct, 17:00', state: 'pending', ariaLabel: `Reminder: ${reminderId}` });
+const chip = (reminderId: string, blockId: string, sourceChanged = false): ChipInfo => ({ reminderId, blockId, label: 'Fri 9 Oct, 17:00', state: 'pending', ariaLabel: `Reminder: ${reminderId}`, sourceChanged });
 
 describe('reminder chips (INF-REM-04, D-080)', () => {
   it('chips are a meta-only transaction: the document is identical and it is not a user edit', () => {
@@ -65,6 +65,20 @@ describe('reminder chips (INF-REM-04, D-080)', () => {
     expect(moved.node.textContent).toBe('Pay rent now');
     const [d] = reminderChipsKey.getState(t.editor.state)!.decorations.find();
     expect(d!.from).toBe(moved.pos + moved.node.nodeSize - 1);
+  });
+
+  it('a reminder whose source text changed says so in its chip (D-092)', () => {
+    const t = makeEditor({ content: doc });
+    t.editor.view.dispatch(chipsMeta(t.editor.state, { chips: [chip('a', P, true), chip('b', LP)] }));
+    const changed = t.editor.view.dom.querySelector(`[data-id="${P}"] .reminder-chip`)!;
+    expect(changed.getAttribute('aria-label')).toBe('Reminder: a, its text changed');
+    expect(changed.classList.contains('reminder-chip-changed')).toBe(true);
+    const unchanged = t.editor.view.dom.querySelector(`[data-id="${LP}"] .reminder-chip`)!;
+    expect(unchanged.getAttribute('aria-label')).toBe('Reminder: b');
+    expect(unchanged.classList.contains('reminder-chip-changed')).toBe(false);
+    // The source comes back: the chip is redrawn without the suffix.
+    t.editor.view.dispatch(chipsMeta(t.editor.state, { chips: [chip('a', P)] }));
+    expect(t.editor.view.dom.querySelector(`[data-id="${P}"] .reminder-chip`)!.getAttribute('aria-label')).toBe('Reminder: a');
   });
 
   it('the block at the cursor is the innermost block with an id', () => {

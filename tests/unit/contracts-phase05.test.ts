@@ -95,7 +95,7 @@ describe('Phase 05 reminder schemas (D-074, plan section 6.1)', () => {
     expect(OccurrenceItem.safeParse(item).success).toBe(true);
     expect(OccurrenceItem.safeParse({ ...item, state: 'done' }).success).toBe(false);
     expect(OccurrenceItem.safeParse({ ...item, notePath: Array.from({ length: 67 }, () => 'f') }).success).toBe(false);
-    const dto = { id: ID, noteId: ID, blockId: B, anchorState: 'block_missing', title: 'T', zoneId: 'Asia/Dhaka', date: '2026-10-09', time: '17:00', recurrence: null, foldPreference: 'earlier', followup: { intervalMinutes: 15, maxFollowups: 2 }, revision: 1, createdAt: 1, updatedAt: 1, resolution: { status: 'gap' }, current: item };
+    const dto = { id: ID, noteId: ID, blockId: B, anchorState: 'block_missing', title: 'T', zoneId: 'Asia/Dhaka', date: '2026-10-09', time: '17:00', recurrence: null, foldPreference: 'earlier', followup: { intervalMinutes: 15, maxFollowups: 2 }, revision: 1, createdAt: 1, updatedAt: 1, resolution: { status: 'gap' }, current: item, source: null };
     expect(ReminderDto.safeParse(dto).success).toBe(true);
     expect(ReminderDto.safeParse({ ...dto, revision: 0 }).success).toBe(false);
     expect(ZonesListResponse.safeParse({ zones: ['UTC'], systemZone: null, defaultZone: null, asOf: 1 }).success).toBe(true);
@@ -141,8 +141,8 @@ describe('collectBlockIds (D-080)', () => {
 });
 
 describe('Phase 05 catalogue (D-074)', () => {
-  it('the Phase 05 channels are appended in order after the Phase 04 channels: 67 invoke channels, 12 events', () => {
-    expect(INVOKE_CHANNELS.slice(50)).toEqual([
+  it('the Phase 05 channels are appended in order after the Phase 04 channels, 12 events', () => {
+    expect(INVOKE_CHANNELS.slice(50, 67)).toEqual([
       'zones:list',
       'reminder:create',
       'reminder:update',
@@ -161,7 +161,6 @@ describe('Phase 05 catalogue (D-074)', () => {
       'autostart:get',
       'autostart:set',
     ]);
-    expect(INVOKE_CHANNELS).toHaveLength(67);
     expect(EVENT_CHANNELS.slice(8)).toEqual(['reminder:changed', 'reminder:alert', 'widget:state', 'app:openReminders']);
     expect(EVENT_CHANNELS).toHaveLength(12);
   });

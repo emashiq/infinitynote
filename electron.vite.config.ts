@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
+import { moduleAliases } from './aliases.config';
 import { DEV_CSP, PROD_CSP } from './src/shared/csp';
 
 function cspMeta(): Plugin {
@@ -43,6 +44,7 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     base: './',
+    resolve: { alias: moduleAliases(__dirname) },
     build: {
       rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html') } },
     },

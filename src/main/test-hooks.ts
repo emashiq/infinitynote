@@ -76,8 +76,16 @@ export interface TestState {
   widget(): Promise<(Partial<NativeWindowInfo> & { webContentsId: number }) | null>;
   /** The fake login-item adapter of unpackaged runs: its state and every change asked of it (D-082). */
   autostart: { enabled: boolean; calls: boolean[] };
-  /** Raw reminder, occurrence and delivery rows (a fresh task, F04-A2). */
-  reminders(): Promise<{ reminders: unknown[]; occurrences: unknown[]; deliveries: unknown[] }>;
+  /** Raw reminder, occurrence, delivery, source and dismissal rows (a fresh task, F04-A2). */
+  reminders(): Promise<ReminderRows>;
+}
+
+export interface ReminderRows {
+  reminders: unknown[];
+  occurrences: unknown[];
+  deliveries: unknown[];
+  sources: unknown[];
+  dismissals: unknown[];
 }
 
 /** What the reminder subsystem uses instead of the real clock, zone, notifications and power events under test hooks. */
@@ -202,7 +210,7 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     scheduler: null,
     widget: async () => null,
     autostart: { enabled: false, calls: [] },
-    reminders: async () => ({ reminders: [], occurrences: [], deliveries: [] }),
+    reminders: async () => ({ reminders: [], occurrences: [], deliveries: [], sources: [], dismissals: [] }),
   };
   globalThis.__infinityTest = state;
   return {
@@ -330,6 +338,8 @@ function reminderTestState(seams: ReminderSeams, scheduler: ReminderScheduler, d
         reminders: db.prepare('SELECT * FROM reminders ORDER BY created_at, id').all(),
         occurrences: db.prepare('SELECT * FROM occurrences ORDER BY due_at_utc, id').all(),
         deliveries: db.prepare('SELECT * FROM alert_deliveries ORDER BY claimed_at, alert_sequence, id').all(),
+        sources: db.prepare('SELECT * FROM reminder_sources ORDER BY created_at, reminder_id').all(),
+        dismissals: db.prepare('SELECT * FROM suggestion_dismissals ORDER BY created_at, dedupe_key').all(),
       })),
   };
 }

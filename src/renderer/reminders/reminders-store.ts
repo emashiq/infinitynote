@@ -233,6 +233,12 @@ export class RemindersStore {
     else this.fail(res.ok ? 'This reminder no longer exists' : res.error.message);
   }
 
+  /** Keep current time: the changed phrase stops following the text; the schedule stays (D-092). */
+  async keepSource(reminderId: string): Promise<void> {
+    const res = await this.deps.bridge.reminder.updateFromSource({ action: 'keep', reminderId });
+    if (!res.ok) this.fail(res.error.message);
+  }
+
   /** Attach to another block, or keep note-level (`null`); nothing else of the reminder changes (D-080). */
   async setAnchor(r: ReminderDtoType, blockId: string | null): Promise<void> {
     const res = await this.deps.bridge.reminder.update({

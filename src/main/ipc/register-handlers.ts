@@ -15,6 +15,7 @@ import { registerReminderHandlers } from './handlers/reminder-handlers';
 import { registerSessionHandlers } from './handlers/session-handlers';
 import { registerSettingsHandlers } from './handlers/settings-handlers';
 import { registerStickyHandlers } from './handlers/sticky-handlers';
+import { registerSuggestionHandlers } from './handlers/suggestion-handlers';
 import { registerTrashHandlers } from './handlers/trash-handlers';
 import { registerAutostartHandlers, registerWidgetHandlers } from './handlers/widget-handlers';
 import { registerWindowHandlers } from './handlers/window-handlers';
@@ -65,6 +66,7 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
     reminders: use('reminders'),
     openNote: (noteId, blockId) => desktop.mainWindow.openNote(noteId, false, blockId),
   });
+  registerSuggestionHandlers(router, { reminders: use('reminders'), suggestions: use('suggestions') });
   registerWidgetHandlers(router, widget);
   registerAutostartHandlers(router, desktop.autostart);
 }

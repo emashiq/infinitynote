@@ -358,3 +358,82 @@ test('reminder widget light, dark and collapsed; sticky with a chip', async () =
   await expect(sp.locator(`[data-id="${block}"] .reminder-chip`)).toBeVisible();
   await shot(sp, 'sticky-with-chip.png', 3_000);
 });
+
+// Phase 06 reminder suggestions (plan section 12.6), on the frozen reminder clock in Asia/Dhaka.
+async function suggestionBoot(title: string): Promise<{ page: Page; app: ElectronApplication; noteId: string }> {
+  const { app, page } = await h.start(reminderEnv());
+  await setContentSize(app, page, 1400, 860);
+  const noteId = await createNote(page, COMMON, title);
+  await openFromTree(page, noteId);
+  await expect(editor(page)).toHaveAttribute('aria-readonly', 'false');
+  await editor(page).click();
+  await page.keyboard.press('Control+End');
+  return { app, page, noteId };
+}
+
+const suggestionCard = (page: Page) => page.getByRole('dialog', { name: /^(Create|Update) reminder$/ });
+
+test('suggestions: underline and bar (light, dark), cards, changed source, settings', async () => {
+  const { page } = await suggestionBoot('Report');
+  await page.keyboard.type('Have to submit this by tomorrow end of the day');
+  await expect(page.locator('.nlp-candidate')).toHaveText(['tomorrow end of the day'], { timeout: 5_000 });
+  await expect(page.getByRole('group', { name: 'Reminder suggestion' })).toBeVisible();
+  await shot(page, 'nlp-underline-bar-light.png');
+  await page.evaluate(() => window.infinity.settings.set({ key: 'appearance.theme', value: 'dark' }));
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await shot(page, 'nlp-underline-bar-dark.png');
+  await page.evaluate(() => window.infinity.settings.set({ key: 'appearance.theme', value: 'light' }));
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await chooseMore(page, 'Create reminder from text');
+  await expect(suggestionCard(page)).toContainText('17:00 (default end of day)');
+  await shot(page, 'suggestion-card.png');
+  await activate(suggestionCard(page).getByRole('button', { name: 'Cancel' }));
+
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Meet 03/04 at 5');
+  await expect(page.locator('.nlp-candidate').filter({ hasText: '03/04 at 5' })).toHaveCount(1, { timeout: 5_000 });
+  await chooseMore(page, 'Create reminder from text');
+  await expect(suggestionCard(page)).toContainText('Choose the date order');
+  await shot(page, 'suggestion-card-choices.png');
+  await activate(suggestionCard(page).getByRole('button', { name: 'Cancel' }));
+
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Backup on Nov 1 at 1:30am');
+  await expect(page.locator('.nlp-candidate').filter({ hasText: 'Nov 1 at 1:30am' })).toHaveCount(1, { timeout: 5_000 });
+  await chooseMore(page, 'Create reminder from text');
+  await suggestionCard(page).getByLabel('Time zone', { exact: true }).selectOption('America/New_York');
+  await expect(suggestionCard(page)).toContainText('happens twice on this date');
+  await shot(page, 'suggestion-card-dst.png');
+  await activate(suggestionCard(page).getByRole('button', { name: 'Cancel' }));
+
+  // A confirmed phrase that was edited afterwards.
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Call the bank tomorrow');
+  await expect(page.locator('.nlp-candidate').filter({ hasText: 'tomorrow' })).toHaveCount(1, { timeout: 5_000 });
+  await chooseMore(page, 'Create reminder from text');
+  await activate(suggestionCard(page).getByRole('button', { name: 'Add', exact: true }));
+  await expect(suggestionCard(page)).toHaveCount(0);
+  for (let i = 0; i < 'tomorrow'.length; i += 1) await page.keyboard.press('Backspace');
+  await page.keyboard.type('next Friday');
+  const panel = page.getByRole('complementary', { name: 'Details' });
+  await expect(panel).toContainText('The text this reminder came from changed: “tomorrow”.');
+  await shot(page, 'panel-source-changed.png');
+
+  await railGo(page, 'Settings');
+  await page.getByText('Suggestions understand English dates and times only.', { exact: false }).scrollIntoViewIfNeeded();
+  await shot(page, 'settings-reminders-phase06.png');
+});
+
+test('suggestions: a sticky with a suggestion', async () => {
+  const { app, page, noteId } = await suggestionBoot('Plants');
+  await page.evaluate((id) => window.infinity.sticky.float({ noteId: id }), noteId);
+  const sp = await stickyPage(app, noteId);
+  await editor(sp).click();
+  await sp.keyboard.type('Water plants tomorrow');
+  await expect(sp.locator('.nlp-candidate')).toHaveText(['tomorrow'], { timeout: 5_000 });
+  await expect(sp.getByRole('group', { name: 'Reminder suggestion' })).toBeVisible();
+  await shot(sp, 'sticky-suggestion.png', 3_000);
+});

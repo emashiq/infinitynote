@@ -49,7 +49,7 @@ async function renderHeader(over: Partial<{ state: StickyStateType; pinSupported
 const menuItems = (role = 'menuitem') => [...document.querySelectorAll(`[role="menu"] [role="${role}"]`)].map((b) => b.textContent);
 
 describe('sticky header (INF-STKY-04, D-070)', () => {
-  it('is a toolbar with the color, title, source badge, pin, collapse and actions controls', async () => {
+  it('is a toolbar with the color, title, source badge, pin, collapse, actions and close controls', async () => {
     const { host, button } = await renderHeader();
     const toolbar = host.querySelector('[role="toolbar"]')!;
     expect(toolbar.getAttribute('aria-label')).toBe('Sticky');
@@ -59,6 +59,7 @@ describe('sticky header (INF-STKY-04, D-070)', () => {
       'Keep on top',
       'Collapse sticky',
       'Sticky actions',
+      'Close sticky',
     ]);
     const badge = host.querySelector('.sticky-badge')!;
     expect(badge.textContent).toBe('Alpha › Plans');
@@ -66,6 +67,12 @@ describe('sticky header (INF-STKY-04, D-070)', () => {
     expect(button('Keep on top')!.getAttribute('aria-pressed')).toBe('false');
     expect(button('Keep on top')!.hasAttribute('aria-disabled')).toBe(false);
     expect(button('Collapse sticky')!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('Close hides the sticky, as closing its frameless window does (D-097)', async () => {
+    const { button, actions } = await renderHeader();
+    await dom.click(button('Close sticky'));
+    expect(actions.hide).toHaveBeenCalledTimes(1);
   });
 
   it('pin toggles where supported and is an inert, explained control where not (INF-STKY-13)', async () => {

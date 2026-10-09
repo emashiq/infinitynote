@@ -82,8 +82,24 @@ function StickyNote({ editorRef, findRequest, onFindHandled }: { editorRef: RefO
         editorRef={editorRef}
         onConvert={(target) => (target === 'plain' ? setDialog({ kind: 'convert' }) : report(controller.convert('rich')))}
         onOpenVersions={() => setDialog({ kind: 'versions' })}
+        suggestions={{
+          noteId: controller.noteId,
+          noteTitle: state.title,
+          reminders: noteReminders.reminders,
+          openCard: (request) => setDialog({ kind: 'suggestion', request }),
+          openInApp: openReminder,
+        }}
       />
-      <NoteDialogs controller={controller} dialog={dialog} onDialog={setDialog} readOnly={readOnly} now={now()} report={report} />
+      <NoteDialogs
+        controller={controller}
+        dialog={dialog}
+        onDialog={setDialog}
+        readOnly={readOnly}
+        now={now()}
+        report={report}
+        bridge={core.bridge}
+        notify={(message) => core.notices.push(message, 'info')}
+      />
     </>
   );
 }

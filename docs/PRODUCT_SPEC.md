@@ -47,7 +47,7 @@ Every requirement has an ID (`INF-<AREA>-<NN>`), an observable acceptance criter
 | INF-SHELL-03 | Collapsible right context panel 280-340 px with Info section; later Reminders and References sections | Observable when e2e/shell.spec › panel toggle (types E,V) shows that collapsible right context panel 280-340 px with Info section; later Reminders and References sections. | 02 |
 | INF-SHELL-04 | Narrow windows turn tree (<960 px) and panel (<1180 px) into drawers | Observable when e2e/shell.spec › narrow 760x560 drawers; screenshot (types E,V) shows that narrow windows turn tree (<960 px) and panel (<1180 px) into drawers. | 02 |
 | INF-SHELL-05 | Compact dark theme tokens following OS theme | Observable when screenshot light/dark (types V) shows that compact dark theme tokens following OS theme. | 02 |
-| INF-SHELL-06 | Native window frame and controls; visible keyboard focus | Observable when screenshot focus ring; native window check (types V,N) shows that native window frame and controls; visible keyboard focus. Native (N) part is recorded in the native OS matrix and is not run in Phase 00. | 02 |
+| INF-SHELL-06 | One app-drawn title bar with the OS window controls (D-097); visible keyboard focus | Observable when screenshot focus ring; native window check (types V,N) shows that native window frame and controls; visible keyboard focus. Native (N) part is recorded in the native OS matrix and is not run in Phase 00. | 02 |
 
 ### 4.3 Home (HOME)
 
@@ -336,7 +336,7 @@ Every requirement has an ID (`INF-<AREA>-<NN>`), an observable acceptance criter
 
 ## 6. Natural-language policy summary
 
-The parser is local and English only. End of day is 17:00 by default, date-only phrases use 09:00 by default, and both are disclosed in the confirmation card and configurable. Explicit times are used as given. Ambiguous numeric dates, bare hours and zone abbreviations require an explicit choice. Weekdays follow a Monday-Sunday week. Past dates stay visibly past, with an explicit "Use next year" choice. Confirmed reminders store an absolute instant and are never re-interpreted on restart. The frozen-clock reference table (Appendix B of the Phase 00 plan) is the contract for tests:
+The parser is local and English only. End of day is 17:00 by default, date-only phrases use 09:00 by default, and both are disclosed in the confirmation card and configurable. Explicit times are used as given. Ambiguous numeric dates, bare hours and zone abbreviations require an explicit choice. Weekdays follow a Monday-Sunday week. Past dates stay visibly past, with an explicit "Use next year" choice. Confirmed reminders store an absolute instant and are never re-interpreted on restart. The frozen-clock reference table below is the parsing test contract (Phase 00 F-7, D-095); it was first drafted as Appendix B of the Phase 00 plan, and this section is now the authoritative copy. Further parsing rules and their test rows are in [ARCHITECTURE](ARCHITECTURE.md) section 10 and D-090. Reference instant 2026-10-08 13:00 Asia/Dhaka (2026-10-08T07:00:00Z, a Thursday), selected zone Asia/Dhaka unless stated, defaults end of day 17:00 and date-only 09:00:
 
 | Input | Result (selected zone) | UTC | Notes |
 | --- | --- | --- | --- |

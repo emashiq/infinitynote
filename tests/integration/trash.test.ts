@@ -185,7 +185,7 @@ describe('restore (INF-HIER-09)', () => {
 });
 
 describe('purge (INF-HIER-09)', () => {
-  it('purging a note removes its reminders, occurrences and deliveries in the same transaction (D-073)', async () => {
+  it('purging a note removes its reminders, occurrences, deliveries, sources and dismissals in the same transaction (D-073, D-088)', async () => {
     const s = await setupServices({ now: Date.parse('2026-10-08T07:00:00Z') });
     const n = s.note(null, null, 'With reminder');
     const dto = s.reminders.create({
@@ -205,11 +205,19 @@ describe('purge (INF-HIER-09)', () => {
         "INSERT INTO alert_deliveries(id, occurrence_id, alert_sequence, kind, presentation, batch_id, reason, claimed_at, outcome) VALUES (?, ?, 0, 'initial', 'single', 'b', 'timer', 1, 'dispatched')",
       )
       .run(randomUUID(), dto.current!.occurrenceId);
+    s.t.db
+      .prepare<[string, string]>(
+        `INSERT INTO reminder_sources(reminder_id, note_id, block_id, source_text, span_start, span_end, span_ordinal, reference_instant_utc, reference_zone, parser_version, origin, created_at, updated_at)
+         VALUES (?, ?, NULL, 'tomorrow', NULL, NULL, 0, 1, 'Asia/Dhaka', 1, 'suggestion', 1, 1)`,
+      )
+      .run(dto.id, n.id);
+    s.suggestions.dismiss({ noteId: n.id, blockId: randomUUID(), text: 'Friday', spanOrdinal: 0, referenceDate: '2026-10-08' });
+    const tables = ['reminders', 'occurrences', 'alert_deliveries', 'reminder_sources', 'suggestion_dismissals'];
     const count = (table: string) => s.row<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)!.n;
     const r = s.trash.trashNote(n.id);
-    expect([count('reminders'), count('occurrences'), count('alert_deliveries')]).toEqual([1, 1, 1]);
+    expect(tables.map(count)).toEqual([1, 1, 1, 1, 1]);
     s.trash.purge({ target: { kind: 'batch', batchId: r.trashBatchId }, confirmed: true });
-    expect([count('reminders'), count('occurrences'), count('alert_deliveries')]).toEqual([0, 0, 0]);
+    expect(tables.map(count)).toEqual([0, 0, 0, 0, 0]);
   });
 
 

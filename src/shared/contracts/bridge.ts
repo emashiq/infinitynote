@@ -114,6 +114,12 @@ export interface InfinityBridge {
     undoDelete: Call<'reminder:undoDelete'>;
     listForNote: Call<'reminder:listForNote'>;
     open: Call<'reminder:open'>;
+    createFromSuggestion: Call<'reminder:createFromSuggestion'>;
+    updateFromSource: Call<'reminder:updateFromSource'>;
+  };
+  readonly suggestion: {
+    dismiss: Call<'suggestion:dismiss'>;
+    listDismissed: Call<'suggestion:listDismissed'>;
   };
   readonly reminders: {
     listView: Call<'reminders:listView'>;

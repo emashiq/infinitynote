@@ -529,7 +529,10 @@ for (const how of ['window close', 'quit'] as const) {
     await page.keyboard.insertText(`kept on ${how}`);
     const proc = app.process();
     if (how === 'quit') {
-      await app.evaluate(({ app: electronApp }) => electronApp.quit());
+      await app.evaluate(({ app: electronApp }) => {
+    // On a fresh task, as closeApp does (F04-A2): never inside a statement an inspector interrupt paused.
+    setImmediate(() => electronApp.quit());
+  });
     } else {
       // Closing the main window asks first (D-066); the answer "Quit" quits, which flushes every window.
       const asked = await app.evaluate(({ BrowserWindow }) => {

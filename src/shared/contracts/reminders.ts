@@ -33,6 +33,11 @@ export const REMINDER_MESSAGES = {
   startupSetting: 'Could not change the startup setting',
   blockGone: 'The linked paragraph is no longer in this note.',
   unsupported: 'Not supported by this desktop',
+  sourceMismatch: 'The note text changed. Try again.',
+  sourceNotSaved: 'The note could not be saved. Try again.',
+  sourceFormat: 'This phrase does not belong to this note.',
+  referenceRange: 'The phrase was read too long ago. Read it again.',
+  noSource: 'This reminder was not created from note text.',
 } as const;
 
 /** "1 reminder is overdue" / "N reminders are overdue" (summary notification and banners). */
@@ -147,6 +152,33 @@ export const OccurrenceItem = z.strictObject({
 });
 export type OccurrenceItemType = z.infer<typeof OccurrenceItem>;
 
+// Sources (Phase 06, D-088, D-092) ---------------------------------------------------------------
+/** The literal phrase as written (not trimmed): 1-500 UTF-16 units, no control characters, so within one line. */
+export const SourceText = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine((t) => !CONTROL_RE.test(t), 'The phrase must not contain control characters')
+  .refine((t) => /\S/.test(t), 'The phrase must not be blank');
+export const SourceOrigin = z.enum(['suggestion', 'selection']);
+export type SourceOriginType = z.infer<typeof SourceOrigin>;
+export const SourceState = z.enum(['ok', 'changed', 'missing', 'detached']);
+export type SourceStateType = z.infer<typeof SourceState>;
+/** How many earlier occurrences of the same phrase the block (or a plain note's text) holds. */
+export const SpanOrdinal = z.number().int().min(0).max(10_000);
+
+/** Where a reminder came from: the phrase, its block (null for plain-text notes) and how it was read. */
+export const ReminderSourceDto = z.strictObject({
+  blockId: Uuid.nullable(),
+  text: z.string().min(1).max(500),
+  spanOrdinal: SpanOrdinal,
+  origin: SourceOrigin,
+  state: SourceState,
+  referenceInstantUtc: z.number().int(),
+  referenceZone: ZoneId,
+});
+export type ReminderSourceDtoType = z.infer<typeof ReminderSourceDto>;
+
 export const ResolutionStatus = z.enum(['ok', 'gap', 'fold']);
 export const ReminderDto = z.strictObject({
   id: Uuid,
@@ -166,6 +198,8 @@ export const ReminderDto = z.strictObject({
   resolution: z.strictObject({ status: ResolutionStatus }),
   /** The open occurrence that is due first, else the latest completed one. */
   current: OccurrenceItem.nullable(),
+  /** The phrase the reminder was created from (Phase 06), or null for a reminder entered by hand. */
+  source: ReminderSourceDto.nullable(),
 });
 export type ReminderDtoType = z.infer<typeof ReminderDto>;
 

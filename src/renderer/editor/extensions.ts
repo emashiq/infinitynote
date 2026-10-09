@@ -11,6 +11,7 @@ import { FileAttachment } from './file-attachment';
 import { FindExtension } from './find';
 import { ManagedImage } from './managed-image';
 import { ReminderChips } from './reminder-chips';
+import { SuggestionDecorations } from './suggestions';
 import { TaskToggle } from './task-toggle';
 import type { AttachmentUploader } from './uploader';
 
@@ -20,8 +21,8 @@ export const UNDO_DEPTH = 200;
 const newBlockId = () => crypto.randomUUID();
 
 /**
- * The rich-note schema (D-053): StarterKit, checklists, app image and file nodes, block IDs, find, size limits, and the
- * reminder chips (decorations only, D-080).
+ * The rich-note schema (D-053): StarterKit, checklists, app image and file nodes, block IDs, find, size limits, the
+ * reminder chips (D-080) and the reminder suggestion underlines (D-091); both are decorations only.
  */
 export function richExtensions(deps: { uploader: AttachmentUploader; notify: (message: string) => void }): Extensions {
   return [
@@ -51,10 +52,11 @@ export function richExtensions(deps: { uploader: AttachmentUploader; notify: (me
     Placeholder.configure({ placeholder: PLACEHOLDER }),
     FindExtension,
     ReminderChips,
+    SuggestionDecorations,
   ];
 }
 
-/** The plain-text schema: paragraphs of text only, stored as a string, one line per paragraph. */
+/** The plain-text schema: paragraphs of text only, stored as a string, one line per paragraph; suggestions too. */
 export function plainExtensions(): Extensions {
   return [
     StarterKit.configure({
@@ -80,5 +82,6 @@ export function plainExtensions(): Extensions {
     }),
     Placeholder.configure({ placeholder: PLACEHOLDER }),
     FindExtension,
+    SuggestionDecorations,
   ];
 }

@@ -7,7 +7,7 @@ import { rendererUrl, secureWebPreferences, trackWindow } from './secure-window'
 import type { WidgetWindowFactory } from './widget-manager';
 
 /**
- * Pure description of the widget window (D-081): native frame, the shared hardened preferences, the computed size, a
+ * Pure description of the widget window (D-081, D-097): frameless (its header is the title bar), the shared hardened preferences, the computed size, a
  * position only where it was computed, and keep-on-top only where allowed.
  */
 export function widgetWindowOptions(spec: {
@@ -26,7 +26,7 @@ export function widgetWindowOptions(spec: {
     minHeight: WIDGET_MIN.height,
     show: false,
     title: WIDGET_TITLE,
-    autoHideMenuBar: true,
+    frame: false,
     fullscreenable: false,
     ...(spec.alwaysOnTop ? { alwaysOnTop: true } : {}),
     ...((spec.platform ?? process.platform) === 'linux' ? { icon: spec.iconPath } : {}),

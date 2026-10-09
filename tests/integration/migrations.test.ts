@@ -51,29 +51,29 @@ let tick = 0;
 const uniqueNow = () => new Date(Date.UTC(2026, 9, 8, 12, 0, 0) + 1000 * tick++);
 
 describe('migrations (INF-FND-05)', () => {
-  it('fresh: schema v5, wal, foreign keys and synchronous FULL', async () => {
+  it('fresh: schema v6, wal, foreign keys and synchronous FULL', async () => {
     const t = await openFresh();
-    expect(t.db.pragmaValue('user_version')).toBe(5);
+    expect(t.db.pragmaValue('user_version')).toBe(6);
     expect(String(t.db.pragmaValue('journal_mode')).toLowerCase()).toBe('wal');
     expect(t.db.pragmaValue('foreign_keys')).toBe(1);
     expect(t.db.pragmaValue('synchronous')).toBe(2);
     expect(tableNames(t.db)).toEqual(
       expect.arrayContaining([
         'settings', 'projects', 'folders', 'notes', 'trash_reanchored', 'window_state', 'notes_fts', 'note_versions', 'note_drafts', 'attachments', 'note_attachments',
-        'reminders', 'occurrences', 'alert_deliveries',
+        'reminders', 'occurrences', 'alert_deliveries', 'reminder_sources', 'suggestion_dismissals',
       ]),
     );
     expect(fs.existsSync(t.preMigrationDir) ? fs.readdirSync(t.preMigrationDir) : []).toEqual([]);
-    expect(t.logger.lines.some((l) => l.includes('db open driver=better-sqlite3') && l.includes('schema=5') && l.includes('preMigrationCopy=no'))).toBe(true);
+    expect(t.logger.lines.some((l) => l.includes('db open driver=better-sqlite3') && l.includes('schema=6') && l.includes('preMigrationCopy=no'))).toBe(true);
   });
 
-  it('reopening a v5 database makes no pre-migration copy and no change', async () => {
+  it('reopening a v6 database makes no pre-migration copy and no change', async () => {
     const t = await openFresh();
     t.db.close();
     const again = await openDatabase({ dbFile: t.dbFile, preMigrationDir: t.preMigrationDir });
     if (!again.ok) throw new Error('reopen failed');
     trackDb(again.db);
-    expect(again.migratedFrom).toBe(5);
+    expect(again.migratedFrom).toBe(6);
     expect(again.preMigrationCopy).toBe(false);
     expect(fs.existsSync(t.preMigrationDir) ? fs.readdirSync(t.preMigrationDir) : []).toEqual([]);
   });
@@ -125,7 +125,7 @@ describe('migrations (INF-FND-05)', () => {
   });
 
   const failing: Migration = {
-    version: 6,
+    version: 7,
     name: 'broken',
     sql: 'CREATE TABLE part_two(a TEXT); CREATE TABLE part_three(a TEXT); THIS IS NOT SQL;',
   };
@@ -143,11 +143,11 @@ describe('migrations (INF-FND-05)', () => {
     });
     expect(result).toMatchObject({ ok: false, code: 'MIGRATION_FAILED' });
     const check = trackDb(openBetterSqlite(t.dbFile, { readonly: true, fileMustExist: true }));
-    expect(check.pragmaValue('user_version')).toBe(5);
+    expect(check.pragmaValue('user_version')).toBe(6);
     expect(tableNames(check)).not.toContain('part_two');
     expect(tableNames(check)).not.toContain('part_three');
     expect(fs.readdirSync(t.preMigrationDir)).toHaveLength(1);
-    expect(logger.lines.some((l) => l.includes('migration failed version=6'))).toBe(true);
+    expect(logger.lines.some((l) => l.includes('migration failed version=7'))).toBe(true);
   });
 
   it('migrateDatabase throws MigrationError carrying the failing version', async () => {
@@ -156,22 +156,22 @@ describe('migrations (INF-FND-05)', () => {
     try {
       migrateDatabase(t.db, [...MIGRATIONS, failing]);
     } catch (err) {
-      expect((err as MigrationError).version).toBe(6);
+      expect((err as MigrationError).version).toBe(7);
     }
-    expect(t.db.pragmaValue('user_version')).toBe(5);
+    expect(t.db.pragmaValue('user_version')).toBe(6);
   });
 
   it('foreign key violation rolls back', async () => {
     const t = await openFresh();
     const violating: Migration = {
-      version: 6,
+      version: 7,
       name: 'fk',
       sql:
         'PRAGMA defer_foreign_keys = ON;' +
         ` INSERT INTO notes(id, project_id, format, content_text, created_at, updated_at) VALUES ('${randomUUID()}', '${randomUUID()}', 'plain', '', 1, 1);`,
     };
     expect(() => migrateDatabase(t.db, [...MIGRATIONS, violating])).toThrow(MigrationError);
-    expect(t.db.pragmaValue('user_version')).toBe(5);
+    expect(t.db.pragmaValue('user_version')).toBe(6);
     expect(t.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM notes').get()?.n).toBe(0);
   });
 
@@ -309,7 +309,7 @@ describe('migration 002 (D-044)', () => {
     const v2 = await openDatabase({ dbFile, preMigrationDir });
     if (!v2.ok) throw new Error('v2 open failed');
     const db = trackDb(v2.db);
-    expect(v2.schemaVersion).toBe(5);
+    expect(v2.schemaVersion).toBe(6);
     expect(v2.migratedFrom).toBe(1);
     expect(v2.preMigrationCopy).toBe(true);
     const count = (table: string) => db.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()?.n;
@@ -340,7 +340,7 @@ describe('migration 005 reminders (D-073)', () => {
     const v5 = await openDatabase({ dbFile, preMigrationDir });
     if (!v5.ok) throw new Error('v5 open failed');
     const db = trackDb(v5.db);
-    expect(v5.schemaVersion).toBe(5);
+    expect(v5.schemaVersion).toBe(6);
     expect(v5.migratedFrom).toBe(4);
     expect(v5.preMigrationCopy).toBe(true);
     const count = (table: string) => db.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()?.n;
@@ -387,5 +387,100 @@ describe('migration 005 reminders (D-073)', () => {
     expect(() => db.prepare("UPDATE reminders SET anchor_state = 'block_missing'").run()).toThrow(/CHECK/);
     db.prepare<[string]>('DELETE FROM notes WHERE id = ?').run(noteId);
     expect(['reminders', 'occurrences', 'alert_deliveries'].map((table) => db.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()?.n)).toEqual([0, 0, 0]);
+  });
+});
+
+describe('migration 006 reminder sources (D-088)', () => {
+  it('upgrades a populated v5 database to v6 keeping every v5 row, with one openable v5 copy', async () => {
+    const { dbFile, preMigrationDir } = layout();
+    const v5 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 5) });
+    if (!v5.ok) throw new Error('v5 open failed');
+    const noteId = randomUUID();
+    const reminderId = randomUUID();
+    const occurrenceId = randomUUID();
+    insertNote(v5.db, 'Before sources', 'body', { id: noteId });
+    v5.db.prepare<[string, string]>(
+      "INSERT INTO reminders(id, note_id, title, zone_id, start_local_date, local_time, created_at, updated_at) VALUES (?, ?, 'T', 'Asia/Dhaka', '2026-10-09', '17:00', 1, 1)",
+    ).run(reminderId, noteId);
+    v5.db.prepare<[string, string]>(
+      "INSERT INTO occurrences(id, reminder_id, due_at_utc, original_local_date_time, state, next_alert_at_utc, created_at, updated_at) VALUES (?, ?, 100, '2026-10-09T17:00', 'pending', 100, 1, 1)",
+    ).run(occurrenceId, reminderId);
+    v5.db.prepare<[string, string]>(
+      "INSERT INTO alert_deliveries(id, occurrence_id, alert_sequence, kind, presentation, batch_id, reason, claimed_at, outcome) VALUES (?, ?, 0, 'initial', 'single', 'b', 'timer', 1, 'dispatched')",
+    ).run(randomUUID(), occurrenceId);
+    const dump = (db: Db) => ['notes', 'reminders', 'occurrences', 'alert_deliveries'].map((table) => db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
+    const before = dump(v5.db);
+    v5.db.close();
+
+    const v6 = await openDatabase({ dbFile, preMigrationDir });
+    if (!v6.ok) throw new Error('v6 open failed');
+    const db = trackDb(v6.db);
+    expect(v6.schemaVersion).toBe(6);
+    expect(v6.migratedFrom).toBe(5);
+    expect(v6.preMigrationCopy).toBe(true);
+    expect(dump(db)).toEqual(before);
+    expect(['reminder_sources', 'suggestion_dismissals'].map((table) => db.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()?.n)).toEqual([0, 0]);
+    const indexes = db.prepare<[], { name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('reminder_sources', 'suggestion_dismissals')").all().map((r) => r.name);
+    expect(indexes).toEqual(expect.arrayContaining(['reminder_sources_note', 'suggestion_dismissals_note', 'suggestion_dismissals_date']));
+    const copies = fs.readdirSync(preMigrationDir);
+    expect(copies).toHaveLength(1);
+    expect(copies[0]).toMatch(/^infinity-notes-v5-/);
+    const copy = trackDb(openBetterSqlite(path.join(preMigrationDir, copies[0]!), { readonly: true, fileMustExist: true }));
+    expect(copy.pragmaValue('user_version')).toBe(5);
+    expect(dump(copy)).toEqual(before);
+  });
+
+  it('every CHECK of the source and dismissal tables refuses a bad row; deleting a reminder or a note cascades', async () => {
+    const { db } = await openFresh();
+    const noteId = randomUUID();
+    insertNote(db, 'n', 'body', { id: noteId });
+    const reminder = () => {
+      const id = randomUUID();
+      db.prepare<[string, string]>(
+        "INSERT INTO reminders(id, note_id, title, zone_id, start_local_date, local_time, created_at, updated_at) VALUES (?, ?, 'T', 'Asia/Dhaka', '2026-10-09', '17:00', 1, 1)",
+      ).run(id, noteId);
+      return id;
+    };
+    const good = { block_id: randomUUID(), source_text: 'tomorrow', span_start: 4, span_end: 12, span_ordinal: 0, reference_zone: 'Asia/Dhaka', parser_version: 1, origin: 'suggestion', source_state: 'ok' };
+    const source = (over: Partial<Record<keyof typeof good, unknown>> = {}, reminderId = reminder()) =>
+      db
+        .prepare(
+          `INSERT INTO reminder_sources(reminder_id, note_id, block_id, source_text, span_start, span_end, span_ordinal, reference_instant_utc, reference_zone, parser_version, origin, source_state, created_at, updated_at)
+           VALUES (@reminder_id, @note_id, @block_id, @source_text, @span_start, @span_end, @span_ordinal, 1, @reference_zone, @parser_version, @origin, @source_state, 1, 1)`,
+        )
+        .run({ ...good, ...over, reminder_id: reminderId, note_id: noteId });
+    const bad: Array<Partial<Record<keyof typeof good, unknown>>> = [
+      { source_text: '' },
+      { source_text: 'x'.repeat(501) },
+      { span_start: -1 },
+      { span_ordinal: -1 },
+      { reference_zone: '' },
+      { parser_version: 0 },
+      { origin: 'guess' },
+      { source_state: 'stale' },
+      { block_id: null },
+      { span_end: null },
+      { span_end: 4 },
+    ];
+    for (const over of bad) expect(() => source(over), JSON.stringify(over)).toThrow(/CHECK/);
+    const kept = reminder();
+    source({}, kept);
+    source({ block_id: null, span_start: null, span_end: null });
+    expect(() => source({}, kept)).toThrow(/UNIQUE|PRIMARY/);
+
+    const dismissal = (over: Record<string, unknown> = {}) =>
+      db
+        .prepare(
+          'INSERT INTO suggestion_dismissals(dedupe_key, note_id, block_id, span_text, span_ordinal, reference_date, created_at) VALUES (@k, @n, NULL, @t, @o, @d, 1)',
+        )
+        .run({ k: randomBytes(32).toString('hex'), n: noteId, t: 'tomorrow', o: 0, d: '2026-10-08', ...over });
+    for (const over of [{ k: 'short' }, { t: '' }, { o: -1 }, { d: '8 Oct 2026' }]) expect(() => dismissal(over), JSON.stringify(over)).toThrow(/CHECK/);
+    dismissal();
+
+    const count = (table: string) => db.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()?.n;
+    db.prepare<[string]>('DELETE FROM reminders WHERE id = ?').run(kept);
+    expect([count('reminder_sources'), count('suggestion_dismissals')]).toEqual([1, 1]);
+    db.prepare<[string]>('DELETE FROM notes WHERE id = ?').run(noteId);
+    expect([count('reminders'), count('reminder_sources'), count('suggestion_dismissals')]).toEqual([0, 0, 0]);
   });
 });

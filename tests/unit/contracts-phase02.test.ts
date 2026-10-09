@@ -99,6 +99,9 @@ describe('Phase 02 request schemas', () => {
       'reminders.defaultZone',
       'reminders.followupDefault',
       'reminders.quietHours',
+      'reminders.endOfDayTime',
+      'reminders.dateOnlyTime',
+      'reminders.suggestFromText',
     ]);
   });
 

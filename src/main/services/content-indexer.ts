@@ -23,7 +23,7 @@ export class ContentIndexer {
 
   index(noteId: string, format: 'rich' | 'plain', content: unknown, now: number): { plainText: string; attachmentIds: string[] } {
     const plainText = extractPlainText(format, content);
-    this.anchors?.sync(noteId, format, content);
+    this.anchors?.sync(noteId, format, content, plainText);
     const refs = format === 'rich' ? uniqueRefs(collectAttachmentRefs(content)) : [];
     const known = this.attachments.existingIds(refs.map((r) => r.attachmentId));
     const kept = refs.filter((r) => known.has(r.attachmentId));

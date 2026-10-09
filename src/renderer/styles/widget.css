@@ -56,3 +56,12 @@
 .widget-tabs .reminder-tab {
   padding: 6px 8px;
 }
+
+/* Frameless widget (D-097): the header is the drag region; its buttons are not. */
+.widget-header {
+  -webkit-app-region: drag;
+}
+
+.widget-header button {
+  -webkit-app-region: no-drag;
+}

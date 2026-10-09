@@ -40,6 +40,13 @@ Never promise notifications while fully quit or guaranteed window positioning un
 
 - **Opus implementation (2026-10-08).** From Phase 03 onward all application implementation, cleanup and repairs use `infinity-code-opus` (Opus 5.5, high effort) with clean, well-structured code. Sonnet's partial Phase 03 work was discarded (kept as a patch under `.infinity-work/discarded/`) and Phase 03 is rebuilt from the Phase 02 commit. Before Phase 03, an Opus cleanup pass reviews and refactors the accepted Phase 01–02 code, re-running all gates. Planner, QA and acceptor roles are unchanged.
 
+- **Fast mode (2026-10-09).** The user wants the project finished in about 2 hours and no duplicate testing. From Phase 06 onward:
+  - No separate planner: the implementer writes a short plan section at the top of `docs/progress/phase-XX.md`.
+  - The implementer runs only targeted tests while working, then the full Windows gate (check, build, test:e2e) once at the end.
+  - There is no separate QA pass and no coordinator re-run. The acceptor reviews code and logs and spot-runs only what it doubts.
+  - WSL runs once, in Phase 09: check, WSLg E2E, Linux packaging. Xvfb and forced-Wayland runs are dropped.
+- **Custom title bar (2026-10-09).** The main window has no OS title bar: a single FrameCapt-style top bar (icon and name, File/View/Help menus, centered search with Ctrl K, min/max/close). Sticky windows and the widget are frameless, with a × close in the corner.
+
 ## Host notes (Windows development machine)
 
 - Windows has no Python (`python` is the Store alias); none is needed.

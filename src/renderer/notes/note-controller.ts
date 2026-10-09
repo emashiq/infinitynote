@@ -232,6 +232,11 @@ export class NoteController implements EditorHost {
     return this.source?.blockText(blockId) ?? null;
   }
 
+  /** The text a reminder source is read in (see ContentSource.phraseText), or null when the editor does not show it. */
+  phraseText(blockId: string | null): string | null {
+    return this.source?.phraseText(blockId) ?? null;
+  }
+
   /** Asks the editor to reveal a block: select its start, scroll it into view and highlight it briefly. */
   requestReveal(blockId: string): void {
     this.store.setState((s) => ({ ...s, reveal: { blockId, nonce: (s.reveal?.nonce ?? 0) + 1 } }));

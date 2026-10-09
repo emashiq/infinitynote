@@ -24,6 +24,8 @@ import type {
   ZonesListResponseType,
 } from '../../../../src/shared/contracts/reminders';
 import type { StickyStateType } from '../../../../src/shared/contracts/stickies';
+import type { DismissalDtoType, ReminderCreateFromSuggestionResponseType, SuggestionSourceType } from '../../../../src/shared/contracts/suggestions';
+import { normalizePhrase } from '../../../../src/shared/nlp/source-text';
 import type { AutostartStateType, WidgetStateType } from '../../../../src/shared/contracts/widget';
 import { resolveLocal } from '../../../../src/shared/time/resolve';
 import type { WindowGetStateResponseType } from '../../../../src/shared/contracts/windows';
@@ -102,6 +104,8 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     summary: null as RemindersSummaryResponseType | null,
     byNote: new Map<string, ReminderDtoType[]>(),
     deleted: new Map<string, ReminderDtoType>(),
+    /** Each note's dismissed suggestions, newest first. */
+    dismissals: new Map<string, DismissalDtoType[]>(),
   };
   /** The widget window and launch-at-login state main would report. */
   const windowData = {
@@ -181,6 +185,16 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const allReminders = () => [...reminderData.byNote.values()].flat();
   const viewItems = () => Object.values(reminderData.views).flat();
   /** A reminder as main would answer it; the instant comes from the shared resolver. */
+  const sourceOf = (s: SuggestionSourceType, state: 'ok' | 'detached' = 'ok'): NonNullable<ReminderDtoType['source']> => ({
+    blockId: s.blockId,
+    text: s.text,
+    spanOrdinal: s.spanOrdinal,
+    origin: s.origin,
+    state,
+    referenceInstantUtc: s.referenceInstantUtc,
+    referenceZone: s.referenceZone,
+  });
+  const replaceReminder = (dto: ReminderDtoType) => reminderData.byNote.set(dto.noteId, reminderData.byNote.get(dto.noteId)!.map((r) => (r.id === dto.id ? dto : r)));
   const toReminder = (req: ReminderCreateRequestType, id: string, revision: number): ReminderDtoType => {
     const r = resolveLocal({ date: req.date, time: req.time }, req.zoneId, req.foldPreference);
     return {
@@ -200,6 +214,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
       updatedAt: clock,
       resolution: { status: r.status },
       current: null,
+      source: null,
     };
   };
 
@@ -721,6 +736,48 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
       listForNote: (req) =>
         handle('reminder:listForNote', req, () => ok({ reminders: reminderData.byNote.get(req.noteId) ?? [], asOf: clock, displayZone: reminderData.zones.systemZone })),
       open: (req) => handle('reminder:open', req, () => ok({})),
+      createFromSuggestion: (req) =>
+        handle<ReminderCreateFromSuggestionResponseType>('reminder:createFromSuggestion', req, () => {
+          const text = normalizePhrase(req.source.text);
+          const linked = (reminderData.byNote.get(req.noteId) ?? []).find(
+            (r) => r.source && r.source.state !== 'detached' && r.source.blockId === req.source.blockId && r.source.spanOrdinal === req.source.spanOrdinal && normalizePhrase(r.source.text) === text,
+          );
+          if (linked) return ok({ reminder: linked, existing: true });
+          const { source, ...input } = req;
+          const dto = { ...toReminder({ foldPreference: 'earlier', allowPast: false, ...input, blockId: source.blockId }, uid(), 1), source: sourceOf(source as SuggestionSourceType) };
+          reminderData.byNote.set(req.noteId, [...(reminderData.byNote.get(req.noteId) ?? []), dto]);
+          return ok({ reminder: dto, existing: false });
+        }),
+      updateFromSource: (req) =>
+        handle<ReminderDtoType>('reminder:updateFromSource', req, () => {
+          const old = allReminders().find((r) => r.id === req.reminderId);
+          if (!old) return fail('NOT_FOUND', 'This reminder no longer exists');
+          if (req.action === 'keep') {
+            const kept = { ...old, source: old.source ? { ...old.source, state: 'detached' as const } : null };
+            replaceReminder(kept);
+            return ok(kept);
+          }
+          if (old.revision !== req.expectedRevision) return fail('CONFLICT', 'This reminder changed elsewhere. Reopen it to edit.', { currentRevision: old.revision });
+          const { source, action: _a, ...input } = req;
+          const dto = { ...toReminder({ foldPreference: 'earlier', allowPast: false, ...input, noteId: old.noteId, blockId: source.blockId }, old.id, old.revision + 1), source: sourceOf(source as SuggestionSourceType) };
+          replaceReminder(dto);
+          return ok(dto);
+        }),
+    },
+    suggestion: {
+      dismiss: (req) =>
+        handle('suggestion:dismiss', req, () => {
+          const dismissal: DismissalDtoType = { blockId: req.blockId, text: normalizePhrase(req.text), spanOrdinal: req.spanOrdinal, referenceDate: req.referenceDate, createdAt: clock };
+          const list = reminderData.dismissals.get(req.noteId) ?? [];
+          const same = list.find((d) => d.blockId === dismissal.blockId && d.text === dismissal.text && d.spanOrdinal === dismissal.spanOrdinal && d.referenceDate === dismissal.referenceDate);
+          if (!same) reminderData.dismissals.set(req.noteId, [dismissal, ...list]);
+          return ok({ dismissal: same ?? dismissal });
+        }),
+      listDismissed: (req) =>
+        handle('suggestion:listDismissed', req, () => {
+          const { asOf, systemZone, defaultZone } = reminderData.zones;
+          return ok({ asOf, systemZone, defaultZone, dismissals: reminderData.dismissals.get(req.noteId) ?? [] });
+        }),
     },
     reminders: {
       listView: (req) =>

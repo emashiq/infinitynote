@@ -108,6 +108,29 @@ describe('settings (INF-FND-06)', () => {
     expect(service.get(['reminders.defaultZone'])).toEqual({ 'reminders.defaultZone': null });
   });
 
+  it('Phase 06 suggestion keys: defaults, invalid values refused, stored invalid values read as the default (D-094)', async () => {
+    const { t, service, events, logger } = await setup();
+    const keys = ['reminders.endOfDayTime', 'reminders.dateOnlyTime', 'reminders.suggestFromText'] as const;
+    expect(service.get([...keys])).toEqual({ 'reminders.endOfDayTime': '17:00', 'reminders.dateOnlyTime': '09:00', 'reminders.suggestFromText': true });
+    for (const bad of ['5pm', '24:00', '9:00', '', null]) {
+      expect(() => service.set('reminders.endOfDayTime', bad)).toThrow(AppError);
+      expect(() => service.set('reminders.dateOnlyTime', bad)).toThrow(AppError);
+    }
+    expect(() => service.set('reminders.suggestFromText', 'no')).toThrow(AppError);
+    expect(t.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM settings').get()?.n).toBe(0);
+    expect(events).toHaveLength(0);
+    expect(service.set('reminders.endOfDayTime', '18:30').value).toBe('18:30');
+    expect(service.set('reminders.dateOnlyTime', '07:45').value).toBe('07:45');
+    expect(service.set('reminders.suggestFromText', false).value).toBe(false);
+    expect(events.map((e) => e.key)).toEqual([...keys]);
+    expect(service.get([...keys])).toEqual({ 'reminders.endOfDayTime': '18:30', 'reminders.dateOnlyTime': '07:45', 'reminders.suggestFromText': false });
+    t.db.prepare("UPDATE settings SET value = '{\"v\":1,\"value\":\"25:00\"}' WHERE key = 'reminders.endOfDayTime'").run();
+    t.db.prepare("UPDATE settings SET value = '{\"v\":1,\"value\":\"yes\"}' WHERE key = 'reminders.suggestFromText'").run();
+    expect(service.get(['reminders.endOfDayTime', 'reminders.suggestFromText'])).toEqual({ 'reminders.endOfDayTime': '17:00', 'reminders.suggestFromText': true });
+    expect(logger.lines).toContain('WARN settings: invalid stored value key=reminders.endOfDayTime');
+    expect(logger.lines).toContain('WARN settings: invalid stored value key=reminders.suggestFromText');
+  });
+
   it('quiet hours switched on need a zone: refused on write; a stored value without one reads as off (QA5-04, D-083)', async () => {
     const { t, service, events, logger } = await setup();
     const zoneless = { enabled: true, start: '22:00', end: '07:00', zoneId: null };

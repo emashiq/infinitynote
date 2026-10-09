@@ -1,4 +1,6 @@
 import { ReminderDialog } from '../reminders/ReminderDialog';
+import { SuggestionCard } from '../reminders/SuggestionCard';
+import { AboutDialog, ShortcutsDialog } from '../shell/HelpDialogs';
 import { MoveDialog } from '../tree/MoveDialog';
 import { useServices, useStore } from '../state/use-store';
 import type { Outcome } from '../state/store';
@@ -8,7 +10,7 @@ import { NameDialog } from './NameDialog';
 /** Renders whichever dialog UiStore.dialog names. */
 export function DialogHost() {
   const services = useServices();
-  const { tree, ui, tabs } = services;
+  const { tree, ui, tabs, notices } = services;
   const { dialog } = useStore(ui.store);
   const treeState = useStore(tree.store);
   if (!dialog) return null;
@@ -107,6 +109,24 @@ export function DialogHost() {
         />
       );
     }
+    case 'suggestion': {
+      const controller = tabs.activeController();
+      const own = controller?.noteId === dialog.request.noteId ? controller : null;
+      return (
+        <SuggestionCard
+          request={dialog.request}
+          bridge={services.bridge}
+          persist={async () => (own ? (await own.flush()).ok : true)}
+          persistBlocks={() => (own ? own.persistBlockIds() : Promise.resolve(false))}
+          notify={(message) => notices.push(message, 'info')}
+          onClose={close}
+        />
+      );
+    }
+    case 'shortcuts':
+      return <ShortcutsDialog onClose={close} />;
+    case 'about':
+      return <AboutDialog onClose={close} />;
     default:
       return null;
   }

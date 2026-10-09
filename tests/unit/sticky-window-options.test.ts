@@ -55,10 +55,11 @@ describe('stickyWindowOptions (INF-FND-03, D-070)', () => {
     expect(sticky.webPreferences).toMatchObject({ sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false });
   });
 
-  it('native frame, hidden until ready, minimum 220x120, title and sticky background', () => {
+  it('frameless (the header is the title bar, D-097), hidden until ready, minimum 220x120, title and sticky background', () => {
     const o = stickyWindowOptions({ ...base, placement: { width: 320, height: 300 }, platform: 'win32' });
-    expect(o).not.toHaveProperty('frame');
+    expect(o.frame).toBe(false);
     expect(o).not.toHaveProperty('titleBarStyle');
+    expect(o).not.toHaveProperty('transparent');
     expect(o).toMatchObject({ width: 320, height: 300, minWidth: 220, minHeight: 120, show: false, title: 'Groceries - Infinity Notes', backgroundColor: '#FFF4B8', fullscreenable: false });
     expect(o).not.toHaveProperty('icon');
     expect(stickyWindowOptions({ ...base, placement: { width: 320, height: 300 }, platform: 'linux' }).icon).toBe('/i/icon.png');

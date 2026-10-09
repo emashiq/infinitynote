@@ -3,6 +3,7 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 import { ATTACHMENT_MESSAGES } from '../../shared/attachments/limits';
 import type { AttachmentKindType } from '../../shared/contracts/attachments';
+import type { ReminderDtoType } from '../../shared/contracts/reminders';
 import { docToText, textToDoc } from '../../shared/text/textarea-doc';
 import type { RichDocLike } from '../../shared/editor/doc-schema';
 import { isUserEdit, toSavable, type ContentSource, type EditorHost } from './content';
@@ -13,13 +14,32 @@ import { findPrefill } from './find-core';
 import { applyLink, LINK_OPEN_FAILED, linkHrefAt, removeLink, selectedLinkHref } from './link';
 import { LinkDialog } from './LinkDialog';
 import { createPasteProps } from './paste';
+import type { CardRequest } from '../reminders/card-request';
 import { blockIdAtSelection, chipsMeta, findBlock, REMINDER_CHIP_EVENT, selectionAtBlockStart, type ChipInfo } from './reminder-chips';
+import { useStore } from '../state/use-store';
+import { DISMISS_FAILED } from '../reminders/suggestion-context';
+import { SuggestionBar } from './SuggestionBar';
+import { SuggestionDetector } from './suggestion-detector';
+import { requestForLive, requestFromText } from './suggestion-requests';
+import { textOfBlock } from './block-text';
+import { candidateAt, type LiveCandidate } from './suggestions';
 import { Toolbar } from './Toolbar';
 import type { EditorServices } from './editor-services';
 import { attachmentNode, AttachmentUploader, insertBlocks } from './uploader';
 
 /** How long a block a reminder opened stays highlighted. */
 export const REVEAL_MS = 2000;
+
+/** Reminder suggestions in one note (D-091, D-093): where the card opens and what the note's reminders are. */
+export interface SuggestionHost {
+  noteId: string;
+  noteTitle: string;
+  /** The note's live reminders: a confirmed phrase is not suggested again; a changed one offers Update (D-092). */
+  reminders: readonly ReminderDtoType[];
+  openCard(request: CardRequest): void;
+  /** A sticky updates a changed source in the main window ("Open in app to update"); tabs open the update card. */
+  openInApp?: (reminderId: string) => void;
+}
 
 export interface NoteEditorProps {
   host: EditorHost;
@@ -45,6 +65,8 @@ export interface NoteEditorProps {
   onRevealDone?: (found: boolean) => void;
   /** Toolbar More "Add reminder…" (main window only). */
   onAddReminder?: () => void;
+  /** Reminder suggestions and More "Create reminder from text"; absent where a note cannot get reminders. */
+  suggestions?: SuggestionHost;
 }
 
 /**
@@ -104,6 +126,11 @@ export function NoteEditor(props: NoteEditorProps) {
       getContent: () => (format === 'rich' ? toSavable(editor.getJSON()) : docToText(editor.getJSON())),
       getPlainText: () => editor.getText({ blockSeparator: '\n' }),
       blockText: (blockId) => findBlock(editor.state.doc, blockId)?.node.textContent ?? null,
+      phraseText: (blockId) => {
+        if (blockId === null) return format === 'plain' ? docToText(editor.getJSON()) : null;
+        const block = findBlock(editor.state.doc, blockId);
+        return block?.node.isTextblock ? textOfBlock(block.node, block.pos + 1).text : null;
+      },
       hasPendingUploads: () => uploader.pending() > 0,
       waitForUploads: (ms) => uploader.waitIdle(ms),
     };
@@ -186,6 +213,66 @@ export function NoteEditor(props: NoteEditorProps) {
 
   const [linkDialog, setLinkDialog] = useState<{ href: string; editing: boolean } | null>(null);
 
+  // Reminder suggestions (D-091): one detector per editor instance; it follows the note's reminders.
+  const { suggestions } = props;
+  const suggestionSettings = useStore(services.suggestions.settings);
+  const noteReminders = useRef<readonly ReminderDtoType[]>([]);
+  // Runs before the detector is created, so phrases restored on mount are already filtered.
+  useEffect(() => {
+    noteReminders.current = suggestions?.reminders ?? [];
+  }, [suggestions?.reminders]);
+  const [detector, setDetector] = useState<SuggestionDetector | null>(null);
+  const suggestNoteId = suggestions?.noteId ?? null;
+  useEffect(() => {
+    if (!editor || !suggestNoteId) return undefined;
+    const d = new SuggestionDetector({ editor, noteId: suggestNoteId, format, context: services.suggestions, reminders: () => noteReminders.current });
+    setDetector(d);
+    return () => d.dispose();
+  }, [editor, suggestNoteId, format, services.suggestions]);
+  useEffect(() => detector?.refresh(), [detector, suggestions?.reminders]);
+
+  const noteRef = () => ({ noteId: suggestions!.noteId, noteTitle: suggestions!.noteTitle, format });
+  // The card returns the focus to where it was opened from. It opens on the next task, after the More menu has given
+  // the focus back to its button, with the editor focused: closing the card returns to the editor, at the phrase.
+  const openCard = (request: CardRequest) => {
+    setTimeout(() => {
+      if (!editor || editor.isDestroyed || !suggestions) return;
+      editor.view.focus();
+      suggestions.openCard(request);
+    }, 0);
+  };
+  const openLive = (live: LiveCandidate, reminder: ReminderDtoType | null = null) => {
+    if (!editor || !suggestions) return;
+    const request = requestForLive(editor.state, noteRef(), live, reminder);
+    if (request) openCard(request);
+  };
+  const updateLive = (live: LiveCandidate) => {
+    if (!suggestions || !live.updateFor) return;
+    if (suggestions.openInApp) suggestions.openInApp(live.updateFor);
+    else openLive(live, suggestions.reminders.find((r) => r.id === live.updateFor) ?? null);
+  };
+  const dismissLive = (live: LiveCandidate) => {
+    void detector?.dismiss(live).then((ok) => {
+      if (!ok) services.notify(DISMISS_FAILED);
+    });
+  };
+
+  // More → "Create reminder from text": the selection, else the phrase or paragraph at the cursor (D-089).
+  const createFromText = async () => {
+    if (!editor || !suggestions) return;
+    const { selection } = editor.state;
+    const live = selection.empty ? candidateAt(editor.state, selection.from) : null;
+    if (live) {
+      openLive(live);
+      return;
+    }
+    const context = await services.suggestions.load(suggestions.noteId);
+    if (!context || editor.isDestroyed) return;
+    const result = requestFromText(editor.state, noteRef(), context);
+    if (result.ok) openCard(result.request);
+    else if (result.notice) services.notify(result.notice);
+  };
+
   const insertAttachment = async (kind: AttachmentKindType) => {
     if (!editor) return;
     const res = await services.bridge.attachment.importFromDialog({ kind });
@@ -219,12 +306,16 @@ export function NoteEditor(props: NoteEditorProps) {
           convert: props.onConvert,
           openVersions: props.onOpenVersions,
           addReminder: props.onAddReminder,
+          createFromText: suggestions ? () => void createFromText() : undefined,
         }}
       />
       {find ? <FindBar key={find.nonce} editor={editor} prefill={find.prefill} onClose={() => setFind(null)} /> : null}
       <div ref={scrollRef} className="note-editor-scroll" onScroll={(e) => props.onScroll(Math.round(e.currentTarget.scrollTop))}>
         <EditorContent editor={editor} />
       </div>
+      {suggestions && suggestionSettings.suggestFromText ? (
+        <SuggestionBar editor={editor} settings={suggestionSettings} updateInApp={suggestions.openInApp !== undefined} onCreate={(live) => openLive(live)} onUpdate={updateLive} onDismiss={dismissLive} />
+      ) : null}
       {linkDialog ? (
         <LinkDialog
           initial={linkDialog.href}

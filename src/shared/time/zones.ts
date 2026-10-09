@@ -1,10 +1,13 @@
 import { IANAZone } from 'luxon';
 
+/** Coordinated Universal Time: the fixed zone of "5pm UTC" phrases (D-090) and the disclosed day fallback below. */
+export const UTC_ZONE = 'UTC';
+
 /**
  * Day boundaries of the reminder lists when neither the computer's zone nor a default zone is known. It is disclosed in
  * the views and never stored on a reminder (plan section 9.3).
  */
-export const FALLBACK_DAY_ZONE = 'UTC';
+export const FALLBACK_DAY_ZONE = UTC_ZONE;
 
 /** The computer's IANA zone as the JavaScript runtime reports it, or null when it is unknown. */
 export function currentSystemZone(): string | null {

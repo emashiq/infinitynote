@@ -78,7 +78,10 @@ const bridge: InfinityBridge = {
     undoDelete: call('reminder:undoDelete'),
     listForNote: call('reminder:listForNote'),
     open: call('reminder:open'),
+    createFromSuggestion: call('reminder:createFromSuggestion'),
+    updateFromSource: call('reminder:updateFromSource'),
   },
+  suggestion: { dismiss: call('suggestion:dismiss'), listDismissed: call('suggestion:listDismissed') },
   reminders: { listView: call('reminders:listView'), summary: call('reminders:summary') },
   occurrence: { complete: call('occurrence:complete'), snooze: call('occurrence:snooze') },
   widget: {

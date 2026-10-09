@@ -9,6 +9,20 @@ export interface KeyLike {
   metaKey: boolean;
 }
 
+/** The keyboard shortcuts of the main window, as Help → Keyboard shortcuts lists them (the keys matchShortcut maps). */
+export const SHORTCUT_LIST: ReadonlyArray<{ keys: string; action: string }> = [
+  { keys: 'Ctrl+N', action: 'New note' },
+  { keys: 'Ctrl+Shift+N', action: 'New sticky' },
+  { keys: 'Ctrl+W', action: 'Close tab' },
+  { keys: 'Ctrl+Tab', action: 'Next tab' },
+  { keys: 'Ctrl+Shift+Tab', action: 'Previous tab' },
+  { keys: 'Ctrl+K', action: 'Search notes and commands' },
+  { keys: 'Ctrl+F', action: 'Find in note' },
+  { keys: 'Ctrl+\\', action: 'Toggle notes tree' },
+  { keys: 'Ctrl+Shift+\\', action: 'Toggle details panel' },
+  { keys: 'Alt', action: 'Menu bar (File, View, Help)' },
+];
+
 /** Maps a key event to an application command, or null when the event is not a shortcut. */
 export function matchShortcut(e: KeyLike): CommandId | null {
   if (e.altKey || e.metaKey || !e.ctrlKey) return null;

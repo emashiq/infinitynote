@@ -133,9 +133,9 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
     ]);
   });
 
-  it('no Phase 06 channel is registered in Phase 05, and note:trashed was not added (D-063, D-074)', () => {
+  it('no Phase 07 channel is registered in Phase 06, and note:trashed was not added (D-063, D-089)', () => {
     const all: string[] = [...INVOKE_CHANNELS, ...EVENT_CHANNELS];
-    for (const name of ['reminder:createFromSuggestion', 'suggestion:dismiss', 'reminder:updateFromSource', 'note:trashed', 'sticky:removeSticky', 'attachment:importImageBytes']) {
+    for (const name of ['refs:list', 'search:query', 'notes:pick', 'attachment:open', 'attachment:showInFolder', 'tags:list', 'tags:set', 'note:trashed', 'sticky:removeSticky', 'attachment:importImageBytes']) {
       expect(all, name).not.toContain(name);
     }
     expect(all).toContain('note:save');

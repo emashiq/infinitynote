@@ -581,6 +581,158 @@ Recorded by the Phase 05 planner on 2026-10-09. The implementation plan is `docs
 - Decision: (1) An edit that changes the follow-up interval or maximum re-targets, in the edit's transaction, the next follow-up of every pending occurrence that already alerted: none when follow-ups are off or `followupsSent` reached the new maximum, else last alert plus the new interval (a late one fires at once). Snoozed occurrences keep their snooze alert. Every open occurrence of the reminder takes a new revision, so a claim prepared under the old settings loses. (2) The scheduler re-reads the claimed occurrences right before each notification; one that is no longer pending on a live reminder and note is not shown, and its delivery gets the new outcome `skipped` (detail `superseded-before-dispatch`), which raises no in-app alert and reports no outcome in views. `skipped` is added to the delivery outcome CHECK of migration 005 itself, because Phase 05 is not released (no profile outside development and test data has version 5); its checksum is regenerated. (3) One tick claims every due alert, reading pages of 500 with a cursor, into one batch; the presentation comes from the first page and a summary names the number still current at dispatch. Same-instant alerts go out in creation order (`rowid`). (4) Quiet hours keep D-083: switching them on requires a stored zone; a write without one is refused and a stored value without one reads as the default (off) with a warning. No read-time fallback to the computer zone, so the quiet window never moves with travel.
 - Status: accepted (implementer, Phase 05 Repair 1).
 - Evidence: `tests/integration/scheduler.test.ts` (follow-up edits, user action while a batch is shown, 1,000 overdue at a resume), `tests/integration/settings.test.ts`, `docs/progress/phase-05.md` Repair 1.
+- Clarification (Phase 06 planner, follow-up A05-F1, QA6-01): a claimed follow-up counts toward `followups_sent` whatever its delivery outcome turns out to be: `dispatched`, `failed`, `unsupported`, `uncertain` or `skipped`. The count increments at claim time (D-075) and is never decremented. So a Snooze that supersedes an already claimed follow-up can leave one follow-up fewer than the maximum, never more. This states the existing contract and changes no behavior.
+
+## Phase 06 decisions
+
+Recorded by the Phase 06 planner on 2026-10-09. The implementation plan is `docs/plans/phase-06.md`; section numbers below refer to it. Probe output is in `.infinity-work/logs/phase-06/planner-probe-*.log`.
+
+### D-088 Migration 006: reminder sources and suggestion dismissals
+- Context: D-051 gives 006 to Phase 06. Migration 005 is frozen now that Phase 05 is committed (A05-F3). ARCHITECTURE section 3 sketched both tables, but it did not cover plain-text notes (which never store character offsets, section 12), the user's "keep current time" choice, or how the renderer compares dismissals without hashing.
+- Decision: `006_reminder_sources.sql` creates:
+  - `reminder_sources`: `reminder_id` PK, cascades with the reminder; `note_id`, cascades with the note; `block_id` NULL for plain-text notes; `source_text` 1-500 characters, the literal phrase; `span_start` and `span_end`, block-relative and NULL exactly when `block_id` is NULL; `span_ordinal`, the number of earlier occurrences of the same text in the block, or in the whole text of a plain note; `reference_instant_utc`; `reference_zone`; `parser_version`; `origin` `suggestion|selection`; `source_state` `ok|changed|missing|detached`; `created_at`, `updated_at`.
+  - `suggestion_dismissals`: `dedupe_key` PK, 64 hex characters, the SHA-256 that main computes over `["v1", noteId, blockId or "", normalized text, span ordinal, reference date]`; the parts themselves (`block_id`, `span_text`, `span_ordinal`, `reference_date`), so the renderer compares dismissals without hashing; `note_id`, cascades with the note; `created_at`.
+  - Migrations 001-005 and their checksums are not touched.
+- Consequences: `LATEST = 6`. Tests that hard-code schema version 5 change to 6. A populated version 5 database upgrades with a pre-migration copy.
+- Status: accepted.
+- Evidence: plan section 5.
+
+### D-089 Phase 06 IPC catalogue and window roles
+- Decision:
+  - Invoke channels are appended after `autostart:set` in this order: `reminder:createFromSuggestion`, `reminder:updateFromSource`, `suggestion:dismiss`, `suggestion:listDismissed`. That gives 71 invoke channels. No event is added.
+  - `suggestion:listDismissed` also answers with main's reference context: `asOf` (the reminder clock), the computer zone and the default zone. Detection then uses main's clock and zone, which the E2E seams of D-084 control, and never the renderer's `Date.now()` or `Intl` zone.
+  - `reminder:createFromSuggestion` is idempotent per source. If a live reminder is already linked to the same note, block, normalized text and ordinal, and that link is not detached, main returns that reminder with `existing: true` instead of creating a duplicate.
+  - `reminder:updateFromSource` is `{action:'apply', …}` (new schedule and new source, with the revision check and pending policy of `reminder:update`) or `{action:'keep', reminderId}` (the source becomes `detached`, and the schedule is unchanged).
+  - `ReminderDto` gains `source` (or null). `reminder:changed {reason:'anchor'}` also announces source-state changes that a content write caused.
+  - Sticky windows additionally get `zones:list`, `reminder:create`, `reminder:createFromSuggestion`, `suggestion:dismiss` and `suggestion:listDismissed`. The router's note-ownership rule applies to each of these, so a sticky can confirm suggestions and enter a reminder by hand only for its own note. `reminder:updateFromSource` stays main-only: a sticky offers "Open in app to update" instead. The widget allowlist is unchanged.
+  - Boundary tests now guard the Phase 07 names (`refs:list`, `search:query`, `notes:pick`, `attachment:open`, `attachment:showInFolder`, `tags:list`, `tags:set`).
+- Consequences: ARCHITECTURE section 4 updated.
+- Status: accepted.
+- Evidence: plan section 6.
+
+### D-090 NLP adapter rules (refines D-007 and D-025)
+- Context: planner probes of chrono-node 2.10.2 (`planner-probe-chrono*.log`) showed:
+  - "end of (the) day", "EOD" and "by 5 CST" produce no result.
+  - "at 5pm CST" yields a fixed `timezoneOffset`.
+  - Bare weekdays with `forwardDate:false` resolve to the past ("Monday" → Oct 5).
+  - "Thursday" resolves to today; "tomorrow morning" gets an implied 06:00.
+  - "this evening" has no known values.
+  - Lowercase "sun", "mon" and "wed" match as weekdays; "in a second" is a 1 s duration.
+  - Month-only and "next week" return dates.
+  - Parsing a 2,300-character block takes about 0.6 ms.
+- Decision:
+  - Parsing runs only in renderers, in `src/shared/nlp`, through `chrono-node/en` (`casual`, `forwardDate:false`, the reference instant, and the selected zone's offset at that instant). Main never imports chrono-node and never parses.
+  - Before chrono runs, end-of-day phrases and zone abbreviations are masked with spaces, so offsets stay stable. Each result is classified from its known values, its text and its tags into a date intent (absolute, relative days, weekday with modifier, or none) and a time intent (explicit, ambiguous hour, end of day, date-only default, day-part default, or needs a time), or into an instant duration. Anything else is dropped.
+  - Rules beyond PRODUCT_SPEC section 6:
+    - Durations are minutes and hours only. They are floored to the whole minute, and in a fold they keep the instant through the fold preference.
+    - "in N days/weeks" is calendar arithmetic.
+    - A time-only phrase means today in the selected zone if that instant is still ahead, otherwise tomorrow.
+    - Fixed, disclosed day-part times: morning 09:00, afternoon 15:00, evening 19:00, tonight and night 20:00, noon 12:00. "midnight" requires the user to enter a time.
+    - A bare hour 1-12 without am/pm or a day-part needs an am/pm choice. A leading zero ("09:30") or an hour of 13-23 is 24-hour time.
+    - Ranges use their start.
+    - Weekday abbreviations count only when capitalized, and "may" counts as a month only when it is capitalized "May".
+    - "UTC" and "GMT" select the UTC zone without a choice. Other abbreviations need an IANA choice from a suggestion list that is filtered to known zones, aliases included.
+    - Unsupported, with no candidate: "now", "next week", "next month", "this weekend", month-only phrases, seconds, and non-English text.
+  - A candidate keeps its intents and its reference instant. The confirmation card re-resolves them when the user changes the zone, until the user edits the date or time by hand. `PARSER_VERSION = 1` is stored with each source.
+- Consequences: ARCHITECTURE section 10 carries the full rule list. The plan's rules table (section 9.2) is tested row by row in `unit/nlp-parse.test`. "Appendix B" in D-007, D-023 and D-025 means the PRODUCT_SPEC section 6 table (D-095).
+- Status: accepted.
+- Evidence: `planner-probe-chrono.log`, `planner-probe-chrono-edge.log`, `planner-probe-chrono-en.log`, `planner-probe-dst-zones.log`.
+
+### D-091 Detection policy: edit-triggered, touched spans only, bounded
+- Decision:
+  - Detection runs in rich and plain editors, in tabs and in stickies.
+    - It runs 1000 ms after the last user edit, as counted by `isUserEdit`. Load, reload and ID passes are not edits.
+    - It looks only at blocks whose text changed in this editor session, and it keeps only candidates whose span touches changed text.
+    - Opening a note, restarting or switching tabs never re-suggests unchanged text, so an old "tomorrow" is never re-read against a new day.
+  - Results are applied by a meta-only transaction. It is never added to history, never saved and never dispatched while an IME composition is active. Focus is never taken.
+  - Budgets:
+    - work runs in slices of at most 8 ms, and any edit aborts the rest of a pass;
+    - at most 2,000 changed blocks per pass, and at most 100 live candidates per editor;
+    - a single change that inserts more than 64 KiB of text is not scanned automatically;
+    - a block longer than 5,000 characters is scanned only within ±300 characters of the changed text.
+  - Candidates for a note survive an editor remount within the same window session (in memory, at most 20 notes). They are not persisted.
+  - Candidates are suppressed when they match a persisted dismissal, or a live linked source in state `ok`. Code blocks are not scanned automatically.
+  - The public setting `reminders.suggestFromText` (default true) turns automatic detection off. "Create reminder from text" in the toolbar More menu always stays available.
+- Status: accepted.
+- Evidence: plan sections 9.3 and 9.4; probe timings.
+
+### D-092 Source anchors, dedupe and explicit update
+- Decision:
+  - Source states are kept inside every content transaction by `ReminderAnchors.sync`, together with the Phase 05 block anchors:
+    - `ok`: the source block (or, for a plain note, the note text) still contains the source text;
+    - `changed`: the block exists but no longer contains the source text;
+    - `missing`: the block is gone;
+    - `detached`: chosen by the user ("Keep current time"), or set by a Phase 05 re-anchor ("Attach to current paragraph", "Keep note-level"). A detached source is never recomputed.
+  - A changed source never moves the reminder. The user chooses Update (re-read the current text, with the reference instant set to now, through the confirmation card) or Keep current time.
+  - The dismissal key uses the span ordinal instead of the span start that ARCHITECTURE section 3 had sketched, so edits elsewhere in the block do not revive a dismissed phrase. The reference date is the calendar date of the parse in the parse zone.
+  - Dismissals are pruned at startup when their reference date is more than 2 days before today (UTC), and capped at 500 per note (newest kept).
+  - Confirmed links are deduped by reminder ID: one source per reminder, plus the idempotent create of D-089.
+  - Main checks, in the create transaction, that the stored text at the span equals the source text. A mismatch answers `sourceMismatch`, and the renderer flushes once and retries.
+  - Plain-text notes get note-level reminders. Their source has a NULL block and NULL span, and the ordinal over the whole text.
+- Status: accepted.
+- Evidence: plan sections 5, 8.3 and 8.4.
+
+### D-093 Confirmation card
+- Decision:
+  - The confirmation card is a modal dialog ("Create reminder" or "Update reminder"), the same in tabs and stickies, built from the Phase 05 reminder form pieces. It shows:
+    - the title;
+    - the literal source phrase;
+    - the reference instant for relative phrases;
+    - the date input with the full weekday date;
+    - the time with its default disclosure;
+    - the IANA zone;
+    - the preview with "Your time" and the DST notices and choices;
+    - Repeat and Follow up;
+    - Add (or Update) and Cancel.
+  - Ambiguous date order, am/pm, zone abbreviations and "midnight" have no default: Add stays disabled and shows the missing choice.
+  - A past result shows the Phase 05 past notice. A year-omitted past date offers "Use next year". Adding a past reminder needs "Add anyway".
+  - Title rule: the source text without the phrase and one adjacent connector word (by, on, at, before, until, till, due), with whitespace collapsed, at most 120 characters. If that is empty, the note title is used.
+  - Without a phrase (selected text with no date), the card switches to manual entry and creates an ordinary `reminder:create` reminder, with no source row.
+  - Nothing is written before Add. Cancel and Escape write nothing. Dismiss is a separate action in the suggestion bar.
+- Status: accepted.
+- Evidence: plan section 9.6 and UX_SPEC section 6.
+
+### D-094 Phase 06 settings keys
+- Decision: new public settings:
+  - `reminders.endOfDayTime` (`HH:mm`, default `17:00`);
+  - `reminders.dateOnlyTime` (`HH:mm`, default `09:00`);
+  - `reminders.suggestFromText` (boolean, default `true`).
+
+  Settings > Reminders gains the controls and the sentence "Suggestions understand English dates and times only." INF-PREF-02 stays a Phase 08 row (final Settings layout and its E2E). Its planned tests name these keys.
+- Status: accepted.
+- Evidence: plan section 7.
+
+### D-095 Parsing test contract location (Phase 00 F-7)
+- Decision: the parsing test contract is the frozen-clock table in PRODUCT_SPEC section 6, not "Appendix B of the Phase 00 plan" (that plan moves under `docs/development/` at finalization). The references to "Appendix B" in D-007, D-023 and D-025 mean that table. Additional rows are in the Phase 06 plan's rules table and in ARCHITECTURE section 10.
+- Status: accepted.
+- Evidence: `docs/progress/phase-00-acceptance.md` F-7.
+
+### D-096 Implementation decisions of Phase 06 (implementer)
+Recorded by the Phase 06 implementer on 2026-10-09. Each item is a deviation from, or a detail the plan left open in, `docs/plans/phase-06.md`.
+- Bundling `chrono-node/en`: TypeScript resolves the subpath typings through the package exports, but Vite's bundled exports resolver reads the package's `./*/*` pattern with an unescaped second `*` and maps `chrono-node/en` to `dist/esm/locales/en/en/index.js`, which does not exist. `aliases.config.ts` maps exactly `chrono-node/en` to the package's own ESM English entry (`dist/esm/locales/en/index.js`, what Node resolves) for the electron-vite renderer build and Vitest. No dependency changes; the root `chrono-node` entry (all locales) is still never imported.
+- The `BST` row of the abbreviation table suggests `Asia/Dhaka`; the INF-REM-02 boundary test forbids that literal anywhere in `src`. The test now removes exactly that one table row from `shared/nlp/abbreviations.ts` before scanning, so any other `Asia/Dhaka` literal (a default zone) still fails it. `UTC` is used through the new `UTC_ZONE` constant in `shared/time/zones.ts`, the only file allowed to quote it.
+- "Touches a changed range" (plan section 9.3): text written inside a phrase, or a deletion inside it or at its edges. Text typed right after or right before a phrase does not touch it, so continuing to type keeps its underline, and appending to old text does not suggest the old phrase. A detection pass adds its phrases and replaces only the phrases they overlap; untouched phrases of the same block stay.
+- Live phrases re-read their block offsets and ordinal from their current positions before a card, a dismissal or the memory uses them (edits earlier in the block move them).
+- A phrase in the block of a reminder whose source is `changed` (the whole note for plain-text notes) offers "Update reminder" for that reminder; its text differs from the stored phrase by definition, so it is matched by block, not by text.
+- In update mode the card pre-selects the phrase with the source's text, else the one at its ordinal, else the first (`ReminderSourceDto` carries no span).
+- The card keeps the "Date order" and "Time of day" groups and the abbreviation buttons after a choice, so a choice can be changed. `Choices` gains `fold` (the "Use the later one" choice) and "Use next year" applies only when that date exists (29 February).
+- More → "Create reminder from text" on the paragraph at the cursor (no selection, no phrase at the cursor) stores origin `selection`: the user asked for that text.
+- `reminder:updateFromSource {keep}` on a reminder without a source answers VALIDATION_FAILED "This reminder was not created from note text." (UX_SPEC section 6 errors).
+- `undoDelete` re-reads the source state from the stored content, as it does the Phase 05 anchor (content may have changed while the reminder was deleted).
+- The renderer drift case of `nlp-source-text` lives in `tests/unit/renderer/editor/block-text.test.ts`, because it needs a jsdom Tiptap editor; the JSON side stays in `tests/unit/nlp-source-text.test.ts`.
+- Status: accepted (implementer).
+- Evidence: `tests/unit/{boundaries,nlp-parse,nlp-source-text}.test.ts`, `tests/unit/renderer/editor/{suggest-detect,block-text}.test.ts`, `tests/unit/renderer/suggestion-card.test.tsx`, `tests/integration/suggestions.test.ts`.
+
+### D-097 Custom title bars (user direction, 2026-10-09)
+- Context: the user asked for one custom top bar in the main window (like the FrameCapt reference) instead of the OS title bar plus the app header, and for frameless stickies and widget. This supersedes the native-frame part of D-033 and the "native frame" notes of D-070 and D-081.
+- Decision:
+  - Main window: `titleBarStyle: 'hidden'` with `titleBarOverlay` (Windows and Linux): the OS still draws minimize, maximize/restore and close (so snapping, double-click and accessibility stay native), over the right end of the app's 44 px bar; their colors follow the theme through `setTitleBarOverlay` on `nativeTheme` updates (the app's theme setting drives `themeSource`). The window has no OS menu: `Menu.setApplicationMenu(null)`, `removeMenu()`; the old File/Edit application menu (`src/main/menu.ts`) is removed (Chromium still handles the editing keys).
+  - The header becomes the only title bar: icon and name, the in-app File, View and Help menus over existing commands (theme, panels, widget, quit, new note/sticky, close tab, shortcuts and About dialogs), the centered search box and the panel toggles. It is `-webkit-app-region: drag`; every control is `no-drag`; its right padding uses the Window Controls Overlay variables.
+  - Stickies and the widget: `frame: false`; the 36 px header is the drag region; the sticky header gains "Close sticky" (×, the existing hide action); the widget keeps "Hide widget".
+  - No new IPC channel: the OS draws the main window's caption buttons, and the sticky and widget close through their existing, role-checked channels (`sticky:hide`, `widget:hide`), so the security surface is unchanged.
+- Consequences: INF-SHELL-06 is reworded; UX_SPEC section 2 and 5 updated; the native check of the caption buttons stays in the Phase 09 matrix. Page screenshots do not include the OS-drawn caption buttons.
+- Status: accepted (user direction via the coordinator).
+- Evidence: `tests/unit/{main,sticky,widget}-window-options.test.ts`, `tests/unit/renderer/sticky-header.test.tsx`, `tests/e2e/titlebar.spec.ts`, `.infinity-work/logs/phase-06/titlebar-targeted-*.log`.
 
 ## Risks carried forward
 

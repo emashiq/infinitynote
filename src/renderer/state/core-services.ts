@@ -3,6 +3,7 @@ import type { InfinityBridge } from '../../shared/contracts/bridge';
 import { PUBLIC_SETTING_KEYS, SETTINGS, ThemeSetting, type PublicSettingKey, type SettingValue } from '../../shared/contracts/settings';
 import type { EditorServices } from '../editor/editor-services';
 import type { AttachmentLimits } from '../editor/uploader';
+import { SuggestionContext } from '../reminders/suggestion-context';
 import { NoticeStore } from './notice-store';
 import { createStore, type Store, type Timers } from './store';
 import { ThemeStore, type ThemeEnv } from './theme-store';
@@ -31,10 +32,12 @@ export function createCoreServices(bridge: InfinityBridge, deps: { timers: Timer
   const notices = new NoticeStore(deps.timers);
   const theme = new ThemeStore(bridge, deps.themeEnv);
   const attachmentLimits = createStore<AttachmentLimits>({ imageMaxMb: DEFAULT_IMAGE_MAX_MB, documentMaxMb: DEFAULT_DOCUMENT_MAX_MB });
+  const suggestions = new SuggestionContext(bridge);
   const editor: EditorServices = {
     bridge,
     notify: (message) => notices.push(message, 'error'),
     limits: () => attachmentLimits.getState(),
+    suggestions,
   };
   const setLimit = (key: string, value: unknown): void => {
     if (!(key in LIMIT_KEYS)) return;
@@ -46,6 +49,7 @@ export function createCoreServices(bridge: InfinityBridge, deps: { timers: Timer
     // Settings changes from any window: the theme and the attachment limits follow them.
     bridge.subscribe('settings:changed', ({ key, value }) => {
       setLimit(key, value);
+      suggestions.applySetting(key, value);
       if (key !== 'appearance.theme') return;
       const parsed = ThemeSetting.safeParse(value);
       if (parsed.success && theme.store.getState().value !== parsed.data) theme.hydrate(parsed.data);
@@ -64,6 +68,7 @@ export function createCoreServices(bridge: InfinityBridge, deps: { timers: Timer
       const values = res.data.values as PublicSettingValues;
       if (values['appearance.theme']) theme.hydrate(values['appearance.theme']);
       for (const key of Object.keys(LIMIT_KEYS)) setLimit(key, values[key as keyof typeof LIMIT_KEYS]);
+      for (const [key, value] of Object.entries(values)) suggestions.applySetting(key, value);
       return values;
     },
     track(off) {

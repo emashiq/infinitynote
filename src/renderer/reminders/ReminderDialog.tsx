@@ -1,16 +1,12 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import type { Result } from '../../shared/contracts/envelope';
-import { FOLLOWUP_INTERVALS, FOLLOWUP_MAX_COUNTS, type ReminderDtoType, type ReminderInputType, type ZonesListResponseType } from '../../shared/contracts/reminders';
+import type { ReminderDtoType, ReminderInputType, ZonesListResponseType } from '../../shared/contracts/reminders';
 import { SETTINGS, type SettingValue } from '../../shared/contracts/settings';
 import { useServices } from '../state/use-store';
 import { Dialog } from '../ui/Dialog';
-import { SegmentedControl } from '../ui/SegmentedControl';
-import { Switch } from '../ui/Switch';
 import {
   CHOOSE_ZONE,
   PAST_TEXT,
-  PENDING_TEXT,
-  WEEKDAYS,
   formProblem,
   initialForm,
   needsPendingChoice,
@@ -19,6 +15,7 @@ import {
   toInput,
   type ReminderForm,
 } from './reminder-form';
+import { Field, FollowupFields, PendingPolicyField, PreviewBlock, RepeatFields, ZoneField } from './ReminderFields';
 
 export interface ReminderDialogProps {
   noteId: string;
@@ -39,18 +36,6 @@ interface Loaded {
 }
 
 const detailsOf = (error: { details?: unknown }) => (error.details ?? {}) as { past?: boolean; blockMissing?: boolean };
-
-function Field({ label, children }: { label: string; children: (id: string) => ReactNode }) {
-  const id = useId();
-  return (
-    <div className="form-field">
-      <label htmlFor={id} className="field-label">
-        {label}
-      </label>
-      {children(id)}
-    </div>
-  );
-}
 
 /**
  * Add or edit a reminder (plan section 9.7): title, date with Today and Tomorrow in the chosen zone, time, IANA zone,
@@ -149,115 +134,11 @@ export function ReminderDialog(props: ReminderDialogProps) {
           </div>
           <Field label="Time">{(id) => <input id={id} type="time" className="text-input" value={form.time} onChange={(e) => update({ time: e.target.value })} />}</Field>
         </div>
-        <Field label="Time zone">
-          {(id) => (
-            <select id={id} className="select" value={form.zoneId} onChange={(e) => update({ zoneId: e.target.value })}>
-              {form.zoneId === '' ? (
-                <option value="" disabled>
-                  {CHOOSE_ZONE}
-                </option>
-              ) : null}
-              {zones.zones.map((z) => (
-                <option key={z} value={z}>
-                  {z}
-                </option>
-              ))}
-            </select>
-          )}
-        </Field>
-        <p className="field-label">Repeat</p>
-        <SegmentedControl<ReminderForm['repeat']>
-          label="Repeat"
-          name="reminder-repeat"
-          value={form.repeat}
-          onChange={(repeat) => update({ repeat })}
-          options={[
-            { value: 'none', label: 'None' },
-            { value: 'daily', label: 'Daily' },
-            { value: 'weekly', label: 'Weekly' },
-          ]}
-        />
-        {form.repeat === 'weekly' ? (
-          <div className="weekday-toggles" role="group" aria-label="Days">
-            {WEEKDAYS.map((w) => {
-              const on = form.weekdays.includes(w.day);
-              return (
-                <button
-                  key={w.day}
-                  type="button"
-                  className={`btn btn-small${on ? ' is-on' : ''}`}
-                  aria-label={w.name}
-                  aria-pressed={on}
-                  onClick={() => update({ weekdays: on ? form.weekdays.filter((d) => d !== w.day) : [...form.weekdays, w.day] })}
-                >
-                  {w.label}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-        <Switch label="Follow up if not done" checked={form.followupOn} onChange={(followupOn) => update({ followupOn })} />
-        {form.followupOn ? (
-          <div className="form-row">
-            <Field label="Every">
-              {(id) => (
-                <span className="inline-unit">
-                  <select id={id} className="select" value={form.intervalMinutes} onChange={(e) => update({ intervalMinutes: Number(e.target.value) as ReminderForm['intervalMinutes'] })}>
-                    {FOLLOWUP_INTERVALS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                  minutes
-                </span>
-              )}
-            </Field>
-            <Field label="At most">
-              {(id) => (
-                <span className="inline-unit">
-                  <select id={id} className="select" value={form.maxFollowups} onChange={(e) => update({ maxFollowups: Number(e.target.value) as ReminderForm['maxFollowups'] })}>
-                    {FOLLOWUP_MAX_COUNTS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                  times
-                </span>
-              )}
-            </Field>
-          </div>
-        ) : null}
-        {preview ? (
-          <div className="reminder-preview" aria-label="Preview">
-            <p className="due-primary">{preview.primary}</p>
-            {preview.local ? <p className="muted">{preview.local}</p> : null}
-            {preview.gap ? <p className="dst-notice">{preview.gap}</p> : null}
-            {preview.fold ? (
-              <>
-                <p className="dst-notice">{preview.fold.notice}</p>
-                <label className="checkbox">
-                  <input type="checkbox" checked={form.foldPreference === 'later'} onChange={(e) => update({ foldPreference: e.target.checked ? 'later' : 'earlier' })} />
-                  {preview.fold.laterLabel}
-                </label>
-              </>
-            ) : null}
-          </div>
-        ) : null}
-        {askPending ? (
-          <fieldset className="pending-policy">
-            <legend>{PENDING_TEXT}</legend>
-            <label className="radio">
-              <input type="radio" name="pending-policy" checked={pendingPolicy === 'keep'} onChange={() => setPendingPolicy('keep')} />
-              Keep the current overdue reminder
-            </label>
-            <label className="radio">
-              <input type="radio" name="pending-policy" checked={pendingPolicy === 'complete'} onChange={() => setPendingPolicy('complete')} />
-              Mark it done
-            </label>
-          </fieldset>
-        ) : null}
+        <ZoneField zoneId={form.zoneId} zones={zones.zones} onChange={(zoneId) => update({ zoneId })} />
+        <RepeatFields form={form} onChange={update} />
+        <FollowupFields form={form} onChange={update} />
+        <PreviewBlock preview={preview} form={form} onChange={update} />
+        {askPending ? <PendingPolicyField value={pendingPolicy} onChange={setPendingPolicy} /> : null}
         {past ? (
           <div className="dialog-warning" role="alert">
             <span>{PAST_TEXT}</span>

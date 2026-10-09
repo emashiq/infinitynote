@@ -1,4 +1,5 @@
 import type { InfinityBridge } from '../../shared/contracts/bridge';
+import type { SuggestionContext } from '../reminders/suggestion-context';
 import type { AttachmentLimits } from './uploader';
 
 /**
@@ -9,4 +10,6 @@ export interface EditorServices {
   bridge: Pick<InfinityBridge, 'attachment' | 'shell'>;
   notify: (message: string) => void;
   limits: () => AttachmentLimits;
+  /** Reminder suggestions: main's reference context, dismissals and the suggestion settings (D-091). */
+  suggestions: SuggestionContext;
 }

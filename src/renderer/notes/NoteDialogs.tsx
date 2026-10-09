@@ -1,4 +1,7 @@
 import { useCallback } from 'react';
+import type { InfinityBridge } from '../../shared/contracts/bridge';
+import type { CardRequest } from '../reminders/card-request';
+import { SuggestionCard } from '../reminders/SuggestionCard';
 import type { VersionSummaryType } from '../../shared/contracts/notes';
 import { useStore } from '../state/use-store';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -11,11 +14,17 @@ export const CONVERT_BODY = 'Formatting, checklists, links and images will be re
 export const RESTORE_VERSION_TITLE = 'Restore this version?';
 export const RESTORE_VERSION_BODY = 'The current content is saved as a version first.';
 
-export type NoteDialog = { kind: 'convert' } | { kind: 'versions' } | { kind: 'restoreVersion'; version: VersionSummaryType } | { kind: 'compare'; draftId: string };
+export type NoteDialog =
+  | { kind: 'convert' }
+  | { kind: 'versions' }
+  | { kind: 'restoreVersion'; version: VersionSummaryType }
+  | { kind: 'compare'; draftId: string }
+  /** A reminder suggestion's card in a window without the main window's dialog host (a sticky). */
+  | { kind: 'suggestion'; request: CardRequest };
 
 /**
- * The note dialogs shared by tabs and sticky windows: plain-text conversion, version history, version restore and
- * the recovered-draft comparison. Failed actions go to `report`.
+ * The note dialogs shared by tabs and sticky windows: plain-text conversion, version history, version restore, the
+ * recovered-draft comparison and (in stickies) the suggestion card. Failed actions go to `report`.
  */
 export function NoteDialogs({
   controller,
@@ -24,6 +33,8 @@ export function NoteDialogs({
   readOnly,
   now,
   report,
+  bridge,
+  notify,
 }: {
   controller: NoteController;
   dialog: NoteDialog | null;
@@ -31,6 +42,8 @@ export function NoteDialogs({
   readOnly: boolean;
   now: number;
   report: (result: Promise<ActionResult>) => void;
+  bridge: Pick<InfinityBridge, 'zones' | 'settings' | 'reminder'>;
+  notify: (message: string) => void;
 }) {
   const loadVersions = useCallback(() => controller.listVersions(), [controller]);
   const close = () => onDialog(null);
@@ -65,6 +78,16 @@ export function NoteDialogs({
             close();
             report(controller.restoreVersion(dialog.version.id));
           }}
+        />
+      ) : null}
+      {dialog?.kind === 'suggestion' ? (
+        <SuggestionCard
+          request={dialog.request}
+          bridge={bridge}
+          persist={async () => (await controller.flush()).ok}
+          persistBlocks={() => controller.persistBlockIds()}
+          notify={notify}
+          onClose={close}
         />
       ) : null}
       {compareDraft ? (

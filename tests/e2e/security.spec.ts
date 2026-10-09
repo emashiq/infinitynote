@@ -108,7 +108,7 @@ test('bridge surface', async () => {
     const keys = (o: unknown) => Object.keys(o as object).sort();
     let subscribeError = '';
     try {
-      window.infinity.subscribe('suggestion:dismiss' as never, () => {});
+      window.infinity.subscribe('refs:list' as never, () => {});
     } catch (e) {
       subscribeError = (e as Error).message;
     }
@@ -150,6 +150,7 @@ test('bridge surface', async () => {
       'shell',
       'sticky',
       'subscribe',
+      'suggestion',
       'trash',
       'tree',
       'versions',
@@ -171,12 +172,13 @@ test('bridge surface', async () => {
       occurrence: ['complete', 'snooze'],
       palette: ['searchTitles'],
       project: ['create', 'rename', 'trash'],
-      reminder: ['create', 'delete', 'listForNote', 'open', 'undoDelete', 'update'],
+      reminder: ['create', 'createFromSuggestion', 'delete', 'listForNote', 'open', 'undoDelete', 'update', 'updateFromSource'],
       reminders: ['listView', 'summary'],
       session: ['get', 'set'],
       settings: ['get', 'set'],
       shell: ['openExternal'],
       sticky: ['dock', 'float', 'hide', 'remove', 'restore', 'setCollapsed', 'setColor', 'setPinned'],
+      suggestion: ['dismiss', 'listDismissed'],
       trash: ['list', 'purge', 'restore'],
       tree: ['list'],
       versions: ['list', 'restore'],
@@ -336,11 +338,23 @@ test('sticky windows are hardened (INF-FND-03, INF-FND-04, D-064)', async () => 
         float: code(await b.sticky.float({ noteId: mine! })),
         openOther: code(await b.note.open({ noteId: theirs! })),
         openOwn: code(await b.note.open({ noteId: mine! })),
+        // Phase 06 (D-089): suggestions only for the sticky's own note.
+        dismissedOther: code(await b.suggestion.listDismissed({ noteId: theirs! })),
+        dismissedOwn: code(await b.suggestion.listDismissed({ noteId: mine! })),
       };
     },
     [own, other],
   );
-  expect(answers).toEqual({ sessionSet: 'FORBIDDEN', treeList: 'FORBIDDEN', trashPurge: 'FORBIDDEN', float: 'FORBIDDEN', openOther: 'FORBIDDEN', openOwn: 'ok' });
+  expect(answers).toEqual({
+    sessionSet: 'FORBIDDEN',
+    treeList: 'FORBIDDEN',
+    trashPurge: 'FORBIDDEN',
+    float: 'FORBIDDEN',
+    openOther: 'FORBIDDEN',
+    openOwn: 'ok',
+    dismissedOther: 'FORBIDDEN',
+    dismissedOwn: 'ok',
+  });
   expect(readMainLog(h.userData)).toContain('ipc: channel not allowed for role=sticky channel=session:set');
 });
 

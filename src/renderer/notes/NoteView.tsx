@@ -174,8 +174,23 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
           controller.revealDone();
         }}
         onAddReminder={() => ui.openDialog(newReminderDialog(controller, liveTitle))}
+        suggestions={{
+          noteId: controller.noteId,
+          noteTitle: liveTitle,
+          reminders: noteReminders.reminders,
+          openCard: (request) => ui.openDialog({ kind: 'suggestion', request }),
+        }}
       />
-      <NoteDialogs controller={controller} dialog={dialog} onDialog={setDialog} readOnly={readOnly} now={now()} report={report} />
+      <NoteDialogs
+        controller={controller}
+        dialog={dialog}
+        onDialog={setDialog}
+        readOnly={readOnly}
+        now={now()}
+        report={report}
+        bridge={services.bridge}
+        notify={(message) => notices.push(message, 'info')}
+      />
     </div>
   );
 }

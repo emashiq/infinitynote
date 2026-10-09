@@ -12,21 +12,61 @@
   grid-column: 1 / -1;
 }
 
+/*
+ * The main window's title bar (D-097): a drag region; the OS caption buttons (titleBarOverlay) cover its right end,
+ * which the Window Controls Overlay variables report (0 where there is no overlay).
+ */
 .app-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   height: var(--header-h);
-  padding: 0 12px;
+  padding: 0 calc(12px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) 0 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.app-header button,
+.app-header input,
+.app-header .menubar {
+  -webkit-app-region: no-drag;
+}
+
+.header-start {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.menubar {
+  display: flex;
+  gap: 2px;
+}
+
+.menubar-item {
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: default;
+}
+
+.menubar-item:hover,
+.menubar-item[aria-expanded='true'] {
+  background: var(--bg-subtle);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 140px;
 }
 
 .brand-icon {
@@ -43,9 +83,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  width: min(480px, 40vw);
+  justify-self: center;
+  width: min(480px, 100%);
   height: 30px;
-  margin: 0 auto;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
@@ -81,8 +121,8 @@ kbd {
 
 .header-actions {
   display: flex;
+  justify-self: end;
   gap: 4px;
-  min-width: 140px;
   justify-content: flex-end;
 }
 

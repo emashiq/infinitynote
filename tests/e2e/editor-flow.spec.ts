@@ -98,7 +98,10 @@ test('edit, paste and reload', async () => {
 
   const id = h.one<{ id: string }>('SELECT id FROM notes')!.id;
   const proc = app.process();
-  await app.evaluate(({ app: electronApp }) => electronApp.quit());
+  await app.evaluate(({ app: electronApp }) => {
+    // On a fresh task, as closeApp does (F04-A2): never inside a statement an inspector interrupt paused.
+    setImmediate(() => electronApp.quit());
+  });
   expect(await waitForExit(proc, 15_000)).toBe(true);
 
   const second = await h.restart();

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Ellipsis, Pin } from 'lucide-react';
+import { ChevronDown, ChevronUp, Ellipsis, Pin, X } from 'lucide-react';
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { NoteColorType } from '../../shared/contracts/hierarchy';
 import { STICKY_MESSAGES, type StickyStateType } from '../../shared/contracts/stickies';
@@ -37,7 +37,8 @@ const below = (ref: RefObject<HTMLButtonElement | null>) => {
 
 /**
  * The 36 px sticky header (D-070): color, title, source badge, pin (disabled where always-on-top is unsupported),
- * collapse and the actions menu. The window keeps its native frame; the header holds no drag region.
+ * collapse, the actions menu and Close. The window is frameless (D-097): the header is its title bar and drag region;
+ * its controls are not. Close hides the sticky, as closing its window always has.
  */
 export function StickyHeader({
   state,
@@ -112,6 +113,7 @@ export function StickyHeader({
         aria-expanded={menu?.kind === 'actions'}
         onClick={() => setMenu({ kind: 'actions', anchor: below(actionsRef) })}
       />
+      <IconButton label="Close sticky" title="Close (Ctrl+W)" icon={X} size={14} className="sticky-close" onClick={actions.hide} />
       {menu?.kind === 'actions' ? <Menu label="Sticky actions" anchor={menu.anchor} items={items} onClose={close} /> : null}
       {menu?.kind === 'color' ? <ColorMenu current={state.color} anchor={menu.anchor} onSelect={actions.setColor} onClose={close} /> : null}
     </div>

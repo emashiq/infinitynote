@@ -4,7 +4,7 @@ import path from 'node:path';
 import { dbFileOf, packagedExe, readMainLog, rendererSandbox } from './fixtures';
 import { useApp } from './harness';
 import { stickyPage } from './sticky-ui';
-import { activate, railGo } from './ui';
+import { activate, openFromTree, railGo } from './ui';
 
 const h = useApp();
 
@@ -21,7 +21,7 @@ test('packaged app starts, reports diagnostics and persists the theme @packaged'
   });
   expect(info?.isPackaged).toBe(true);
   expect(info?.sqlite).toMatchObject({ driver: 'better-sqlite3', fts5: true, json: true });
-  expect(info?.schemaVersion).toBe(5);
+  expect(info?.schemaVersion).toBe(6);
   expect(info?.startup).toEqual({ status: 'ok' });
 
   await railGo(page, 'Settings');
@@ -139,4 +139,32 @@ test('packaged reminder reaches the OS notification layer; reminder seams ignore
   console.log(`packaged delivery: ${JSON.stringify(delivery)}`);
   if (caps!.nativeNotifications.status === 'unsupported') expect(delivery).toEqual({ outcome: 'unsupported', detail: caps!.nativeNotifications.reason });
   else expect(delivery!.outcome).toBe('dispatched');
+});
+
+test('packaged build suggests a reminder from text @packaged', async () => {
+  // The real clock and zone (the test seams are ignored in packaged builds), so no date is asserted: this proves the
+  // English chrono parser is bundled and runs in the packaged renderer (plan section 12.4).
+  const { page } = await h.start();
+  const id = await page.evaluate(async () => {
+    const r = await window.infinity.note.create({ location: { projectId: null, folderId: null }, sticky: false, title: 'Rent' });
+    return r.ok ? r.data.note.id : '';
+  });
+  await openFromTree(page, id);
+  const editor = page.getByRole('textbox', { name: 'Note text', exact: true });
+  await expect(editor).toHaveAttribute('aria-readonly', 'false');
+  await editor.click();
+  await page.keyboard.type('Pay rent tomorrow');
+  await expect(page.locator('.nlp-candidate')).toHaveText(['tomorrow'], { timeout: 5_000 });
+  const more = page.getByRole('toolbar', { name: 'Formatting' }).getByRole('button', { name: 'More', exact: true });
+  await more.focus();
+  await more.press('Enter');
+  const item = page.getByRole('menu', { name: 'More' }).getByRole('menuitem', { name: 'Create reminder from text', exact: true });
+  await item.focus();
+  await item.press('Enter');
+  const card = page.getByRole('dialog', { name: 'Create reminder' });
+  await expect(card.getByRole('heading', { name: 'Create reminder' })).toBeVisible();
+  await expect(card.locator('.date-line')).toHaveText(/^\w+day, \d{1,2} \w+ \d{4}$/);
+  await activate(card.getByRole('button', { name: 'Cancel' }));
+  await expect(card).toHaveCount(0);
+  expect(h.one<{ n: number }>('SELECT count(*) AS n FROM reminders')?.n).toBe(0);
 });

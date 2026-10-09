@@ -10,7 +10,7 @@ import type { LeaseHolder } from '../../src/main/services/lease-manager';
 import type { FakeClock } from '../../src/main/services/clock';
 import { memoryLogger } from '../../src/main/services/logger';
 import { createFixedZoneProvider } from '../../src/main/services/system-zone';
-import { fixedClock, openFresh, randomIds } from './helpers';
+import { fixedClock, openFresh, randomIds, type TestDb } from './helpers';
 
 /**
  * The production service graph (createMainServices) over a fresh temp database with an injectable clock, a
@@ -24,9 +24,11 @@ export async function setupServices(
     zone?: string | null;
     /** Replaces the default clock (the reminder tests move wall and monotonic time separately). */
     clock?: FakeClock;
+    /** An already open database (a restart: see reopen); a fresh one by default. */
+    testDb?: TestDb;
   } = {},
 ) {
-  const t = await openFresh();
+  const t = opts.testDb ?? (await openFresh());
   const clock = opts.clock ?? fixedClock(opts.now ?? 1_800_000_000_000);
   /** The computer's zone as the reminder services see it (D-084 seam). */
   const zones = createFixedZoneProvider(opts.zone === undefined ? 'Asia/Dhaka' : opts.zone);

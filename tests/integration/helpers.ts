@@ -62,6 +62,15 @@ export interface TestDb {
   logger: ReturnType<typeof memoryLogger>;
 }
 
+/** Closes a test database and opens the same file again, as an app restart does. */
+export async function reopen(t: TestDb): Promise<TestDb> {
+  t.db.close();
+  const logger = memoryLogger();
+  const result = await openDatabase({ dbFile: t.dbFile, preMigrationDir: t.preMigrationDir, logger });
+  if (!result.ok) throw new Error(`reopen failed: ${result.code} ${result.detail}`);
+  return { ...t, db: trackDb(result.db), logger };
+}
+
 export async function openFresh(): Promise<TestDb> {
   const dir = mkTmp();
   const dbFile = path.join(dir, 'data', 'infinity-notes.sqlite3');

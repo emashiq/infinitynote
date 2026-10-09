@@ -31,7 +31,7 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-SHELL-03 | Collapsible right context panel 280-340 px with Info section; later Reminders and References sections | 02 | E,V | e2e/shell.spec › panel toggle; e2e/visual.spec › 1280x800 light: details panel | done |
 | INF-SHELL-04 | Narrow windows turn tree (<960 px) and panel (<1180 px) into drawers | 02 | E,V | e2e/shell.spec › narrow 760x560 drawers; › breakpoints; e2e/visual.spec › 760x560 light | done |
 | INF-SHELL-05 | Compact dark theme tokens following OS theme | 02 | V | e2e/shell.spec › theme follows OS; unit/tokens.test; e2e/visual.spec › 1100x720 dark | done |
-| INF-SHELL-06 | Native window frame and controls; visible keyboard focus | 02 | V,N | e2e/shell.spec › visible focus; unit/main-window-options.test; e2e/visual.spec › focus ring; native frame check pending (Phase 09 matrix) | in_progress |
+| INF-SHELL-06 | One app-drawn title bar with the OS window controls (D-097); visible keyboard focus | 02 | V,N | e2e/shell.spec › visible focus; unit/main-window-options.test; e2e/titlebar.spec; e2e/visual.spec › focus ring; native caption-button check pending (Phase 09 matrix) | in_progress |
 | INF-HOME-01 | Single reusable Home tab, always first, not closable or duplicable | 02 | E | e2e/home.spec › one Home tab after relaunch; › Home not closable; unit/tab-session.test; unit/renderer/tab-strip.test | done |
 | INF-HOME-02 | Home shows quick actions (New note, New sticky, New project), Pinned and Recent | 02 | E | e2e/home.spec › pinned and recent reflect data; › pin; integration/home-summary.test | done |
 | INF-HOME-03 | Home scope filter All/Common/Project on one dashboard, persisted; new items inherit filter scope | 02 | I,E | e2e/home.spec › filter; integration/home-summary.test; unit/renderer/state/home-store.test | done |
@@ -128,30 +128,30 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-WIDG-01 | Optional reminder widget (default off) with Today/Upcoming/Overdue, Open, Snooze, Done | 05 | E | e2e/widget.spec › actions; integration/ipc-handlers-phase05.test › widget | done |
 | INF-WIDG-02 | Widget movable, resizable, collapsible, hideable; optional capability-checked always-on-top, default off | 05 | E,N | e2e/widget.spec › collapse, hide and pin; integration/widget-manager.test; native pin and user move/resize (Phase 09 matrix) | in_progress |
 | INF-WIDG-03 | Widget uses the main ReminderService; hiding it keeps scheduling; state shared live | 05 | I,E | integration/widget-manager.test; e2e/widget.spec › one scheduler for both windows | done |
-| INF-NLP-01 | Local English parsing with explicit reference instant and selected zone; no network or LLM | 06 | U,R | unit/nlp-parse.test; dependency review | planned |
-| INF-NLP-02 | Calendar components converted in the selected IANA zone, not a fixed offset | 06 | U | unit/nlp-parse.test › zone conversion | planned |
-| INF-NLP-03 | End of day = configurable 17:00; tomorrow EOD at 2026-10-08 13:00 Dhaka -> 2026-10-09 17:00 Dhaka (11:00Z) | 06 | U | unit/nlp-parse.test › tomorrow end of the day | planned |
-| INF-NLP-04 | Date-only phrases use 09:00 with visible disclosure | 06 | U,E | unit/nlp-parse.test › date-only; e2e/nlp.spec › disclosure | planned |
-| INF-NLP-05 | Explicit times honored (tomorrow at 8pm -> 20:00) | 06 | U | unit/nlp-parse.test › explicit time | planned |
-| INF-NLP-06 | Durations use instant arithmetic (in 2 hours -> 15:00 Dhaka) | 06 | U | unit/nlp-parse.test › duration | planned |
-| INF-NLP-07 | Weekday policy (bare/this/next/last) per D-025 | 06 | U | unit/nlp-parse.test › weekday table | planned |
-| INF-NLP-08 | Ambiguous numeric dates and bare hours require explicit choice | 06 | U,E | unit/nlp-parse.test › 03/04 at 5; e2e/nlp.spec › choice required | planned |
-| INF-NLP-09 | Zone abbreviations require choosing an IANA zone | 06 | U,E | unit/nlp-parse.test › CST | planned |
-| INF-NLP-10 | Past dates stay visibly past; year-less past dates offer explicit next year | 06 | U,E | unit/nlp-parse.test › past date | planned |
-| INF-NLP-11 | Multiple phrases in one block yield separate candidates | 06 | U | unit/nlp-parse.test › multiple phrases | planned |
-| INF-NLP-12 | Unsupported phrases give no candidate; manual entry remains available | 06 | U,E | unit/nlp-parse.test › unsupported | planned |
-| INF-NLP-13 | Calendar arithmetic uses the selected zone near midnight (New York vs Dhaka) | 06 | U | unit/nlp-parse.test › new york tomorrow | planned |
-| INF-NLP-14 | English only; no implied multilingual parsing | 06 | R | review docs/UI copy | planned |
-| INF-SUG-01 | Idle detection in notes and stickies with unobtrusive underline and Create reminder; typing never interrupted, text unchanged | 06 | U,E | unit/suggest-detect.test; e2e/nlp.spec › underline, text unchanged | planned |
-| INF-SUG-02 | Selected text -> Create reminder | 06 | E | e2e/nlp.spec › selection | planned |
-| INF-SUG-03 | Confirmation card shows title, source text, weekday date, time, zone, local conversion, repeat, follow-up, Add/Cancel, DST choices | 06 | E | e2e/nlp.spec › card fields | planned |
-| INF-SUG-04 | No reminder is persisted before Add | 06 | I,E | integration/suggestions.test › cancel creates nothing | planned |
-| INF-SUG-05 | Confirmed absolute instant and source anchor persisted | 06 | I | integration/suggestions.test › source stored | planned |
-| INF-SUG-06 | Suggestions and dismissals deduped across edits and restarts; confirmed links by reminder ID | 06 | I,E | integration/suggestions.test › dedupe after restart | planned |
-| INF-SUG-07 | Restart never reinterprets saved relative text | 06 | I | integration/suggestions.test › next-day restart same instant | planned |
-| INF-SUG-08 | Source edit requires explicit Update; no silent move | 06 | I,E | integration/suggestions.test › source changed state | planned |
-| INF-SUG-09 | Deleted source block keeps reminder note-linked with anchor unavailable | 06 | I | integration/suggestions.test › block deleted | planned |
-| INF-SUG-10 | End-to-end phrase -> preview -> confirm -> side panel -> notification opens source | 06 | E | e2e/nlp.spec › full flow | planned |
+| INF-NLP-01 | Local English parsing with explicit reference instant and selected zone; no network or LLM | 06 | U,R | unit/nlp-parse.test › local and deterministic parsing (INF-NLP-01); unit/boundaries.test › natural-language parsing is local and English-only; dependency review (docs/progress/phase-06.md) | done |
+| INF-NLP-02 | Calendar components converted in the selected IANA zone, not a fixed offset | 06 | U | unit/nlp-parse.test › C19 and C20 near midnight; › P30 and P31 zone abbreviations; › P34-P36 DST: the target date decides the offset; › C18 "by 5 CST" | done |
+| INF-NLP-03 | End of day = configurable 17:00; tomorrow EOD at 2026-10-08 13:00 Dhaka -> 2026-10-09 17:00 Dhaka (11:00Z) | 06 | U | unit/nlp-parse.test › C1 "tomorrow end of the day"; › C2 phrase in a sentence; › C6 "end of day" alone; › P1 "by EOD"; › P2 EOD with a weekday; › P3 an explicit time wins; › P4 and P5 the settings move the default times | done |
+| INF-NLP-04 | Date-only phrases use 09:00 with visible disclosure | 06 | U,E | unit/nlp-parse.test › C5 "tomorrow"; › P4 and P5 the settings move the default times; e2e/nlp.spec › disclosure | done |
+| INF-NLP-05 | Explicit times honored (tomorrow at 8pm -> 20:00) | 06 | U | unit/nlp-parse.test › C3 explicit time; › P16 a leading zero or a 24-hour time; › P25 written dates with times | done |
+| INF-NLP-06 | Durations use instant arithmetic (in 2 hours -> 15:00 Dhaka) | 06 | U | unit/nlp-parse.test › C4 "in 2 hours"; › P18-P21 durations; › P22 and P23 "in N days" is calendar arithmetic | done |
+| INF-NLP-07 | Weekday policy (bare/this/next/last) per D-025 | 06 | U | unit/nlp-parse.test › C7-C15 weekday table; › P38 weekdays from a Sunday reference; › a bare weekday never resolves to a past date | done |
+| INF-NLP-08 | Ambiguous numeric dates and bare hours require explicit choice | 06 | U,E | unit/nlp-parse.test › C16 "03/04 at 5"; › P15 a bare hour needs am/pm; › P26-P28; unit/renderer/suggestion-card.test › choices gate Add; e2e/nlp.spec › choice required | done |
+| INF-NLP-09 | Zone abbreviations require choosing an IANA zone | 06 | U,E | unit/nlp-parse.test › C18 "by 5 CST"; › P30 and P31; › P32 UTC and GMT; unit/renderer/suggestion-card.test › zone abbreviation; e2e/nlp.spec › choice required (CST) | done |
+| INF-NLP-10 | Past dates stay visibly past; year-less past dates offer explicit next year | 06 | U,E | unit/nlp-parse.test › C15 weekday table; › C17 "on Oct 1"; › P6 and P7 today; › P24 yesterday; › P26-P28; e2e/nlp.spec › past date stays past | done |
+| INF-NLP-11 | Multiple phrases in one block yield separate candidates | 06 | U | unit/nlp-parse.test › P33 several phrases; e2e/nlp.spec › underline, text unchanged (two phrases) | done |
+| INF-NLP-12 | Unsupported phrases give no candidate; manual entry remains available | 06 | U,E | unit/nlp-parse.test › P39 unsupported text gives no candidate; e2e/nlp.spec › unsupported text offers manual entry | done |
+| INF-NLP-13 | Calendar arithmetic uses the selected zone near midnight (New York vs Dhaka) | 06 | U | unit/nlp-parse.test › C19 and C20 near midnight; › P37 a time-only phrase near midnight; unit/renderer/editor/suggest-detect.test › suppression (reference date in the parse zone) | done |
+| INF-NLP-14 | English only; no implied multilingual parsing | 06 | R | review docs/UI copy (docs/progress/phase-06.md); unit/nlp-parse.test › P39 (Bangla, French, German); unit/boundaries.test › natural-language parsing is local and English-only | done |
+| INF-SUG-01 | Idle detection in notes and stickies with unobtrusive underline and Create reminder; typing never interrupted, text unchanged | 06 | U,E | unit/renderer/editor/suggest-detect.test; e2e/nlp.spec › underline, text unchanged; › sticky suggestion; › large note typing stays responsive | done |
+| INF-SUG-02 | Selected text -> Create reminder | 06 | E | e2e/nlp.spec › selection; unit/renderer/editor/block-text.test › More → Create reminder from text | done |
+| INF-SUG-03 | Confirmation card shows title, source text, weekday date, time, zone, local conversion, repeat, follow-up, Add/Cancel, DST choices | 06 | E | unit/renderer/suggestion-card.test; e2e/nlp.spec › card fields; › DST choices | done |
+| INF-SUG-04 | No reminder is persisted before Add | 06 | I,E | integration/suggestions.test › cancel creates nothing; e2e/nlp.spec › cancel creates nothing | done |
+| INF-SUG-05 | Confirmed absolute instant and source anchor persisted | 06 | I | integration/suggestions.test › source stored | done |
+| INF-SUG-06 | Suggestions and dismissals deduped across edits and restarts; confirmed links by reminder ID | 06 | I,E | integration/suggestions.test › dedupe after restart; unit/renderer/editor/suggest-detect.test › suppression; e2e/nlp.spec › dedupe after restart | done |
+| INF-SUG-07 | Restart never reinterprets saved relative text | 06 | I | integration/suggestions.test › next-day restart same instant; e2e/nlp.spec › restart next day keeps the instant | done |
+| INF-SUG-08 | Source edit requires explicit Update; no silent move | 06 | I,E | integration/suggestions.test › source changed state; e2e/nlp.spec › source edit requires update | done |
+| INF-SUG-09 | Deleted source block keeps reminder note-linked with anchor unavailable | 06 | I | integration/suggestions.test › block deleted | done |
+| INF-SUG-10 | End-to-end phrase -> preview -> confirm -> side panel -> notification opens source | 06 | E | e2e/nlp.spec › full flow | done |
 | INF-REF-01 | Insert note link via searchable picker | 07 | E | e2e/references.spec › picker | planned |
 | INF-REF-02 | Stable block references to another note's block | 07 | I,E | integration/references.test › block ref | planned |
 | INF-REF-03 | Side panel shows outgoing references and backlinks | 07 | I,E | e2e/references.spec › backlinks | planned |
@@ -176,7 +176,7 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-PORT-07 | Configurable trash and version retention; version history with restore | 08 | I,E | integration/versions.test › retention; e2e/versions.spec | planned |
 | INF-PORT-08 | Attachment GC only after reference checks and grace period | 08 | I | integration/attachment-gc.test | planned |
 | INF-PREF-01 | Theme System/Light/Dark | 08 | E,V | e2e/settings.spec › theme | planned |
-| INF-PREF-02 | Reminder defaults: zone, end-of-day 17:00, date-only 09:00, follow-up defaults | 08 | I,E | integration/settings.test › reminder defaults | planned |
+| INF-PREF-02 | Reminder defaults: zone, end-of-day 17:00, date-only 09:00, follow-up defaults | 08 | I,E | integration/settings.test › reminder defaults (defaultZone and followupDefault Phase 05; endOfDayTime, dateOnlyTime and suggestFromText Phase 06, D-094); e2e/settings.spec › reminder defaults (Phase 08) | planned |
 | INF-PREF-03 | Quiet hours settings | 08 | E | e2e/settings.spec › quiet hours | planned |
 | INF-PREF-04 | Window, tray, close, widget, startup and restore-stickies settings with fully-quit explanation | 08 | E | e2e/settings.spec › lifecycle settings | planned |
 | INF-PREF-05 | Attachment size limits configurable within bounds | 08 | I | integration/settings.test › limits bounds | planned |
@@ -275,8 +275,8 @@ Work items are ordered; each lists the requirement IDs it satisfies. Phase 01 is
 
 ### Phase 06
 
-- W06-01 NLP parser pipeline with frozen-clock tables. IDs: INF-NLP-01, INF-NLP-02, INF-NLP-03, INF-NLP-04, INF-NLP-05, INF-NLP-06, INF-NLP-07, INF-NLP-08, INF-NLP-09, INF-NLP-10, INF-NLP-11, INF-NLP-12, INF-NLP-13, INF-NLP-14
-- W06-02 Suggestions, confirmation card, sources and dismissals (migration 006, D-051). IDs: INF-SUG-01, INF-SUG-02, INF-SUG-03, INF-SUG-04, INF-SUG-05, INF-SUG-06, INF-SUG-07, INF-SUG-08, INF-SUG-09, INF-SUG-10
+- W06-01 NLP parser pipeline (`src/shared/nlp`, chrono-node/en adapter, D-090) with the PRODUCT_SPEC section 6 contract table and the plan rules table (D-095). IDs: INF-NLP-01, INF-NLP-02, INF-NLP-03, INF-NLP-04, INF-NLP-05, INF-NLP-06, INF-NLP-07, INF-NLP-08, INF-NLP-09, INF-NLP-10, INF-NLP-11, INF-NLP-12, INF-NLP-13, INF-NLP-14
+- W06-02 Edit-triggered detection (D-091), confirmation card (D-093), sources, dedupe and explicit update (D-092), dismissals, migration 006 (D-088), IPC and sticky roles (D-089), settings keys (D-094). IDs: INF-SUG-01, INF-SUG-02, INF-SUG-03, INF-SUG-04, INF-SUG-05, INF-SUG-06, INF-SUG-07, INF-SUG-08, INF-SUG-09, INF-SUG-10
 
 ### Phase 07
 

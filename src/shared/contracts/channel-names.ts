@@ -67,6 +67,10 @@ export const INVOKE_CHANNELS = [
   'widget:setCollapsed',
   'autostart:get',
   'autostart:set',
+  'reminder:createFromSuggestion',
+  'reminder:updateFromSource',
+  'suggestion:dismiss',
+  'suggestion:listDismissed',
 ] as const;
 
 export const EVENT_CHANNELS = [

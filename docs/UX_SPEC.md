@@ -22,7 +22,7 @@ Not copied: capture and record labels, recording options, the "Saving to" bar, t
 | Context panel | 280-340 px, default 300 |
 | Minimum window | 720 x 480 |
 
-Breakpoints: window width below 960 px turns the tree into a drawer; below 1180 px the context panel becomes an overlay drawer. Visual checks run at 1100x720 and 760x560 (INF-SHELL-01, INF-SHELL-04). The main window uses the native OS frame and native window controls with the compact header inside the window (D-033).
+Breakpoints: window width below 960 px turns the tree into a drawer; below 1180 px the context panel becomes an overlay drawer. Visual checks run at 1100x720 and 760x560 (INF-SHELL-01, INF-SHELL-04). The main window has no OS title bar (D-097, superseding the native-frame part of D-033): one 44 px app-drawn title bar holds the app icon and "Infinity Notes", the menus "File" (New note Ctrl+N, New sticky Ctrl+Shift+N, Close tab Ctrl+W, Quit Infinity Notes), "View" (Light/Dark/System theme, Toggle notes tree, Toggle details panel, Show/Hide reminder widget) and "Help" (Keyboard shortcuts, About Infinity Notes), the centered search box with the "Ctrl K" chip and the panel toggles; the OS draws minimize, maximize/restore and close over its right end in the theme colors. The bar is the drag region; its controls are not. Alt focuses the menu bar; Left/Right move between menus, Down/Enter/Space open one, Up/Down move inside it, Escape closes it. Sticky windows and the reminder widget are frameless: their 36 px header is the drag region, and a sticky's header ends with "Close sticky" (×, hides it).
 
 ## 3. Tokens
 
@@ -82,6 +82,16 @@ UI 13 px; editor body 15 px with line height 1.55; H1 22 px, H2 18 px, H3 15 px 
   - switch "Restore open stickies on startup" (`stickies.restoreOnStartup`, default off).
 - Tray (where supported, D-067): tooltip "Infinity Notes"; left click opens the main window. Menu: "Open Infinity Notes", "New sticky", "Show widget" (Phase 05), "Quit Infinity Notes".
 - Settings > Reminders (Phase 05, D-083): select "Default time zone for new reminders" (first option "Computer time zone (<zone>)"); switch "Follow up on new reminders" with "Every" and "At most"; switch "Quiet hours" with "From", "To" and "Time zone"; the text "Reminders only fire while Infinity Notes is running: with a window open, in the background or in the tray. After you quit, nothing is sent until you start the app again, and then overdue reminders are shown."; without a notification service: "This desktop has no notification service. Reminders appear inside Infinity Notes and in the reminder widget instead." Windows and tray gains the switches "Show reminder widget" and "Start Infinity Notes when you sign in" (default off; disabled with "Not supported by this desktop", or "Available in the installed app" in development builds).
+- Settings > Reminders (Phase 06, D-094):
+  - switch "Suggest reminders from dates in notes" (`reminders.suggestFromText`, default on);
+  - time "End of day" (`reminders.endOfDayTime`, default 17:00);
+  - time "Time for date-only phrases" (`reminders.dateOnlyTime`, default 09:00);
+  - the text "Suggestions understand English dates and times only. Your text is read on this computer and is not sent anywhere."
+- Suggestions in the editor (Phase 06, D-091):
+  - A detected phrase gets a dotted accent underline (decoration only, never part of the text).
+  - While the cursor is inside the phrase, a slim bar overlays the bottom of the editor. It does not take focus and does not shift the text. It is a group "Reminder suggestion" with the text "Reminder: Fri 9 Oct, 17:00" ("Reminder: needs a choice"; past: "Reminder: Thu 1 Oct, 09:00 (past)") and the buttons "Create reminder" and "Dismiss".
+  - When the phrase belongs to a reminder whose source text changed, the buttons are "Update reminder", "Create new reminder" and "Dismiss"; in a sticky, "Open in app to update" replaces "Update reminder".
+  - The toolbar More menu (rich and plain notes, tabs and stickies) gains "Create reminder from text". It uses the selection, else the phrase at the cursor, else the paragraph at the cursor.
 - Command palette (Ctrl+K): actions plus results (titles first, full-text in Phase 07).
 
 ## 6. Dialogs and banners (exact copy)
@@ -96,7 +106,39 @@ Dialogs:
 - Move dialog: scope and folder picker, keyboard accessible, shows the path; cycle attempts show "A folder cannot be moved into itself or one of its subfolders."
 - Delete confirmations: "Move to Trash?" for items; "Delete forever?" and "Empty trash?" for permanent deletion with the number of items.
 - Reminder editor (Phase 05): titles "Add reminder" / "Edit reminder"; fields Title, "Today" and "Tomorrow" shortcuts (dates in the selected zone), Date, Time, Time zone, Repeat (None, Daily, Weekly with Mon-Sun toggles), "Follow up if not done" with "Every" (5/10/15/30/60 minutes) and "At most" (1/2/3/5 times); preview "Fri 9 Oct 2026, 17:00 · Asia/Dhaka" and "Your time: …" when the local wall time differs; DST notices "02:30 does not exist on this date in New York; the reminder will use 03:00" and, for ambiguous times, "01:30 happens twice on this date; using the earlier one" with "Use the later one (EST)"; past time "This time has already passed. It will be added as overdue, without a notification." with "Add anyway"; editing a schedule with an overdue occurrence: "This reminder has an overdue occurrence." with "Keep the current overdue reminder" (default) and "Mark it done"; "Attach to the note instead" when the paragraph cannot be saved; "Choose a time zone" when no default zone is known; Save and Cancel. Errors: "Choose a time zone from the list", "This reminder is not due yet", "This reminder can no longer be snoozed", "This reminder was replaced by an edit", "Undo is no longer available", "This reminder changed elsewhere. Reopen it to edit.", "A note can have at most 200 reminders.", "This reminder no longer exists", "The linked paragraph is no longer in this note."
-- Natural-language confirmation card: title, literal source text, full date with weekday, time, zone, local conversion, repeat, follow-up, Add and Cancel; disclosures "09:00 (default time for date-only phrases)" and "17:00 (default end of day)"; required choices for month/day order, am/pm and zone; "Use next year" button for past year-less dates. Nothing is saved before Add.
+- Natural-language confirmation card: title, literal source text, full date with weekday, time, zone, local conversion, repeat, follow-up, Add and Cancel; disclosures "09:00 (default time for date-only phrases)" and "17:00 (default end of day)"; required choices for month/day order, am/pm and zone; "Use next year" button for past year-less dates. Nothing is saved before Add. Exact Phase 06 copy (D-093):
+  - Dialog title: "Create reminder", or "Update reminder" in update mode.
+  - Fields:
+    - "Title";
+    - "From your note" followed by the phrase in quotes (“tomorrow end of the day”);
+    - for relative phrases, "Read on Thu 8 Oct 2026, 13:00 · Asia/Dhaka";
+    - "Date" with the full date line "Friday, 9 October 2026";
+    - "Time" with a disclosure while the default is unchanged: "17:00 (default end of day)", "09:00 (default time for date-only phrases)", or "20:00 (default for “tonight”)" and likewise for morning, afternoon and evening;
+    - "Time zone";
+    - the Phase 05 preview, "Your time: …" and the DST notices with "Use the later one (EST)";
+    - "Repeat" and "Follow up if not done", as in the reminder editor.
+  - Required choices (no default):
+    - radio group "Date order" with options such as "4 March" and "3 April";
+    - radio group "Time of day" with options such as "05:00" and "17:00";
+    - "“CST” can mean more than one time zone. Choose one." with one button per suggested zone;
+    - "Enter a time" for "midnight".
+  - Add stays disabled while a choice is missing, showing one of "Choose the date order", "Choose AM or PM", "Choose a time zone", "Enter a time", "Enter a title".
+  - Past result: "This time has already passed. It will be added as overdue, without a notification." with "Use next year" (year-omitted dates only) and "Add anyway".
+  - Several phrases in a selection: radio group "Dates found".
+  - No phrase found: "No date or time found in this text. Enter the date and time below." The card then works as manual entry.
+  - Update mode shows "Now: Fri 9 Oct 2026, 17:00 · Asia/Dhaka" and the button "Update".
+  - Buttons "Add" (or "Add anyway") and "Cancel"; Escape cancels and nothing is saved.
+  - Errors:
+    - "The note text changed. Try again.";
+    - "The note could not be saved. Try again.";
+    - "Select text within one paragraph.";
+    - "Select a shorter part (up to 2,000 characters).";
+    - "This reminder was not created from note text." (Keep current time on a reminder without a source; D-096)
+  - Notices: "This reminder already exists." (the phrase was already confirmed) and "Could not dismiss this suggestion."
+- Context panel Reminders section (Phase 06):
+  - A reminder whose source changed shows "The text this reminder came from changed: “<text>”." with "Update from text…" and "Keep current time".
+  - A removed source block keeps the Phase 05 text "Original text was removed" and adds "Created from “<text>”".
+  - Chips of a changed source add ", its text changed" to their accessible name.
 
 Banners and states:
 - Read-only lease banner: "This note is being edited in another window" with a "Take edit control" button.

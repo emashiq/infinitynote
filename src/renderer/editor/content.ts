@@ -25,6 +25,12 @@ export interface ContentSource {
   getPlainText(): string;
   /** The text of the block with this id (a reminder title), or null when the block is not in the document. */
   blockText(blockId: string): string | null;
+  /**
+   * The text a reminder source is read in, exactly as main compares it (a hard break is "
+"): a textblock's text, or
+   * with no block the whole text of a plain-text note. Null when there is no such text.
+   */
+  phraseText(blockId: string | null): string | null;
   hasPendingUploads(): boolean;
   /** Resolves true once pending imports finished, or false after `ms`. */
   waitForUploads(ms: number): Promise<boolean>;

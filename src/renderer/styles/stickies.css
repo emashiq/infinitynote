@@ -165,3 +165,17 @@
   bottom: 8px;
   max-width: calc(100% - 16px);
 }
+
+/* Frameless sticky (D-097): the header is the drag region; its controls and the title field are not. */
+.sticky-header {
+  -webkit-app-region: drag;
+}
+
+.sticky-header button,
+.sticky-header input {
+  -webkit-app-region: no-drag;
+}
+
+.sticky-close {
+  margin-left: auto;
+}

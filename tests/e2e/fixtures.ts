@@ -71,8 +71,15 @@ export async function closeApp(app: ElectronApplication | null | undefined): Pro
     return;
   }
   // app.quit() returns at once; the quit itself runs in main. Playwright's own close() would issue a single quit and
-  // then wait for the process, so it is called only once the process is gone.
-  const quit = () => app.evaluate(({ app: electronApp }) => electronApp.quit()).catch(() => undefined);
+  // then wait for the process, so it is called only once the process is gone. The quit is requested on a fresh
+  // macrotask: an evaluate can run while main is paused inside a better-sqlite3 statement (an inspector interrupt,
+  // F04-A2), and the quit handlers read the database, which then throws "busy" and leaves the quit unfinished.
+  const quit = () =>
+    app
+      .evaluate(({ app: electronApp }) => {
+        setImmediate(() => electronApp.quit());
+      })
+      .catch(() => undefined);
   await quit();
   if (!(await waitForExit(proc, QUIT_WAIT_MS, { kill: false }))) await quit();
   await waitForExit(proc);

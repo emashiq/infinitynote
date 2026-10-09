@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
+import { updateRequestFromText } from '../editor/suggestion-requests';
 import { useLiveNote } from '../notes/live-note';
 import type { NoteController } from '../notes/note-controller';
 import { DueTime } from '../reminders/DueTime';
@@ -10,7 +11,10 @@ import { ReminderBadges } from '../reminders/ReminderRow';
 import { SnoozeButton } from '../reminders/SnoozeMenu';
 import { useServices, useStore } from '../state/use-store';
 
-/** The active note's reminders in the context panel (plan section 9.10): add, Done, Snooze, Edit, Delete, re-anchor. */
+/**
+ * The active note's reminders in the context panel (plan section 9.10): add, Done, Snooze, Edit, Delete, re-anchor, and
+ * for a reminder whose source text changed, Update from text or Keep current time (Phase 06, D-092).
+ */
 export function RemindersSection({ controller }: { controller: NoteController | null }) {
   const [open, setOpen] = useState(true);
   const Chevron = open ? ChevronDown : ChevronRight;
@@ -30,12 +34,18 @@ export function RemindersSection({ controller }: { controller: NoteController | 
 }
 
 function NoteRemindersList({ controller }: { controller: NoteController }) {
-  const { bridge, ui, reminders } = useServices();
+  const { bridge, ui, reminders, editor } = useServices();
   const state = useStore(controller.store);
   const live = useLiveNote(controller);
   const { reminders: list, displayZone } = useNoteReminders(bridge, controller.noteId);
   const canAttach = state.format === 'rich' && state.cursorBlockId !== null;
   const edit = (r: ReminderDtoType) => ui.openDialog({ kind: 'reminder', noteId: r.noteId, reminder: r, blockId: r.blockId, title: r.title });
+  const updateFromText = async (r: ReminderDtoType & { source: NonNullable<ReminderDtoType['source']> }) => {
+    const context = await editor.suggestions.load(controller.noteId);
+    if (!context) return;
+    const note = { noteId: controller.noteId, noteTitle: live?.title ?? state.title, format: state.format };
+    ui.openDialog({ kind: 'suggestion', request: updateRequestFromText(note, r, controller.phraseText(r.source.blockId), context) });
+  };
   return (
     <>
       <button type="button" className="btn btn-small" onClick={() => ui.openDialog(newReminderDialog(controller, live?.title ?? state.title))}>
@@ -50,9 +60,21 @@ function NoteRemindersList({ controller }: { controller: NoteController }) {
               <span className="reminder-title">{r.title}</span>
               <DueTime instant={current?.dueAtUtc ?? reminderInstant(r)} zoneId={r.zoneId} displayZone={displayZone} />
               {current ? <ReminderBadges item={current} /> : null}
+              {r.source?.state === 'changed' ? (
+                <div className="source-changed">
+                  <span>The text this reminder came from changed: “{r.source.text}”.</span>
+                  <button type="button" className="btn btn-small" onClick={() => void updateFromText({ ...r, source: r.source! })}>
+                    Update from text…
+                  </button>
+                  <button type="button" className="btn btn-small" onClick={() => void reminders.keepSource(r.id)}>
+                    Keep current time
+                  </button>
+                </div>
+              ) : null}
               {r.anchorState === 'block_missing' ? (
                 <div className="anchor-missing">
                   <span className="muted">{BLOCK_REMOVED}</span>
+                  {r.source?.state === 'missing' ? <span className="muted">Created from “{r.source.text}”</span> : null}
                   <button type="button" className="btn btn-small" disabled={!canAttach} onClick={() => void reminders.setAnchor(r, state.cursorBlockId)}>
                     Attach to current paragraph
                   </button>

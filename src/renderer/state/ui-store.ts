@@ -1,5 +1,6 @@
 import type { FolderTargetType } from '../../shared/contracts/hierarchy';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
+import type { CardRequest } from '../reminders/card-request';
 import { createStore, type Store } from './store';
 
 export type DialogState =
@@ -10,7 +11,12 @@ export type DialogState =
   | { kind: 'confirmPurge'; batchId: string; count: number }
   | { kind: 'confirmEmptyTrash'; count: number }
   /** Add (reminder null) or edit a reminder of a note (plan section 9.7). */
-  | { kind: 'reminder'; noteId: string; reminder: ReminderDtoType | null; blockId: string | null; title: string };
+  | { kind: 'reminder'; noteId: string; reminder: ReminderDtoType | null; blockId: string | null; title: string }
+  /** The confirmation card of a reminder suggestion (plan section 9.6). */
+  | { kind: 'suggestion'; request: CardRequest }
+  /** Help menu (D-097). */
+  | { kind: 'shortcuts' }
+  | { kind: 'about' };
 
 export type FocusRequest =
   | { target: 'noteTitle'; noteId: string }

@@ -66,7 +66,8 @@ test('Common protected', async () => {
 
   await openContextMenu(common);
   await expect(page.getByRole('menu')).toBeVisible();
-  const names = await page.getByRole('menuitem').allTextContents();
+  // The context menu's items (the title bar's menubar has File, View and Help items of its own, D-097).
+  const names = await page.getByRole('menu').getByRole('menuitem').allTextContents();
   expect(names).toEqual(['New note', 'New sticky', 'New folder']);
   for (const banned of ['Rename', 'Move to…', 'Move to Trash']) await expect(menuItem(page, banned)).toHaveCount(0);
   await page.keyboard.press('Escape');

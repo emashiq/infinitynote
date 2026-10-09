@@ -21,6 +21,16 @@ export interface ToolbarActions {
   openVersions(): void;
   /** More "Add reminder…" (absent where reminders cannot be added from the note, a sticky). */
   addReminder?: () => void;
+  /** More "Create reminder from text" (rich and plain notes, tabs and stickies; D-091). */
+  createFromText?: () => void;
+}
+
+/** The reminder items of the More menu. */
+function reminderItems(actions: ToolbarActions): MenuItem[] {
+  const items: MenuItem[] = [];
+  if (actions.addReminder) items.push({ id: 'reminder', label: 'Add reminder…', onSelect: actions.addReminder });
+  if (actions.createFromText) items.push({ id: 'fromText', label: 'Create reminder from text', onSelect: actions.createFromText });
+  return items.map((item, i) => (i === 0 ? { ...item, separatorBefore: true } : item));
 }
 
 const IMAGE_SIZE_OPTIONS: Array<{ value: ImageSize; label: string }> = [
@@ -109,6 +119,9 @@ export function Toolbar({ editor, format, editable, actions }: { editor: Editor;
         <IconButton label="Find in note" title="Find in note (Ctrl+F)" icon={Search} onClick={actions.openFind} />
         <IconButton label="Convert to rich text" title="Convert to rich text" icon={Type} disabled={off} onClick={() => actions.convert('rich')} />
         <IconButton label="Version history" title="Version history" icon={History} onClick={actions.openVersions} />
+        {actions.createFromText ? (
+          <MenuButton label="More" title="More" icon={Ellipsis} items={[{ id: 'fromText', label: 'Create reminder from text', onSelect: actions.createFromText }]} menuLabel="More" />
+        ) : null}
       </div>
     );
   }
@@ -128,7 +141,7 @@ export function Toolbar({ editor, format, editable, actions }: { editor: Editor;
     { id: 'find', label: 'Find in note', onSelect: actions.openFind },
     { id: 'convert', label: 'Convert to plain text…', disabled: off, onSelect: () => actions.convert('plain') },
     { id: 'versions', label: 'Version history…', onSelect: actions.openVersions },
-    ...(actions.addReminder ? [{ id: 'reminder', label: 'Add reminder…', separatorBefore: true, onSelect: actions.addReminder }] : []),
+    ...reminderItems(actions),
   ];
 
   return (

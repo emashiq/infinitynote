@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import { localParts, type FoldPreference } from './resolve';
-import { zoneCity } from './zones';
+import { UTC_ZONE, zoneCity } from './zones';
 
 const at = (instant: number, zoneId: string) => DateTime.fromMillis(instant, { zone: zoneId, locale: 'en-US' });
 
@@ -12,6 +12,16 @@ export function formatInZone(instant: number, zoneId: string): string {
 /** "Fri 9 Oct, 17:00" on the wall clock of a zone. */
 export function formatShort(instant: number, zoneId: string): string {
   return at(instant, zoneId).toFormat('ccc d LLL, HH:mm');
+}
+
+/** "Friday, 9 October 2026" for a calendar date `YYYY-MM-DD` (no zone: the date as written). */
+export function formatLongDate(date: string): string {
+  return DateTime.fromISO(date, { zone: UTC_ZONE, locale: 'en-US' }).toFormat('cccc, d LLLL yyyy');
+}
+
+/** "4 March" for a month and day (date-order choices). */
+export function formatDayMonth(month: number, day: number): string {
+  return DateTime.fromObject({ year: 2000, month, day }, { zone: UTC_ZONE, locale: 'en-US' }).toFormat('d LLLL');
 }
 
 /** The short name of a zone's offset at an instant ("EST", or "GMT+6" where the zone has no abbreviation). */

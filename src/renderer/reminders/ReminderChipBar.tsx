@@ -1,6 +1,7 @@
 import { Bell } from 'lucide-react';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
 import { formatShort } from '../../shared/time/format';
+import { chipLook } from '../editor/reminder-chips';
 import { chipState, isAnchored, reminderInstant, reminderLabel } from './note-reminders';
 
 export const BLOCK_REMOVED = 'Original text was removed';
@@ -22,20 +23,23 @@ export function ReminderChipBar({
   if (shown.length === 0) return null;
   return (
     <div className="reminder-chip-bar" role="group" aria-label="Note reminders">
-      {shown.map((r) => (
-        <button
-          key={r.id}
-          type="button"
-          className={`reminder-chip reminder-chip-${chipState(r.current)}`}
-          data-reminder-id={r.id}
-          aria-label={r.anchorState === 'block_missing' ? `${reminderLabel(r, displayZone)}. ${BLOCK_REMOVED}` : reminderLabel(r, displayZone)}
-          onClick={() => onSelect(r)}
-        >
-          <Bell size={12} strokeWidth={2} aria-hidden />
-          {r.title} · {formatShort(reminderInstant(r), r.zoneId)}
-          {r.anchorState === 'block_missing' ? <span className="reminder-chip-note">{BLOCK_REMOVED}</span> : null}
-        </button>
-      ))}
+      {shown.map((r) => {
+        const look = chipLook({ state: chipState(r.current), ariaLabel: reminderLabel(r, displayZone), sourceChanged: r.source?.state === 'changed' });
+        return (
+          <button
+            key={r.id}
+            type="button"
+            className={look.className}
+            data-reminder-id={r.id}
+            aria-label={r.anchorState === 'block_missing' ? `${look.ariaLabel}. ${BLOCK_REMOVED}` : look.ariaLabel}
+            onClick={() => onSelect(r)}
+          >
+            <Bell size={12} strokeWidth={2} aria-hidden />
+            {r.title} · {formatShort(reminderInstant(r), r.zoneId)}
+            {r.anchorState === 'block_missing' ? <span className="reminder-chip-note">{BLOCK_REMOVED}</span> : null}
+          </button>
+        );
+      })}
     </div>
   );
 }

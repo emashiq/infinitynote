@@ -1,5 +1,6 @@
 /* Note editor (plan section 9.11). Light and dark come from the theme tokens only. */
 .note-editor {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;

@@ -59,6 +59,10 @@ export const SETTINGS = {
     default: { enabled: false, start: '22:00', end: '07:00', zoneId: null },
     public: true,
   },
+  // Reminder suggestions from note text (D-094): the disclosed default times and the detection switch.
+  'reminders.endOfDayTime': { version: 1, schema: LocalTime, default: '17:00', public: true },
+  'reminders.dateOnlyTime': { version: 1, schema: LocalTime, default: '09:00', public: true },
+  'reminders.suggestFromText': { version: 1, schema: z.boolean(), default: true, public: true },
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;

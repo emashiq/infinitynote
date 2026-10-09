@@ -888,3 +888,19 @@ dialog::backdrop {
   opacity: 0.5;
   cursor: default;
 }
+
+.menu-shortcut {
+  margin-left: auto;
+  padding-left: 24px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.shortcut-table td {
+  padding: 4px 12px 4px 0;
+}
+
+.menu-item:has(.menu-shortcut) {
+  display: flex;
+  align-items: center;
+}

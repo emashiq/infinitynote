@@ -12,6 +12,7 @@ import {
   type ReminderDtoType,
   type ReminderInputType,
   type ReminderListResponseType,
+  type ReminderSourceDtoType,
   type ReminderUpdateRequestType,
   type ReminderViewResponseType,
   type ReminderViewType,
@@ -19,7 +20,15 @@ import {
   type SnoozePresetType,
   type ZonesListResponseType,
 } from '../../shared/contracts/reminders';
+import type {
+  ReminderCreateFromSuggestionRequestType,
+  ReminderCreateFromSuggestionResponseType,
+  ReminderUpdateFromSourceRequestType,
+  SuggestionSourceType,
+} from '../../shared/contracts/suggestions';
 import { collectBlockIds } from '../../shared/editor/doc-schema';
+import { PARSER_VERSION } from '../../shared/nlp/constants';
+import { normalizePhrase, richBlockTexts } from '../../shared/nlp/source-text';
 import { firstAfter, latestAtOrBefore, type Series } from '../../shared/time/recurrence';
 import { addDays, localParts, resolveLocal } from '../../shared/time/resolve';
 import { snoozeTarget } from '../../shared/time/snooze';
@@ -28,6 +37,7 @@ import type { PathIndex } from '../../shared/tree/paths';
 import type { Db } from '../db/driver';
 import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
 import { NotesRepo, type ContentRow } from '../db/repositories/notes-repo';
+import { ReminderSourcesRepo, type ReminderSourceRow, type SourceFields } from '../db/repositories/reminder-sources-repo';
 import { RemindersRepo, type OccurrenceItemRow, type ReminderRow, type ViewBounds } from '../db/repositories/reminders-repo';
 import { AppError } from './app-error';
 import type { Clock } from './clock';
@@ -35,6 +45,7 @@ import { livePathIndex } from './dto';
 import type { IdGenerator } from './ids';
 import type { Logger } from './logger';
 import { followupOf, recurrenceOf, seriesOf, toOccurrenceItem } from './reminder-model';
+import { checkSource, sourceStateFor } from './reminder-sources';
 import type { SettingsService } from './settings-service';
 import type { SystemZoneProvider } from './system-zone';
 import { runTx } from './transaction';
@@ -42,6 +53,9 @@ import { runTx } from './transaction';
 const DAY_MS = 86_400_000;
 /** Bound on regenerating the next occurrence when existing rows (done ahead of time) already hold its instants. */
 const MAX_GENERATION_STEPS = 8;
+/** A phrase's reference instant must lie in this window around the reminder clock (plan section 8.2). */
+const REFERENCE_PAST_MS = 400 * DAY_MS;
+const REFERENCE_FUTURE_MS = 5 * 60_000;
 
 export interface ReminderServiceDeps {
   db: Db;
@@ -58,21 +72,51 @@ export interface ReminderServiceDeps {
 
 type Input = Pick<ReminderInputType, 'blockId' | 'title' | 'zoneId' | 'date' | 'time' | 'recurrence' | 'foldPreference' | 'followup' | 'allowPast'>;
 
+/** The stored columns of a confirmed phrase. */
+function sourceFields(source: SuggestionSourceType): SourceFields {
+  return {
+    block_id: source.blockId,
+    source_text: source.text,
+    span_start: source.spanStart,
+    span_end: source.spanEnd,
+    span_ordinal: source.spanOrdinal,
+    reference_instant_utc: source.referenceInstantUtc,
+    reference_zone: source.referenceZone,
+    parser_version: PARSER_VERSION,
+    origin: source.origin,
+  };
+}
+
+function sourceDto(row: ReminderSourceRow): ReminderSourceDtoType {
+  return {
+    blockId: row.block_id,
+    text: row.source_text,
+    spanOrdinal: row.span_ordinal,
+    origin: row.origin,
+    state: row.source_state,
+    referenceInstantUtc: row.reference_instant_utc,
+    referenceZone: row.reference_zone,
+  };
+}
+
 const scheduleOf = (r: Pick<ReminderRow, 'zone_id' | 'start_local_date' | 'local_time' | 'recurrence' | 'fold_preference'>) =>
   JSON.stringify([r.zone_id, r.start_local_date, r.local_time, r.recurrence, r.fold_preference]);
 
 /**
  * Reminders, their occurrences and the views (plan section 8.2, D-078): creation with zone, block and limit checks,
- * edits with the explicit pending policy, Done, Snooze, delete with undo, series generation and the list views. Every
- * write runs in an immediate transaction; after it commits `reminder:changed` is emitted and the scheduler woken.
+ * edits with the explicit pending policy, Done, Snooze, delete with undo, series generation and the list views.
+ * Reminders confirmed from note text keep their source phrase (Phase 06, D-092). Every write runs in an immediate
+ * transaction; after it commits `reminder:changed` is emitted and the scheduler woken.
  */
 export class ReminderService {
   private readonly repo: RemindersRepo;
+  private readonly sources: ReminderSourcesRepo;
   private readonly notes: NotesRepo;
   private readonly hierarchy: HierarchyRepo;
 
   constructor(private readonly deps: ReminderServiceDeps) {
     this.repo = new RemindersRepo(deps.db);
+    this.sources = new ReminderSourcesRepo(deps.db);
     this.notes = new NotesRepo(deps.db);
     this.hierarchy = new HierarchyRepo(deps.db);
   }
@@ -96,14 +140,19 @@ export class ReminderService {
     return this.systemZone() ?? this.deps.settings.getInternal('reminders.defaultZone');
   }
 
-  zones(): ZonesListResponseType {
+  /** The reminder clock and zones a renderer reads phrases with (D-089): never its own clock or zone. */
+  zoneContext(): Pick<ZonesListResponseType, 'asOf' | 'systemZone' | 'defaultZone'> {
     const system = this.systemZone();
     return {
-      zones: zoneList(system),
+      asOf: this.deps.clock.now(),
       systemZone: system,
       defaultZone: defaultZoneFor({ setting: this.deps.settings.getInternal('reminders.defaultZone'), system }),
-      asOf: this.deps.clock.now(),
     };
+  }
+
+  zones(): ZonesListResponseType {
+    const context = this.zoneContext();
+    return { zones: zoneList(context.systemZone), ...context };
   }
 
   // Validation ----------------------------------------------------------------------------------
@@ -128,6 +177,13 @@ export class ReminderService {
   private checkBlock(note: ContentRow, blockId: string): void {
     if (note.format === 'plain') throw new AppError('VALIDATION_FAILED', M.plainBlock);
     if (!collectBlockIds(JSON.parse(note.content_json ?? '{}')).has(blockId)) throw new AppError('VALIDATION_FAILED', M.blockMissing, { blockMissing: true });
+  }
+
+  /** A phrase's reference instant is metadata, but it must be plausible (plan section 8.2). */
+  private checkReference(referenceInstantUtc: number, now: number): void {
+    if (referenceInstantUtc < now - REFERENCE_PAST_MS || referenceInstantUtc > now + REFERENCE_FUTURE_MS) {
+      throw new AppError('VALIDATION_FAILED', M.referenceRange);
+    }
   }
 
   // Occurrence generation ------------------------------------------------------------------------
@@ -201,7 +257,7 @@ export class ReminderService {
     return toOccurrenceItem(row, now, paths);
   }
 
-  private toDto(row: ReminderRow, current: OccurrenceItemType | null): ReminderDtoType {
+  private toDto(row: ReminderRow, current: OccurrenceItemType | null, source: ReminderSourceRow | undefined): ReminderDtoType {
     return {
       id: row.id,
       noteId: row.note_id,
@@ -219,13 +275,14 @@ export class ReminderService {
       updatedAt: row.updated_at,
       resolution: { status: resolveLocal({ date: row.start_local_date, time: row.local_time }, row.zone_id, row.fold_preference).status },
       current,
+      source: source ? sourceDto(source) : null,
     };
   }
 
   private dtoOf(reminderId: string): ReminderDtoType {
     const row = this.repo.getReminder(reminderId)!;
     const [current] = this.repo.currentItems([reminderId]);
-    return this.toDto(row, current ? this.item(current, this.deps.clock.now()) : null);
+    return this.toDto(row, current ? this.item(current, this.deps.clock.now()) : null, this.sources.get(reminderId));
   }
 
   // Writes ----------------------------------------------------------------------------------
@@ -235,15 +292,76 @@ export class ReminderService {
       const note = this.liveNote(req.noteId);
       this.checkZone(req.zoneId);
       if (req.blockId !== null) this.checkBlock(note, req.blockId);
-      if (this.repo.countLiveForNote(req.noteId) >= MAX_REMINDERS_PER_NOTE) throw new AppError('LIMIT_EXCEEDED', M.limit);
-      const reminderId = this.deps.ids.uuid();
-      const fields = this.fieldsOf(req);
-      this.repo.insertReminder({ id: reminderId, note_id: req.noteId, anchor_state: 'ok', ...fields, created_at: now, updated_at: now });
-      this.generateFirst(reminderId, req, now);
-      return reminderId;
+      return this.insertNew(req.noteId, req, now);
     });
     this.committed('created', [req.noteId]);
     return this.dtoOf(id);
+  }
+
+  /** A new reminder with its first occurrence, within the per-note limit. */
+  private insertNew(noteId: string, input: Input, now: number): string {
+    if (this.repo.countLiveForNote(noteId) >= MAX_REMINDERS_PER_NOTE) throw new AppError('LIMIT_EXCEEDED', M.limit);
+    const reminderId = this.deps.ids.uuid();
+    this.repo.insertReminder({ id: reminderId, note_id: noteId, anchor_state: 'ok', ...this.fieldsOf(input), created_at: now, updated_at: now });
+    this.generateFirst(reminderId, input, now);
+    return reminderId;
+  }
+
+  /** The live reminder already confirmed from this phrase (same block, normalized text and ordinal; not detached). */
+  private linkedReminder(noteId: string, source: SuggestionSourceType): string | null {
+    const text = normalizePhrase(source.text);
+    return this.sources.linksAt(noteId, source.blockId, source.spanOrdinal).find((s) => normalizePhrase(s.source_text) === text)?.reminder_id ?? null;
+  }
+
+  /**
+   * Confirms a suggestion (plan section 8.2, D-089): the phrase is checked against the stored note, the date, time and
+   * zone are resolved exactly as for `reminder:create`, and the source is stored with the reminder. Idempotent per
+   * phrase: a live, linked reminder is returned with `existing` instead of a duplicate.
+   */
+  createFromSource(req: ReminderCreateFromSuggestionRequestType): ReminderCreateFromSuggestionResponseType {
+    const now = this.deps.clock.now();
+    const { source } = req;
+    const result = this.tx(() => {
+      const note = this.liveNote(req.noteId);
+      this.checkZone(req.zoneId);
+      this.checkReference(source.referenceInstantUtc, now);
+      checkSource(note, source);
+      const linked = this.linkedReminder(req.noteId, source);
+      if (linked) return { id: linked, existing: true };
+      const id = this.insertNew(req.noteId, { ...req, blockId: source.blockId }, now);
+      this.sources.insert(id, req.noteId, sourceFields(source), now);
+      return { id, existing: false };
+    });
+    this.deps.logger.info(`suggestions: reminder ${result.id} from source origin=${source.origin} state=ok existing=${result.existing}`);
+    if (!result.existing) this.committed('created', [req.noteId]);
+    return { reminder: this.dtoOf(result.id), existing: result.existing };
+  }
+
+  /**
+   * Update from the note's current text (`apply`: a new schedule and a new source, with the revision check and pending
+   * policy of an edit) or Keep current time (`keep`: the source is detached and stops following the text; the schedule
+   * and revision stay as they are).
+   */
+  updateFromSource(req: ReminderUpdateFromSourceRequestType): ReminderDtoType {
+    const now = this.deps.clock.now();
+    const noteId = this.tx(() => {
+      if (req.action === 'keep') {
+        const row = this.liveReminder(req.reminderId);
+        if (!this.sources.get(row.id)) throw new AppError('VALIDATION_FAILED', M.noSource);
+        this.sources.setState(row.id, 'detached', now);
+        return row.note_id;
+      }
+      const { action: _action, source, ...input } = req;
+      this.checkReference(source.referenceInstantUtc, now);
+      const row = this.applyUpdate({ ...input, blockId: source.blockId }, now);
+      checkSource(this.liveNote(row.note_id), source);
+      this.sources.replace(row.id, row.note_id, sourceFields(source), now);
+      return row.note_id;
+    });
+    const detail = req.action === 'keep' ? 'source detached' : `from source origin=${req.source.origin} state=ok`;
+    this.deps.logger.info(`suggestions: reminder ${req.reminderId} ${detail}`);
+    this.committed('updated', [noteId]);
+    return this.dtoOf(req.reminderId);
   }
 
   private fieldsOf(input: Input) {
@@ -278,24 +396,31 @@ export class ReminderService {
    */
   update(req: ReminderUpdateRequestType): ReminderDtoType {
     const now = this.deps.clock.now();
-    const noteId = this.tx(() => {
-      const row = this.liveReminder(req.reminderId);
-      if (row.revision !== req.expectedRevision) throw new AppError('CONFLICT', M.conflict, { currentRevision: row.revision });
-      const note = this.liveNote(row.note_id);
-      this.checkZone(req.zoneId);
-      const blockChanged = req.blockId !== row.block_id;
-      if (blockChanged && req.blockId !== null) this.checkBlock(note, req.blockId);
-      const fields = this.fieldsOf(req);
-      const anchor_state = blockChanged ? 'ok' : row.anchor_state;
-      if (scheduleOf(fields) !== scheduleOf(row)) this.reschedule(row, req, now);
-      if (fields.followup_interval_minutes !== row.followup_interval_minutes || fields.max_followups !== row.max_followups) {
-        this.repo.retargetFollowups(row.id, fields.followup_interval_minutes, fields.max_followups, now);
-      }
-      this.repo.updateReminder(row.id, { ...fields, anchor_state }, now);
-      return row.note_id;
-    });
+    const noteId = this.tx(() => this.applyUpdate(req, now).note_id);
     this.committed('updated', [noteId]);
     return this.dtoOf(req.reminderId);
+  }
+
+  /**
+   * The body of an edit, inside the caller's transaction. Moving the reminder to another block (or to note-level)
+   * detaches its source: the phrase no longer describes where the reminder is (D-092).
+   */
+  private applyUpdate(req: ReminderUpdateRequestType, now: number): ReminderRow {
+    const row = this.liveReminder(req.reminderId);
+    if (row.revision !== req.expectedRevision) throw new AppError('CONFLICT', M.conflict, { currentRevision: row.revision });
+    const note = this.liveNote(row.note_id);
+    this.checkZone(req.zoneId);
+    const blockChanged = req.blockId !== row.block_id;
+    if (blockChanged && req.blockId !== null) this.checkBlock(note, req.blockId);
+    const fields = this.fieldsOf(req);
+    const anchor_state = blockChanged ? 'ok' : row.anchor_state;
+    if (scheduleOf(fields) !== scheduleOf(row)) this.reschedule(row, req, now);
+    if (fields.followup_interval_minutes !== row.followup_interval_minutes || fields.max_followups !== row.max_followups) {
+      this.repo.retargetFollowups(row.id, fields.followup_interval_minutes, fields.max_followups, now);
+    }
+    this.repo.updateReminder(row.id, { ...fields, anchor_state }, now);
+    if (blockChanged && this.sources.get(row.id)) this.sources.setState(row.id, 'detached', now);
+    return row;
   }
 
   private reschedule(row: ReminderRow, req: ReminderUpdateRequestType, now: number): void {
@@ -344,16 +469,26 @@ export class ReminderService {
       if (row.deleted_at === null) return null;
       if (now > row.deleted_at + UNDO_DELETE_MS) throw new AppError('VALIDATION_FAILED', M.undoExpired);
       this.repo.setDeletedAt(reminderId, null);
-      // The note may have changed while the reminder was deleted; its anchor follows the stored content.
+      // The note may have changed while the reminder was deleted; its anchor and source follow the stored content.
       const note = this.notes.getContentRow(row.note_id);
-      if (row.block_id !== null && note) {
-        const present = note.format === 'rich' && collectBlockIds(JSON.parse(note.content_json ?? '{}')).has(row.block_id);
-        this.repo.setAnchorState(reminderId, present ? 'ok' : 'block_missing');
-      }
+      if (note) this.resyncRestored(row, note, now);
       return row.note_id;
     });
     if (restored) this.committed('restored', [restored]);
     return this.dtoOf(reminderId);
+  }
+
+  private resyncRestored(row: ReminderRow, note: ContentRow, now: number): void {
+    const doc: unknown = note.format === 'rich' ? JSON.parse(note.content_json ?? '{}') : null;
+    if (row.block_id !== null) {
+      const present = note.format === 'rich' && collectBlockIds(doc).has(row.block_id);
+      this.repo.setAnchorState(row.id, present ? 'ok' : 'block_missing');
+    }
+    const source = this.sources.get(row.id);
+    if (!source || source.source_state === 'detached') return;
+    const blockTexts = source.block_id !== null && note.format === 'rich' ? richBlockTexts(doc, new Set([source.block_id])) : new Map<string, string>();
+    const state = sourceStateFor(source, { format: note.format, plainText: note.plain_text, blockTexts });
+    if (state !== source.source_state) this.sources.setState(row.id, state, now);
   }
 
   /** Done (INF-REM-09): completes one occurrence; a series keeps one future open occurrence. */
@@ -400,8 +535,10 @@ export class ReminderService {
     const now = this.deps.clock.now();
     const rows = this.repo.liveForNote(noteId);
     const paths = this.paths();
-    const current = new Map(this.repo.currentItems(rows.map((r) => r.id)).map((c) => [c.reminder_id, this.item(c, now, paths)]));
-    return { reminders: rows.map((r) => this.toDto(r, current.get(r.id) ?? null)), asOf: now, displayZone: this.displayZone() };
+    const ids = rows.map((r) => r.id);
+    const current = new Map(this.repo.currentItems(ids).map((c) => [c.reminder_id, this.item(c, now, paths)]));
+    const sources = this.sources.forReminders(ids);
+    return { reminders: rows.map((r) => this.toDto(r, current.get(r.id) ?? null, sources.get(r.id))), asOf: now, displayZone: this.displayZone() };
   }
 
   /** Occurrence items in the given order (alert events); ids that no longer exist are skipped. */

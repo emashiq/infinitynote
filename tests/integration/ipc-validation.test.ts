@@ -116,7 +116,7 @@ describe('IPC router (INF-FND-04)', () => {
 
   it('refuses channels outside the catalogue and duplicates; dispose removes handlers', () => {
     const r = makeRouter();
-    expect(() => r.router.register('reminder:createFromSuggestion' as never, () => ({}) as never)).toThrow(/catalogue/);
+    expect(() => r.router.register('refs:list' as never, () => ({}) as never)).toThrow(/catalogue/);
     r.router.register('app:quit', () => ({}));
     expect(() => r.router.register('app:quit', () => ({}))).toThrow(/already/);
     expect(r.handlers.size).toBe(1);
@@ -200,6 +200,8 @@ describe('role allowlist and note ownership (D-064)', () => {
         'drafts:resolve', 'attachment:importBytes', 'attachment:importFromDialog', 'shell:openExternal', 'window:getState', 'sticky:dock',
         'sticky:hide', 'sticky:setColor', 'sticky:setPinned', 'sticky:setCollapsed', 'sticky:remove', 'sticky:restore',
         'reminder:listForNote', 'reminder:open',
+        // Phase 06 (D-089): suggestions and hand-entered reminders for the sticky's own note.
+        'zones:list', 'reminder:create', 'reminder:createFromSuggestion', 'suggestion:dismiss', 'suggestion:listDismissed',
       ].sort(),
     );
     for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('main', channel)).toBe(true);

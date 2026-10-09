@@ -25,6 +25,7 @@ import { ReminderService } from './services/reminder-service';
 import { SessionService } from './services/session-service';
 import { SettingsService } from './services/settings-service';
 import { StickyService } from './services/sticky-service';
+import { SuggestionService } from './services/suggestion-service';
 import type { SystemZoneProvider } from './services/system-zone';
 import { WidgetStateStore } from './services/widget-state';
 import { TrashService } from './services/trash-service';
@@ -47,6 +48,7 @@ export interface MainServices {
   attachments: AttachmentService;
   stickies: StickyService;
   reminders: ReminderService;
+  suggestions: SuggestionService;
   widgetState: WidgetStateStore;
   /** The single writer of note content (used by the services above and the E2E fake view). */
   content: NoteContent;
@@ -82,7 +84,8 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
   const { db, clock, ids, logger } = deps;
   const settings = new SettingsService({ repo: new SettingsRepo(db), clock, logger, emit: deps.onSettingsChanged });
   const leases = new LeaseManager({ ids, clock, requestRelease: deps.requestLeaseRelease, emit: deps.onLeaseChanged });
-  const anchors = new ReminderAnchors(db);
+  const reminderClock = deps.reminderClock ?? clock;
+  const anchors = new ReminderAnchors(db, { clock: reminderClock, logger });
   const content = new NoteContent(db, new ContentIndexer(db, logger, anchors));
   // A content write that changed a reminder anchor is followed by reminder:changed after its revision event (D-080).
   const onNoteRevision = (event: NoteRevisionEventType): void => {
@@ -91,6 +94,16 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
   };
   const ops = new ContentOps({ db, leases, clock, logger, content, emit: onNoteRevision });
   const versions = new VersionService({ db, ids, ops });
+  const reminders = new ReminderService({
+    db,
+    clock: reminderClock,
+    ids,
+    logger,
+    zones: deps.zones,
+    settings,
+    emit: deps.onReminderChanged,
+    onWrite: () => deps.onRemindersWritten?.(),
+  });
   return {
     content,
     settings,
@@ -99,16 +112,8 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     stickies: new StickyService({ db, clock, logger, onChange: deps.onTreeChanged }),
     home: new HomeService(db),
     widgetState: new WidgetStateStore({ db, clock, logger }),
-    reminders: new ReminderService({
-      db,
-      clock: deps.reminderClock ?? clock,
-      ids,
-      logger,
-      zones: deps.zones,
-      settings,
-      emit: deps.onReminderChanged,
-      onWrite: () => deps.onRemindersWritten?.(),
-    }),
+    reminders,
+    suggestions: new SuggestionService({ db, clock: reminderClock, logger, reminders }),
     sessions: new SessionService(db, settings, clock),
     palette: new PaletteService(db),
     reader: new NoteReader(db),

@@ -46,11 +46,12 @@ describe('widgetWindowOptions (INF-FND-03, D-081)', () => {
     created.length = 0;
   });
 
-  it('the shared hardened preferences, a native frame, 300x420 default size and a 240x160 minimum', () => {
+  it('the shared hardened preferences, frameless (D-097), 300x420 default size and a 240x160 minimum', () => {
     const o = widgetWindowOptions({ ...base, placement: { width: 300, height: 420 }, platform: 'win32' });
     expect(o.webPreferences).toEqual(secureWebPreferences('/p/preload.js'));
-    expect(o).not.toHaveProperty('frame');
+    expect(o.frame).toBe(false);
     expect(o).not.toHaveProperty('titleBarStyle');
+    expect(o).not.toHaveProperty('transparent');
     expect(o).toMatchObject({ width: 300, height: 420, minWidth: 240, minHeight: 160, show: false, title: 'Reminders - Infinity Notes', fullscreenable: false });
     expect(o).not.toHaveProperty('icon');
     expect(widgetWindowOptions({ ...base, placement: { width: 300, height: 420 }, platform: 'linux' }).icon).toBe('/i/icon.png');

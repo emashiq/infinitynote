@@ -31,6 +31,11 @@ export class TestSource implements ContentSource {
     return null;
   }
 
+  /** The whole text stands for a plain-text note; there are no blocks. */
+  phraseText(blockId: string | null): string | null {
+    return blockId === null ? this.text : null;
+  }
+
   hasPendingUploads(): boolean {
     return this.uploads > 0;
   }

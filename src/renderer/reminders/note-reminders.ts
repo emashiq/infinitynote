@@ -78,6 +78,7 @@ export function chipsOf(reminders: readonly ReminderDtoType[], displayZone: stri
     label: formatShort(reminderInstant(r), r.zoneId),
     state: chipState(r.current),
     ariaLabel: reminderLabel(r, displayZone),
+    sourceChanged: r.source?.state === 'changed',
   }));
 }
 
