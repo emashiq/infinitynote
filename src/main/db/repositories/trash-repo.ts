@@ -66,13 +66,15 @@ export class TrashRepo {
   }
 
   // Purge ----------------------------------------------------------------------
-  /** Every batch that still has a trashed row. */
-  batchIds(): string[] {
+  /** Every batch that still has a trashed row; with `deletedBefore`, only batches trashed before that time. */
+  batchIds(deletedBefore = Number.MAX_SAFE_INTEGER): string[] {
     const batches = new Set<string>();
     for (const table of TRASH_TABLES) {
       const rows = this.db
-        .prepare<[], { b: string }>(`SELECT DISTINCT trash_batch_id AS b FROM ${table} WHERE deleted_at IS NOT NULL AND trash_batch_id IS NOT NULL`)
-        .all();
+        .prepare<[number], { b: string }>(
+          `SELECT DISTINCT trash_batch_id AS b FROM ${table} WHERE deleted_at IS NOT NULL AND deleted_at < ? AND trash_batch_id IS NOT NULL`,
+        )
+        .all(deletedBefore);
       for (const r of rows) batches.add(r.b);
     }
     return [...batches];

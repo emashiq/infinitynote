@@ -64,6 +64,18 @@ import {
   VersionsRestoreRequest,
 } from './notes';
 import { PaletteSearchRequest, PaletteSearchResponse } from './palette';
+import {
+  BackupCreateResponse,
+  BackupPrepareResponse,
+  BackupRestoreResponse,
+  BackupSetAutoRequest,
+  BackupStatus,
+  ExportMarkdownRequest,
+  ExportMarkdownResponse,
+  ExportPortableResponse,
+  ImportPortableResponse,
+} from './portability';
+import { ShortcutSetRequest, ShortcutState } from './shortcuts';
 import { NotesPickRequest, NotesPickResponse, RefsListRequest, RefsListResponse } from './references';
 import { SearchQueryRequest, SearchQueryResponse } from './search';
 import { TagsListRequest, TagsListResponse, TagsSetRequest, TagsSetResponse } from './tags';
@@ -201,6 +213,18 @@ export const CHANNEL_SCHEMAS = {
   'tags:set': { request: TagsSetRequest, response: TagsSetResponse },
   'attachment:open': { request: AttachmentHandoffRequest, response: AttachmentOpenResponse },
   'attachment:showInFolder': { request: AttachmentHandoffRequest, response: AttachmentShowResponse },
+  'backup:create': { request: Empty, response: BackupCreateResponse },
+  'backup:prepareRestore': { request: Empty, response: BackupPrepareResponse },
+  'backup:restore': { request: Empty, response: BackupRestoreResponse },
+  'backup:status': { request: Empty, response: BackupStatus },
+  'backup:setAuto': { request: BackupSetAutoRequest, response: BackupStatus },
+  'backup:chooseAutoFolder': { request: Empty, response: BackupStatus },
+  'backup:deleteRollback': { request: Empty, response: BackupStatus },
+  'export:markdown': { request: ExportMarkdownRequest, response: ExportMarkdownResponse },
+  'export:portable': { request: Empty, response: ExportPortableResponse },
+  'import:portable': { request: Empty, response: ImportPortableResponse },
+  'shortcut:getGlobal': { request: Empty, response: ShortcutState },
+  'shortcut:setGlobal': { request: ShortcutSetRequest, response: ShortcutState },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {

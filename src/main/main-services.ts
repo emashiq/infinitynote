@@ -1,9 +1,12 @@
 import type { TreeChangedEventType } from '../shared/contracts/hierarchy';
 import type { NoteLeaseEventType, NoteRevisionEventType } from '../shared/contracts/notes';
 import type { ReminderChangedEventType } from '../shared/contracts/reminders';
+import type { RestoreOutcomeType } from '../shared/contracts/portability';
 import type { SettingsChangedPayload } from '../shared/contracts/settings';
 import type { Db } from './db/driver';
 import { SettingsRepo } from './db/repositories/settings-repo';
+import { PortabilityService } from './portability/portability-service';
+import type { RestorePaths } from './portability/restore';
 import { AttachmentHandoff } from './services/attachment-handoff';
 import { AttachmentService } from './services/attachment-service';
 import type { Clock } from './services/clock';
@@ -17,6 +20,7 @@ import { HomeService } from './services/home-service';
 import type { IdGenerator } from './services/ids';
 import { LeaseManager, type LeaseHolder } from './services/lease-manager';
 import type { Logger } from './services/logger';
+import { MaintenanceService } from './services/maintenance';
 import { NoteContent } from './services/note-content';
 import { NoteReader } from './services/note-reader';
 import { NoteWriter, type SaveFaults } from './services/note-writer';
@@ -59,6 +63,8 @@ export interface MainServices {
   reminders: ReminderService;
   suggestions: SuggestionService;
   widgetState: WidgetStateStore;
+  portability: PortabilityService;
+  maintenance: MaintenanceService;
   /** The single writer of note content (used by the services above and the E2E fake view). */
   content: NoteContent;
 }
@@ -70,7 +76,15 @@ export interface MainServicesDeps {
   logger: Logger;
   /** `<userData>/data` (attachments live under it). */
   dataDir: string;
-  dialog: Pick<DialogAdapter, 'showOpenFiles'>;
+  dialog: Pick<DialogAdapter, 'showOpenFiles' | 'showSaveFile' | 'showOpenFile' | 'showOpenFolder'>;
+  /** Where backups are restored (staging, the pending marker, rollback copies). */
+  restorePaths: RestorePaths;
+  appVersion: string;
+  latestSchema: number;
+  /** Quits and starts the app again after a restore was scheduled. */
+  restart: () => void;
+  /** What a restore at this start did, if one was pending. */
+  restoreOutcome: RestoreOutcomeType | null;
   /** Opens attached files and shows them in the file manager (a recording fake under test hooks). */
   shell: ShellAdapter;
   onSettingsChanged: (payload: SettingsChangedPayload) => void;
@@ -104,7 +118,12 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     if (anchors.consumeChanged(event.noteId)) deps.onReminderChanged({ reason: 'anchor', noteIds: [event.noteId] });
   };
   const ops = new ContentOps({ db, leases, clock, logger, content, emit: onNoteRevision });
-  const versions = new VersionService({ db, ids, ops });
+  const versions = new VersionService({
+    db,
+    ids,
+    ops,
+    autoPolicy: () => ({ maxAgeDays: settings.getInternal('retention.autoVersionDays'), maxCount: settings.getInternal('retention.autoVersionMax') }),
+  });
   const reminders = new ReminderService({
     db,
     clock: reminderClock,
@@ -115,11 +134,39 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     emit: deps.onReminderChanged,
     onWrite: () => deps.onRemindersWritten?.(),
   });
+  const trash = new TrashService({ db, clock, ids, logger, onChange: deps.onTreeChanged });
+  const attachments = new AttachmentService({
+    db,
+    clock,
+    ids,
+    logger,
+    settings,
+    dialog: deps.dialog,
+    dataDir: deps.dataDir,
+    beforeImport: deps.testFaults?.beforeImport,
+  });
+  const portability = new PortabilityService({
+    db,
+    paths: deps.restorePaths,
+    appVersion: deps.appVersion,
+    latestSchema: deps.latestSchema,
+    clock,
+    ids,
+    logger,
+    settings,
+    dialog: deps.dialog,
+    attachments,
+    content,
+    reminders,
+    onTreeChanged: deps.onTreeChanged,
+    restart: deps.restart,
+    restoreOutcome: deps.restoreOutcome,
+  });
   return {
     content,
     settings,
     hierarchy: new HierarchyService({ db, clock, ids, logger, onChange: deps.onTreeChanged }),
-    trash: new TrashService({ db, clock, ids, logger, onChange: deps.onTreeChanged }),
+    trash,
     stickies: new StickyService({ db, clock, logger, onChange: deps.onTreeChanged }),
     home: new HomeService(db),
     widgetState: new WidgetStateStore({ db, clock, logger }),
@@ -137,15 +184,8 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     versions,
     drafts: new DraftService({ db, clock, ops, versions }),
     formats: new FormatService({ ids, ops, versions }),
-    attachments: new AttachmentService({
-      db,
-      clock,
-      ids,
-      logger,
-      settings,
-      dialog: deps.dialog,
-      dataDir: deps.dataDir,
-      beforeImport: deps.testFaults?.beforeImport,
-    }),
+    attachments,
+    portability,
+    maintenance: new MaintenanceService({ db, clock, logger, dataDir: deps.dataDir, settings, trash, versions, isBusy: () => portability.isBusy() }),
   };
 }

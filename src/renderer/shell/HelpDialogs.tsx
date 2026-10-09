@@ -1,5 +1,5 @@
 import { PRODUCT_NAME } from '../../shared/app-identity';
-import { SHORTCUT_LIST } from '../state/shortcuts';
+import { SHORTCUT_GROUPS } from '../state/shortcuts';
 import { useServices, useStore } from '../state/use-store';
 import { Dialog } from '../ui/Dialog';
 
@@ -13,22 +13,27 @@ function CloseRow({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Help → Keyboard shortcuts (D-097): the main window's shortcuts. */
+/** Help → Keyboard shortcuts and Ctrl+/ (D-097, INF-KEY-06): every key the app answers to, by area. */
 export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Keyboard shortcuts" onClose={onClose}>
-      <table className="shortcut-table">
-        <tbody>
-          {SHORTCUT_LIST.map((s) => (
-            <tr key={s.keys}>
-              <td>
-                <kbd>{s.keys}</kbd>
-              </td>
-              <td>{s.action}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="shortcut-groups">
+        {SHORTCUT_GROUPS.map((group) => (
+          <table key={group.title} className="shortcut-table">
+            <caption>{group.title}</caption>
+            <tbody>
+              {group.items.map((s) => (
+                <tr key={s.keys}>
+                  <td>
+                    <kbd>{s.keys}</kbd>
+                  </td>
+                  <td>{s.action}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ))}
+      </div>
       <CloseRow onClose={onClose} />
     </Dialog>
   );

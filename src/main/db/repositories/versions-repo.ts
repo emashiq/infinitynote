@@ -62,6 +62,21 @@ export class VersionsRepo {
       .all(noteId);
   }
 
+  notesWithAutoVersions(): string[] {
+    return this.db
+      .prepare<[], { note_id: string }>("SELECT DISTINCT note_id FROM note_versions WHERE reason = 'auto'")
+      .all()
+      .map((r) => r.note_id);
+  }
+
+  /** Attachment IDs that any saved version still uses. */
+  referencedAttachmentIds(): string[] {
+    return this.db
+      .prepare<[], { id: string }>('SELECT DISTINCT j.value AS id FROM note_versions v, json_each(v.attachment_ids) j')
+      .all()
+      .map((r) => r.id);
+  }
+
   deleteIds(ids: readonly string[]): void {
     if (ids.length === 0) return;
     this.db.prepare<[string]>('DELETE FROM note_versions WHERE id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));

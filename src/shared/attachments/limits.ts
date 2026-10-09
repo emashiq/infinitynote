@@ -21,8 +21,8 @@ export function maxBytes(megabytes: number): number {
   return megabytes * BYTES_PER_MB;
 }
 
-export const imageTooLarge = (mb: number): string => `This image is larger than ${mb} MB. Use a smaller image.`;
-export const fileTooLarge = (mb: number): string => `This file is larger than ${mb} MB. Use a smaller file.`;
+export const imageTooLarge = (mb: number): string => `This image is larger than ${mb} MB. Change the limit in Settings or use a smaller image.`;
+export const fileTooLarge = (mb: number): string => `This file is larger than ${mb} MB. Change the limit in Settings or use a smaller file.`;
 export const tooLargeMessage = (kind: AttachmentKindName, mb: number): string => (kind === 'image' ? imageTooLarge(mb) : fileTooLarge(mb));
 
 export const ATTACHMENT_MESSAGES = {

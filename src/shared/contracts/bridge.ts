@@ -154,5 +154,25 @@ export interface InfinityBridge {
     get: Query<'autostart:get'>;
     set: Call<'autostart:set'>;
   };
+  readonly backup: {
+    create: Query<'backup:create'>;
+    prepareRestore: Query<'backup:prepareRestore'>;
+    restore: Query<'backup:restore'>;
+    status: Query<'backup:status'>;
+    setAuto: Call<'backup:setAuto'>;
+    chooseAutoFolder: Query<'backup:chooseAutoFolder'>;
+    deleteRollback: Query<'backup:deleteRollback'>;
+  };
+  readonly export: {
+    markdown: Call<'export:markdown'>;
+    portable: Query<'export:portable'>;
+  };
+  readonly import: {
+    portable: Query<'import:portable'>;
+  };
+  readonly shortcut: {
+    getGlobal: Query<'shortcut:getGlobal'>;
+    setGlobal: Call<'shortcut:setGlobal'>;
+  };
   subscribe<C extends EventChannel>(channel: C, cb: (payload: EventPayload<C>) => void): () => void;
 }

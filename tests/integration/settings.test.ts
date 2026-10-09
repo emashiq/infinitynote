@@ -142,6 +142,51 @@ describe('settings (INF-FND-06)', () => {
     expect(logger.lines).toContain('WARN settings: invalid stored value key=reminders.quietHours');
   });
 
+  it('reminder defaults (INF-PREF-02): computer zone, end of day 17:00, date-only 09:00, follow-ups off at 15 minutes twice', async () => {
+    const { service } = await setup();
+    expect(
+      service.get(['reminders.defaultZone', 'reminders.endOfDayTime', 'reminders.dateOnlyTime', 'reminders.followupDefault', 'reminders.quietHours']),
+    ).toEqual({
+      'reminders.defaultZone': null,
+      'reminders.endOfDayTime': '17:00',
+      'reminders.dateOnlyTime': '09:00',
+      'reminders.followupDefault': { enabled: false, intervalMinutes: 15, maxFollowups: 2 },
+      'reminders.quietHours': { enabled: false, start: '22:00', end: '07:00', zoneId: null },
+    });
+    expect(service.set('reminders.followupDefault', { enabled: true, intervalMinutes: 30, maxFollowups: 3 }).value).toEqual({ enabled: true, intervalMinutes: 30, maxFollowups: 3 });
+    expect(() => service.set('reminders.followupDefault', { enabled: true, intervalMinutes: 7, maxFollowups: 3 })).toThrow(AppError);
+  });
+
+  it('limits bounds (INF-PREF-05): images 1-100 MB, documents 1-200 MB, whole megabytes only', async () => {
+    const { service } = await setup();
+    expect(service.get(['attachments.imageMaxMb', 'attachments.documentMaxMb'])).toEqual({ 'attachments.imageMaxMb': 20, 'attachments.documentMaxMb': 50 });
+    for (const bad of [0, 101, 1.5, -1, '20', null]) expect(() => service.set('attachments.imageMaxMb', bad), String(bad)).toThrow(AppError);
+    for (const bad of [0, 201, 2.5]) expect(() => service.set('attachments.documentMaxMb', bad), String(bad)).toThrow(AppError);
+    for (const [key, value] of [['attachments.imageMaxMb', 1], ['attachments.imageMaxMb', 100], ['attachments.documentMaxMb', 1], ['attachments.documentMaxMb', 200]] as const) {
+      expect(service.set(key, value).value).toBe(value);
+    }
+  });
+
+  it('Phase 08 keys: retention defaults and bounds; backup and shortcut choices are main-only', async () => {
+    const { service } = await setup();
+    expect(service.get(['retention.trashDays', 'retention.autoVersionDays', 'retention.autoVersionMax'])).toEqual({
+      'retention.trashDays': null,
+      'retention.autoVersionDays': 30,
+      'retention.autoVersionMax': 100,
+    });
+    for (const value of [30, 90, null]) expect(service.set('retention.trashDays', value).value).toBe(value);
+    for (const bad of [7, 0, 'never']) expect(() => service.set('retention.trashDays', bad)).toThrow(AppError);
+    for (const bad of [0, 366]) expect(() => service.set('retention.autoVersionDays', bad)).toThrow(AppError);
+    for (const bad of [9, 1001]) expect(() => service.set('retention.autoVersionMax', bad)).toThrow(AppError);
+    for (const key of ['backup.auto', 'backup.lastAuto', 'shortcut.quickSticky']) {
+      expect(() => service.get([key])).toThrow('Unknown setting');
+      expect(() => service.set(key, null)).toThrow('Unknown setting');
+    }
+    expect(service.getInternal('backup.auto')).toEqual({ enabled: false, directory: null, intervalDays: 7, keep: 5 });
+    expect(service.getInternal('shortcut.quickSticky')).toEqual({ enabled: false, accelerator: 'CommandOrControl+Alt+N' });
+    expect(() => service.setInternal('backup.auto', { enabled: true, directory: null, intervalDays: 7, keep: 5 })).toThrow(AppError);
+  });
+
   it('persists across close and reopen', async () => {
     const { t, service } = await setup();
     service.set('appearance.theme', 'dark');

@@ -157,7 +157,7 @@ describe('Phase 03 IPC handlers (D-052)', () => {
     overLimit.set(png);
     expect(await call('attachment:importBytes', { kind: 'image', bytes: overLimit })).toMatchObject({
       ok: false,
-      error: { code: 'LIMIT_EXCEEDED', message: 'This image is larger than 20 MB. Use a smaller image.' },
+      error: { code: 'LIMIT_EXCEEDED', message: 'This image is larger than 20 MB. Change the limit in Settings or use a smaller image.' },
     });
   });
 

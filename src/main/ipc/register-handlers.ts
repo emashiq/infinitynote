@@ -1,5 +1,6 @@
 import type { MainServices } from '../main-services';
 import type { AutostartControl } from '../services/autostart';
+import type { GlobalShortcutService } from '../services/global-shortcut';
 import { AppError } from '../services/app-error';
 import type { MainWindowController } from '../windows/main-window-controller';
 import type { StickyManager } from '../windows/sticky-manager';
@@ -11,10 +12,12 @@ import { registerHierarchyHandlers } from './handlers/hierarchy-handlers';
 import { registerHomeHandlers } from './handlers/home-handlers';
 import { registerNoteHandlers } from './handlers/note-handlers';
 import { registerPaletteHandlers } from './handlers/palette-handlers';
+import { registerPortabilityHandlers } from './handlers/portability-handlers';
 import { registerReminderHandlers } from './handlers/reminder-handlers';
 import { registerRetrievalHandlers } from './handlers/retrieval-handlers';
 import { registerSessionHandlers } from './handlers/session-handlers';
 import { registerSettingsHandlers } from './handlers/settings-handlers';
+import { registerShortcutHandlers } from './handlers/shortcut-handlers';
 import { registerStickyHandlers } from './handlers/sticky-handlers';
 import { registerSuggestionHandlers } from './handlers/suggestion-handlers';
 import { registerTrashHandlers } from './handlers/trash-handlers';
@@ -28,6 +31,8 @@ export interface DesktopHandlerDeps {
   stickies: StickyManager | null;
   widget: WidgetManager | null;
   autostart: AutostartControl;
+  /** The global quick-sticky shortcut; absent without storage (its choice is a setting). */
+  shortcut: GlobalShortcutService | null;
 }
 
 const storageUnavailable = (): never => {
@@ -71,4 +76,6 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
   registerSuggestionHandlers(router, { reminders: use('reminders'), suggestions: use('suggestions') });
   registerWidgetHandlers(router, widget);
   registerAutostartHandlers(router, desktop.autostart);
+  registerPortabilityHandlers(router, use('portability'));
+  registerShortcutHandlers(router, () => desktop.shortcut ?? storageUnavailable());
 }

@@ -21,6 +21,9 @@ describe('palette actions', () => {
       ['Find in note', 'Ctrl+F'],
       ['Link to note…', null],
       ['Float current note', null],
+      ['Export note as Markdown…', null],
+      ['Back up now…', null],
+      ['Keyboard shortcuts', 'Ctrl+/'],
     ]);
   });
 

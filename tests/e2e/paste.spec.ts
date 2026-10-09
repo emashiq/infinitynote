@@ -162,7 +162,7 @@ test('oversized and unsupported files show the exact messages (INF-EDIT-10)', as
   const { app, page, id } = await openNew('Limits');
   const started = Date.now();
   await dropFiles(page, [{ name: 'huge.png', type: 'image/png', size: 21 * MB }]);
-  await expect(toasts(page).filter({ hasText: 'This image is larger than 20 MB. Use a smaller image.' })).toBeVisible();
+  await expect(toasts(page).filter({ hasText: 'This image is larger than 20 MB. Change the limit in Settings or use a smaller image.' })).toBeVisible();
   expect(Date.now() - started).toBeLessThan(2000 + 1000);
   expect(attachments()).toEqual([]);
   await editor(page).click();
@@ -175,7 +175,7 @@ test('oversized and unsupported files show the exact messages (INF-EDIT-10)', as
   fs.writeFileSync(big, Buffer.concat([makePng(1, 1), Buffer.alloc(21 * MB)]));
   await queueDialog(app, [big]);
   await pressToolbar(page, 'Insert image');
-  await expect(toasts(page).filter({ hasText: 'This image is larger than 20 MB. Use a smaller image.' })).toHaveCount(2);
+  await expect(toasts(page).filter({ hasText: 'This image is larger than 20 MB. Change the limit in Settings or use a smaller image.' })).toHaveCount(2);
   expect(attachments()).toEqual([]);
 
   await dropFiles(page, [{ name: 'drawing.svg', type: 'image/svg+xml', base64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64') }]);

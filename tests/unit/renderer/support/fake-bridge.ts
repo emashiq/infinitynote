@@ -1,3 +1,5 @@
+import type { BackupStatusType } from '../../../../src/shared/contracts/portability';
+import type { ShortcutStateType } from '../../../../src/shared/contracts/shortcuts';
 import type { CapabilitiesType } from '../../../../src/shared/contracts/app';
 import type { AttachmentDtoType, AttachmentImportDialogResponseType } from '../../../../src/shared/contracts/attachments';
 import type { InfinityBridge } from '../../../../src/shared/contracts/bridge';
@@ -117,6 +119,11 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const windowData = {
     widget: { open: false, collapsed: false, alwaysOnTop: false } as WidgetStateType,
     autostart: { enabled: false, capability: { status: 'unsupported', reason: 'development-build' } } as AutostartStateType,
+  };
+  /** What the Phase 08 channels answer: backup status and the global shortcut (main does the file work). */
+  const portabilityData = {
+    status: { auto: { enabled: false, directory: null, intervalDays: 7, keep: 5 }, lastAuto: null, rollbackCopies: [], lastRestore: null } as BackupStatusType,
+    shortcut: { enabled: false, accelerator: 'CommandOrControl+Alt+N', registered: false, error: null, capability: { status: 'supported', reason: 'native-windows' } } as ShortcutStateType,
   };
   let capabilities: CapabilitiesType | null = null;
   let clock = 1_000;
@@ -914,6 +921,24 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
             : fail('UNSUPPORTED', 'Not supported by this desktop'),
         ),
     },
+    backup: {
+      create: () => handle('backup:create', {}, () => ok({ canceled: true as const })),
+      prepareRestore: () => handle('backup:prepareRestore', {}, () => ok({ canceled: true as const })),
+      restore: () => handle('backup:restore', {}, () => ok({ restarting: true as const })),
+      status: () => handle('backup:status', {}, () => ok(portabilityData.status)),
+      setAuto: (req) => handle('backup:setAuto', req, () => ok((portabilityData.status = { ...portabilityData.status, auto: { ...portabilityData.status.auto, ...req } }))),
+      chooseAutoFolder: () => handle('backup:chooseAutoFolder', {}, () => ok(portabilityData.status)),
+      deleteRollback: () => handle('backup:deleteRollback', {}, () => ok((portabilityData.status = { ...portabilityData.status, rollbackCopies: [] }))),
+    },
+    export: {
+      markdown: (req) => handle('export:markdown', req, () => ok({ canceled: true as const })),
+      portable: () => handle('export:portable', {}, () => ok({ canceled: true as const })),
+    },
+    import: { portable: () => handle('import:portable', {}, () => ok({ canceled: true as const })) },
+    shortcut: {
+      getGlobal: () => handle('shortcut:getGlobal', {}, () => ok(portabilityData.shortcut)),
+      setGlobal: (req) => handle('shortcut:setGlobal', req, () => ok((portabilityData.shortcut = { ...portabilityData.shortcut, ...req, registered: req.enabled }))),
+    },
     subscribe(channel, cb) {
       if (!(EVENT_CHANNELS as readonly string[]).includes(channel)) throw new Error('Unknown event channel');
       let set = subscribers.get(channel);
@@ -945,7 +970,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     /** The sticky window state a note would have in main. */
     stickyState: (noteId: string) => stickyState(notes.find((n) => n.id === noteId)!),
     /** Direct access for arranging state in tests. */
-    data: { reminders: reminderData, windows: windowData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, heldElsewhere, settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
+    data: { reminders: reminderData, windows: windowData, portability: portabilityData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, heldElsewhere, settings, projects, folders, notes, leases, drafts, versions, imports, dialogResults, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
   };
 }
 

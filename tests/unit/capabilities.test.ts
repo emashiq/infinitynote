@@ -44,15 +44,21 @@ describe('capabilities (W01-14)', () => {
     expect(c.alwaysOnTop.status).toBe('unsupported');
   });
 
-  it('notificationActions is always unsupported; later-phase fields stay unknown', () => {
+  it('notificationActions is always unsupported; launch at login needs an installed build', () => {
     for (const input of [{ ...base, platform: 'win32' }, base, { ...base, ozonePlatform: 'wayland' }, { ...base, wslDistro: 'Ubuntu' }, { ...base, platform: 'darwin' }]) {
       const c = detectCapabilities(input);
       expect(c.notificationActions).toEqual({ status: 'unsupported', reason: 'not-promised-on-all-desktops' });
       expect(c.launchAtLogin).toEqual({ status: 'unsupported', reason: 'development-build' });
-      for (const key of ['globalShortcut'] as const) {
-        expect(c[key]).toEqual({ status: 'unknown', reason: 'detected-in-later-phase' });
-      }
     }
+  });
+
+  it('global shortcut (INF-KEY-05): Windows and X11 yes, Wayland and WSLg no, otherwise unknown', () => {
+    expect(detectCapabilities({ ...base, platform: 'win32' }).globalShortcut).toEqual({ status: 'supported', reason: 'native-windows' });
+    expect(detectCapabilities({ ...base, xdgSessionType: 'x11', display: ':0' }).globalShortcut).toEqual({ status: 'supported', reason: 'x11' });
+    expect(detectCapabilities({ ...base, ozonePlatform: 'wayland' }).globalShortcut).toEqual({ status: 'unsupported', reason: 'wayland-or-wslg' });
+    expect(detectCapabilities({ ...base, wslDistro: 'Ubuntu', ozonePlatform: 'x11' }).globalShortcut).toEqual({ status: 'unsupported', reason: 'wayland-or-wslg' });
+    expect(detectCapabilities(base).globalShortcut.status).toBe('unknown');
+    expect(detectCapabilities({ ...base, platform: 'darwin' }).globalShortcut.status).toBe('unknown');
   });
 });
 
@@ -95,12 +101,13 @@ describe('test capability override (plan section 8.9)', () => {
   const win = detectCapabilities({ ...base, platform: 'win32' });
 
   it('sets the named statuses with the reason test-override and ignores unknown keys and values', () => {
-    const { caps, warning } = applyCapabilityOverride(win, JSON.stringify({ windowPositioning: 'unsupported', tray: 'unknown', alwaysOnTop: 'maybe', globalShortcut: 'supported' }));
+    const { caps, warning } = applyCapabilityOverride(win, JSON.stringify({ windowPositioning: 'unsupported', tray: 'unknown', alwaysOnTop: 'maybe', notificationActions: 'supported' }));
     expect(warning).toBeNull();
     expect(caps.windowPositioning).toEqual({ status: 'unsupported', reason: 'test-override' });
     expect(caps.tray).toEqual({ status: 'unknown', reason: 'test-override' });
     expect(caps.alwaysOnTop).toEqual(win.alwaysOnTop);
-    expect(caps.globalShortcut).toEqual(win.globalShortcut);
+    expect(caps.notificationActions).toEqual(win.notificationActions);
+    expect(applyCapabilityOverride(win, JSON.stringify({ globalShortcut: 'unsupported' })).caps.globalShortcut).toEqual({ status: 'unsupported', reason: 'test-override' });
     const phase05 = applyCapabilityOverride(win, JSON.stringify({ nativeNotifications: 'unsupported', launchAtLogin: 'supported' })).caps;
     expect(phase05.nativeNotifications).toEqual({ status: 'unsupported', reason: 'test-override' });
     expect(phase05.launchAtLogin).toEqual({ status: 'supported', reason: 'test-override' });

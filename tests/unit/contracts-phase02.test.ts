@@ -102,6 +102,12 @@ describe('Phase 02 request schemas', () => {
       'reminders.endOfDayTime',
       'reminders.dateOnlyTime',
       'reminders.suggestFromText',
+      'retention.trashDays',
+      'retention.autoVersionDays',
+      'retention.autoVersionMax',
+      'backup.auto',
+      'backup.lastAuto',
+      'shortcut.quickSticky',
     ]);
   });
 

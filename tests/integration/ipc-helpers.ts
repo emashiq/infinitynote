@@ -60,6 +60,7 @@ export const NO_DESKTOP: DesktopHandlerDeps = {
   stickies: null,
   widget: null,
   autostart: { get: () => ({ enabled: false, capability: { status: 'unsupported', reason: 'development-build' } }), set: () => { throw new Error('not used'); } },
+  shortcut: null,
 };
 
 /**

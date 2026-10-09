@@ -78,6 +78,18 @@ export const INVOKE_CHANNELS = [
   'tags:set',
   'attachment:open',
   'attachment:showInFolder',
+  'backup:create',
+  'backup:prepareRestore',
+  'backup:restore',
+  'backup:status',
+  'backup:setAuto',
+  'backup:chooseAutoFolder',
+  'backup:deleteRollback',
+  'export:markdown',
+  'export:portable',
+  'import:portable',
+  'shortcut:getGlobal',
+  'shortcut:setGlobal',
 ] as const;
 
 export const EVENT_CHANNELS = [

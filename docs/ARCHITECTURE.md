@@ -64,7 +64,7 @@ Catalogue (later phase plans may add channels but must update this list):
 | 05 | `zones:list`, `reminder:create\|update\|delete\|undoDelete\|listForNote\|open`, `reminders:listView\|summary`, `occurrence:complete\|snooze`, `widget:show\|hide\|setPinned\|setCollapsed`, `autostart:get\|set` (moved from 08, D-082); `reminder:listView` of the Phase 00 list is named `reminders:listView` (D-074) | `reminder:changed`, `reminder:alert`, `widget:state`, `app:openReminders`; notification clicks reuse `app:openNote` from 04, which gains `blockId`; the main window's `window:getState` answer carries `openReminders` and the widget state (D-086) |
 | 06 | `reminder:createFromSuggestion`, `reminder:updateFromSource`, `suggestion:dismiss\|listDismissed` (appended in this order; 71 invoke channels; `listDismissed` also returns main's `asOf`, computer zone and default zone, D-089); `ReminderDto` gains `source` | none added; `reminder:changed {anchor}` also covers source-state changes |
 | 07 | `refs:list`, `search:query`, `notes:pick`, `attachment:open\|showInFolder`, `tags:list\|set` (`shell:openExternal` moved to 03, D-052; contracts in D-098; stickies get the two attachment channels for their own note) | |
-| 08 | `backup:create\|restore`, `export:markdown\|portable`, `import:portable`, `shortcut:setGlobal` (`autostart:set` moved to 05, D-082) | |
+| 08 | `backup:create\|prepareRestore\|restore\|status\|setAuto\|chooseAutoFolder\|deleteRollback`, `export:markdown\|portable`, `import:portable`, `shortcut:getGlobal\|setGlobal` (appended, 90 invoke channels, main window only; `autostart:set` moved to 05, D-082; D-099) | |
 
 Test-only hooks (fake clock control, captured notifications, simulated notification click) exist only when `!app.isPackaged && process.env.INFINITY_NOTES_E2E === '1'`. Every hook that reads or writes the database resolves on a fresh macrotask (D-084, F04-A2).
 
@@ -100,7 +100,7 @@ Detected at runtime by one `PlatformCapabilities` service in main (`src/main/ser
 | Notification click opens note | yes | server dependent | yes | not applicable without a server | open from the in-app banner or widget |
 | Native notification action buttons | not used | no | no | no | none in V1 on any OS (D-026); Snooze, Done and Open are in the app and widget |
 | Launch at login | `app.setLoginItemSettings` (packaged only) | XDG autostart `.desktop` (packaged only) | same | unsupported (`wsl-no-session-autostart`) | opt-in, default off; development builds report `development-build`; failure reported in Settings |
-| Global shortcut | `globalShortcut` | yes | generally no | likely no | opt-in, default off; failure shown in Settings |
+| Global shortcut | `globalShortcut` | yes | generally no (reported unsupported) | no (reported unsupported) | opt-in, default off; a refused registration is reported in Settings and not stored as on (D-099) |
 | Sleep and resume events | `powerMonitor` | yes | yes | WSL semantics differ; record actual | bounded timer and clock-jump detection |
 
 The app never promises notifications while fully quit and never promises guaranteed window positioning or always-on-top under Wayland.
@@ -233,6 +233,7 @@ References are ID-based (`note_references`) with a target title snapshot for mis
 - Restore: preflight (zip entry names normalized; reject absolute paths, `..`, drive letters, symlink attributes, more than 200,000 entries, total uncompressed over 4 GB by default, per-entry compression ratio over 100), extract to `data/restore-staging/`, verify hashes, open the staged DB read-only, `PRAGMA integrity_check`, require schemaVersion at most the app's (older migrate forward after restore; newer are refused), close the live DB, move live data to `data/rollback-<timestamp>/`, move staging into place and reopen. Any failure moves the rollback copy back. The previous rollback copy is kept until the next successful start, then deletable from Settings.
 - Portable export `*.infinityexport` (zip): JSON documents for projects, folders, notes, references and reminders plus attachments. Import remaps all note, block and attachment IDs and references and never overwrites existing items. Markdown or plain-text export is lossy (block IDs, reminders, colors and sticky state are dropped).
 - Automatic backup: off by default; user-chosen destination; interval default 7 days; keep count default 5.
+- Phase 08 implementation (D-099): a restore is prepared in the running app and applied at the next start (`data/restore-pending.json`, `openWithPendingRestore`) before the database opens; the rollback copy is moved back on any failure or after an interrupted swap. Backups store the database and attachments uncompressed; the per-entry ratio check applies to entries over 1 MiB. Import adds projects as new projects and Common items in a new folder "Imported <date time>".
 
 ## 14. Security
 

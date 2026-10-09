@@ -1,11 +1,21 @@
-import { expect, test, type Page } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { setContentSize } from './fixtures';
 import { useApp } from './harness';
 import { COMMON, createFolder, createNote, createProject, reloadUi } from './seed';
-import { activeTabLabel, dialogByName, openContextMenu, openFromTree, railGo, tabLabels, tabs, treeByKey, treeItem } from './ui';
+import { editor } from './editor-ui';
+import { queueSave, tempFolder } from './portability-ui';
+import { activeTabLabel, dialogByName, openContextMenu, openFromTree, railGo, tabLabels, tabs, titleInput, toasts, treeByKey, treeItem } from './ui';
 
 const h = useApp();
 const COMMON_PARENT = { projectId: null, parentId: null };
+
+/** Presses ArrowDown in an open menu until the item has focus (at most 15 steps). */
+async function arrowDownTo(page: Page, item: Locator): Promise<void> {
+  for (let i = 0; i < 15 && !(await item.evaluate((el) => el === document.activeElement)); i += 1) await page.keyboard.press('ArrowDown');
+  await expect(item).toBeFocused();
+}
 
 /** True when the focus is inside the tree or a dialog (never `body`). */
 async function focusIsContained(page: Page): Promise<boolean> {
@@ -243,4 +253,107 @@ test('accessibility structure on every view', async () => {
   await page.getByRole('navigation', { name: 'Notes' }).getByRole('button', { name: 'New project' }).focus();
   await page.keyboard.press('Enter');
   expect(await audit()).toEqual([]);
+});
+
+test('keyboard-only primary flows: write, search, menus, theme, help and backup without the mouse (INF-A11Y-01, INF-A11Y-02)', async () => {
+  const { app, page } = await h.start();
+  const files = tempFolder();
+  try {
+    // A note: Ctrl+N, the title, Enter into the text.
+    await page.keyboard.press('Control+N');
+    await expect(titleInput(page)).toBeFocused();
+    await page.keyboard.type('Keyboard note');
+    await expect(editor(page)).toHaveAttribute('contenteditable', 'true');
+    await expect.poll(() => h.all('SELECT title FROM notes')).toEqual([{ title: 'Keyboard note' }]);
+    await page.keyboard.press('Enter');
+    await expect(editor(page)).toBeFocused();
+    await page.keyboard.type('Typed without a mouse');
+    await expect.poll(() => h.all('SELECT title, plain_text FROM notes')).toEqual([{ title: 'Keyboard note', plain_text: 'Typed without a mouse' }]);
+
+    // The palette opens Settings.
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('Open Settings');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => activeTabLabel(page)).toBe('Settings');
+
+    // Alt focuses the menu bar; arrows reach View → Dark theme; Escape returns to the menu button.
+    await page.keyboard.press('Alt');
+    const menubar = page.getByRole('menubar', { name: 'Application menu' });
+    await expect(menubar.getByRole('menuitem', { name: 'File', exact: true })).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+    await expect(menubar.getByRole('menuitem', { name: 'View', exact: true })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('menu', { name: 'View' })).toBeVisible();
+    await arrowDownTo(page, page.getByRole('menuitemradio', { name: 'Dark theme' }));
+    await page.keyboard.press('Enter');
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
+    await page.keyboard.press('Alt');
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('menu', { name: 'File' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu', { name: 'File' })).toHaveCount(0);
+    await expect(menubar.getByRole('menuitem', { name: 'File', exact: true })).toBeFocused();
+
+    // Keyboard help and back.
+    await page.keyboard.press('Control+/');
+    await expect(dialogByName(page, 'Keyboard shortcuts')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menubar.getByRole('menuitem', { name: 'File', exact: true })).toBeFocused();
+
+    // File → Back up now…, reached with the arrow keys.
+    await queueSave(app, path.join(files, 'keys.infinitybackup'));
+    await page.keyboard.press('ArrowDown');
+    await arrowDownTo(page, page.getByRole('menu', { name: 'File' }).getByRole('menuitem', { name: 'Back up now…' }));
+    await page.keyboard.press('Enter');
+    await expect(toasts(page).filter({ hasText: 'Backup saved: keys.infinitybackup' })).toBeVisible();
+    expect(fs.existsSync(path.join(files, 'keys.infinitybackup'))).toBe(true);
+  } finally {
+    fs.rmSync(files, { recursive: true, force: true });
+  }
+});
+
+test('getByRole coverage: Settings sections are named regions and the new controls have names and roles (INF-A11Y-03)', async () => {
+  const { app, page } = await h.start();
+  await setContentSize(app, page, 1280, 800);
+  await railGo(page, 'Settings');
+  for (const name of ['General', 'Appearance', 'Notes and attachments', 'Reminders', 'Windows and tray', 'Backup', 'Keyboard']) {
+    const region = page.getByRole('region', { name, exact: true });
+    await expect(region, name).toBeVisible();
+    await expect(region.getByRole('heading', { level: 3, name, exact: true }), name).toBeVisible();
+  }
+  for (const name of ['Show data folder', 'Back up now…', 'Restore from backup…', 'Export all notes…', 'Import notes…', 'Choose folder…', 'Show keyboard shortcuts']) {
+    await expect(page.getByRole('button', { name, exact: true }), name).toBeVisible();
+  }
+  await expect(page.getByRole('switch', { name: 'Back up automatically' })).toBeVisible();
+  for (const name of ['Largest image', 'Largest file', 'Keep automatic versions for', 'Most automatic versions per note']) {
+    await expect(page.getByRole('spinbutton', { name }), name).toBeVisible();
+  }
+  for (const name of ['Empty Trash automatically', 'Back up every', 'Keep', 'Shortcut']) {
+    await expect(page.getByRole('combobox', { name, exact: true }), name).toBeVisible();
+  }
+  await page.getByRole('menubar', { name: 'Application menu' }).getByRole('menuitem', { name: 'File', exact: true }).focus();
+  await page.keyboard.press('ArrowDown');
+  const file = page.getByRole('menu', { name: 'File' });
+  for (const name of ['Back up now…', 'Restore from backup…', 'Export all notes…', 'Import notes…']) {
+    await expect(file.getByRole('menuitem', { name }), name).toBeEnabled();
+  }
+  // Without a note tab the note exports are disabled rather than doing nothing.
+  await expect(file.getByRole('menuitem', { name: 'Export note as Markdown…' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+});
+
+test('narrow layouts: Home and Settings fit the minimum window without sideways scrolling', async () => {
+  const { app, page } = await h.start();
+  await createNote(page, COMMON, 'Narrow');
+  await reloadUi(page);
+  await setContentSize(app, page, 720, 480);
+  const overflow = () =>
+    page.evaluate(() => {
+      const panel = document.querySelector('[role="tabpanel"]') as HTMLElement;
+      return panel.scrollWidth - panel.clientWidth;
+    });
+  expect(await overflow()).toBeLessThanOrEqual(1);
+  await railGo(page, 'Settings');
+  await expect(page.getByRole('region', { name: 'Backup' })).toBeAttached();
+  expect(await overflow()).toBeLessThanOrEqual(1);
 });

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { textToDoc } from '../../src/shared/text/textarea-doc';
-import { AUTO_VERSION_INTERVAL_MS, AUTO_VERSION_MAX_AGE_MS, AUTO_VERSION_MAX_COUNT } from '../../src/shared/versions/retention';
+import { AUTO_VERSION_INTERVAL_MS, AUTO_VERSION_MAX_AGE_MS, AUTO_VERSION_MAX_COUNT, DAY_MS } from '../../src/shared/versions/retention';
 import { setupServices } from './hierarchy-helpers';
 
 const WC = 5;
@@ -93,5 +93,69 @@ describe('automatic versions (INF-SAVE-06, D-056)', () => {
     s.clock.advance(AUTO_VERSION_INTERVAL_MS + 1);
     s.save('short');
     expect(s.versions.list(s.note.id).versions[0]!.preview).toHaveLength(200);
+  });
+});
+
+describe('retention (INF-PORT-07, F-03-4)', () => {
+  it('automatic versions follow the configured age and count, at save time and in maintenance; other reasons stay', async () => {
+    const s = await setup();
+    s.save('base');
+    const insert = s.t.db.prepare<[string, string, string, number]>(
+      "INSERT INTO note_versions(id, note_id, revision, format, content_snapshot, reason, created_at) VALUES (?, ?, 1, 'rich', '{}', ?, ?)",
+    );
+    const now = s.clock.now();
+    for (let i = 0; i < 15; i += 1) insert.run(randomUUID(), s.note.id, 'auto', now - AUTO_VERSION_INTERVAL_MS - 1000 - i * MINUTE);
+    insert.run(randomUUID(), s.note.id, 'conversion', now - 400 * DAY_MS);
+    s.settings.set('retention.autoVersionMax', 10);
+    s.clock.advance(AUTO_VERSION_INTERVAL_MS + 1);
+    s.save('next');
+    expect(s.autos()).toHaveLength(10);
+    s.settings.set('retention.autoVersionDays', 1);
+    s.clock.advance(DAY_MS);
+    const report = await s.maintenance.run();
+    expect(report.versionsPruned).toBe(9);
+    expect(s.autos()).toHaveLength(1);
+    expect(s.rows("SELECT reason FROM note_versions WHERE reason <> 'auto'")).toEqual([{ reason: 'conversion' }]);
+  });
+
+  it('Trash is kept by default; with 30 days only batches older than that are purged', async () => {
+    const s = await setupServices();
+    const old = s.note(null, null, 'Old');
+    s.trash.trashNote(old.id);
+    s.clock.advance(20 * DAY_MS);
+    const recent = s.note(null, null, 'Recent');
+    s.trash.trashNote(recent.id);
+    s.clock.advance(15 * DAY_MS);
+    expect((await s.maintenance.run()).trashedNotesPurged).toBe(0);
+    expect(s.rows('SELECT title FROM notes WHERE deleted_at IS NOT NULL ORDER BY title')).toEqual([{ title: 'Old' }, { title: 'Recent' }]);
+    s.settings.set('retention.trashDays', 30);
+    expect((await s.maintenance.run()).trashedNotesPurged).toBe(1);
+    expect(s.rows('SELECT title FROM notes WHERE deleted_at IS NOT NULL')).toEqual([{ title: 'Recent' }]);
+    expect(s.events.at(-1)).toEqual({ reason: 'purge', trashedNoteIds: [] });
+  });
+
+  it('a renderer saving with a revoked lease keeps at most 20 open lease_lost drafts; resolved drafts go after 30 days', async () => {
+    const s = await setupServices();
+    const note = s.note(null, null, 'Drafts');
+    const viewId = randomUUID();
+    const lease = s.leases.acquire(note.id, viewId, 9);
+    if (!lease.granted) throw new Error('lease');
+    s.leases.webContentsReset(9);
+    for (let i = 0; i < 25; i += 1) {
+      s.clock.advance(1000);
+      expect(() =>
+        s.writer.save(
+          { noteId: note.id, viewId, leaseToken: lease.leaseToken, baseRevision: 0, requestId: randomUUID(), format: 'rich', content: textToDoc(`late ${i}`) },
+          { webContentsId: 9 },
+        ),
+      ).toThrow('Edit control was lost');
+    }
+    const open = () => s.rows<{ content: string }>("SELECT content FROM note_drafts WHERE reason = 'lease_lost' AND resolved_at IS NULL ORDER BY created_at");
+    expect(open()).toHaveLength(20);
+    expect(open()[0]!.content).toContain('late 5');
+    expect(s.drafts.list(note.id).drafts).toHaveLength(20);
+    s.clock.advance(30 * DAY_MS + 1);
+    expect((await s.maintenance.run()).draftsDeleted).toBe(5);
+    expect(s.rows('SELECT id FROM note_drafts')).toHaveLength(20);
   });
 });

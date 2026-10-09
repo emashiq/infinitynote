@@ -1,7 +1,7 @@
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { repoRoot, setContentSize } from './fixtures';
+import { closeApp, launchApp, repoRoot, setContentSize } from './fixtures';
 import { useApp } from './harness';
 import { makePng } from '../support/png';
 import { COMMON, createNote, importImage, reloadUi, saveDoc, saveText, seedNotebook, type Notebook } from './seed';
@@ -436,4 +436,20 @@ test('suggestions: a sticky with a suggestion', async () => {
   await expect(sp.locator('.nlp-candidate')).toHaveText(['tomorrow'], { timeout: 5_000 });
   await expect(sp.getByRole('group', { name: 'Reminder suggestion' })).toBeVisible();
   await shot(sp, 'sticky-suggestion.png', 3_000);
+});
+
+test('high DPI 200%: vector icons and crisp settings at device scale factor 2 (INF-A11Y-06, native check in Phase 09)', async () => {
+  const scaled = await launchApp({ userDataDir: h.userData, extraArgs: ['--force-device-scale-factor=2'] });
+  try {
+    const { page } = scaled;
+    expect(await page.evaluate(() => window.devicePixelRatio)).toBe(2);
+    await railGo(page, 'Settings');
+    // Every icon in the title bar and the rail is an SVG, so it scales without blurring.
+    const icons = await page.evaluate(() => [...document.querySelectorAll('header[role="banner"] button, nav[aria-label="Primary"] button')].map((b) => (b.querySelector('img') ? 'img' : b.querySelector('svg') ? 'svg' : 'text')));
+    expect(icons.length).toBeGreaterThan(0);
+    expect(icons.filter((k) => k === 'img')).toEqual([]);
+    await shot(page, 'dpi200-settings.png');
+  } finally {
+    await closeApp(scaled.app);
+  }
 });

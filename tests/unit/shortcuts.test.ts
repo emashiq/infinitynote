@@ -24,6 +24,14 @@ describe('matchShortcut', () => {
     expect(matchShortcut(key('f', { shiftKey: true }))).toBeNull();
   });
 
+  it('Ctrl+/ opens keyboard help on any layout (INF-KEY-06)', () => {
+    expect(matchShortcut(key('/', { code: 'Slash' }))).toBe('help.shortcuts');
+    // German layout: "/" is Shift+7.
+    expect(matchShortcut(key('/', { code: 'Digit7', shiftKey: true }))).toBe('help.shortcuts');
+    expect(matchShortcut(key('?', { code: 'Slash', shiftKey: true }))).toBeNull();
+    expect(matchShortcut(key('/', { code: 'Slash', ctrlKey: false }))).toBeNull();
+  });
+
   it('is case-insensitive for letters', () => {
     expect(matchShortcut(key('N'))).toBe('note.new');
     expect(matchShortcut(key('K'))).toBe('palette.open');

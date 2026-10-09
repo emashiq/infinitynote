@@ -91,7 +91,8 @@ describe('app identity (INF-FND-11)', () => {
     ]) {
       expect(Object.keys(all), name).not.toContain(name);
     }
-    expect(Object.keys(pkg.dependencies).sort()).toEqual(['better-sqlite3', 'luxon', 'zod']);
+    // yazl and yauzl write and read backup and export archives in main (Phase 08, pinned in DECISIONS).
+    expect(Object.keys(pkg.dependencies).sort()).toEqual(['better-sqlite3', 'luxon', 'yauzl', 'yazl', 'zod']);
   });
 
   it('dependency versions are exact pins', () => {

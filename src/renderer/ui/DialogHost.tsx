@@ -4,8 +4,14 @@ import { AboutDialog, ShortcutsDialog } from '../shell/HelpDialogs';
 import { MoveDialog } from '../tree/MoveDialog';
 import { useServices, useStore } from '../state/use-store';
 import type { Outcome } from '../state/store';
+import { restoreConfirmBody } from '../state/portability-commands';
 import { ConfirmRunner, TRASH_CONFIRM } from './ConfirmDialog';
 import { NameDialog } from './NameDialog';
+
+/** "9 Oct 2026, 14:30" in this computer's time. */
+function formatLocalDateTime(ms: number): string {
+  return new Date(ms).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+}
 
 /** Renders whichever dialog UiStore.dialog names. */
 export function DialogHost() {
@@ -127,6 +133,17 @@ export function DialogHost() {
       return <ShortcutsDialog onClose={close} />;
     case 'about':
       return <AboutDialog onClose={close} />;
+    case 'restoreBackup':
+      return (
+        <ConfirmRunner
+          title="Restore from backup?"
+          body={restoreConfirmBody(dialog.summary, formatLocalDateTime)}
+          confirmLabel="Restore and restart"
+          confirmFirst={false}
+          run={() => services.portability.confirmRestore()}
+          onClose={close}
+        />
+      );
     default:
       return null;
   }

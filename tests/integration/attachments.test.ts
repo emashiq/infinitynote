@@ -90,18 +90,18 @@ describe('attachment import (INF-EDIT-08, INF-EDIT-10, INF-EDIT-14)', () => {
     over.set(makePng(1, 1));
     expect(await rejection(s.attachments.importBytes({ kind: 'image', bytes: over }))).toMatchObject({
       code: 'LIMIT_EXCEEDED',
-      message: 'This image is larger than 20 MB. Use a smaller image.',
+      message: 'This image is larger than 20 MB. Change the limit in Settings or use a smaller image.',
     });
     s.settings.set('attachments.imageMaxMb', 1);
     const twoMb = new Uint8Array(2 * MB);
     twoMb.set(makePng(1, 1));
     expect(await rejection(s.attachments.importBytes({ kind: 'image', bytes: twoMb }))).toMatchObject({
       code: 'LIMIT_EXCEEDED',
-      message: 'This image is larger than 1 MB. Use a smaller image.',
+      message: 'This image is larger than 1 MB. Change the limit in Settings or use a smaller image.',
     });
     expect(await rejection(s.attachments.importBytes({ kind: 'document', bytes: new Uint8Array(50 * MB + 1) }))).toMatchObject({
       code: 'LIMIT_EXCEEDED',
-      message: 'This file is larger than 50 MB. Use a smaller file.',
+      message: 'This file is larger than 50 MB. Change the limit in Settings or use a smaller file.',
     });
     const enc = (t: string) => new TextEncoder().encode(t);
     for (const bytes of [enc('<svg xmlns="http://www.w3.org/2000/svg"/>'), enc('<html><script>x</script></html>'), makePng(4, 4).subarray(0, 40)]) {
@@ -184,7 +184,7 @@ describe('attachment import (INF-EDIT-08, INF-EDIT-10, INF-EDIT-14)', () => {
     expect(res.imported).toHaveLength(17);
     expect(res.rejected).toEqual([
       { name: 'drawing.svg', code: 'UNSUPPORTED', message: UNSUPPORTED },
-      { name: 'big.png', code: 'LIMIT_EXCEEDED', message: 'This image is larger than 20 MB. Use a smaller image.' },
+      { name: 'big.png', code: 'LIMIT_EXCEEDED', message: 'This image is larger than 20 MB. Change the limit in Settings or use a smaller image.' },
       { name: 'folder.png', code: 'VALIDATION_FAILED', message: 'The image could not be added.' },
       ...files.slice(17).map((f) => ({ name: path.basename(f), code: 'LIMIT_EXCEEDED', message: 'Only the first 20 files were added.' })),
     ]);

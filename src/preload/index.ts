@@ -100,6 +100,18 @@ const bridge: InfinityBridge = {
     setCollapsed: call('widget:setCollapsed'),
   },
   autostart: { get: call('autostart:get'), set: call('autostart:set') },
+  backup: {
+    create: call('backup:create'),
+    prepareRestore: call('backup:prepareRestore'),
+    restore: call('backup:restore'),
+    status: call('backup:status'),
+    setAuto: call('backup:setAuto'),
+    chooseAutoFolder: call('backup:chooseAutoFolder'),
+    deleteRollback: call('backup:deleteRollback'),
+  },
+  export: { markdown: call('export:markdown'), portable: call('export:portable') },
+  import: { portable: call('import:portable') },
+  shortcut: { getGlobal: call('shortcut:getGlobal'), setGlobal: call('shortcut:setGlobal') },
   subscribe,
 };
 

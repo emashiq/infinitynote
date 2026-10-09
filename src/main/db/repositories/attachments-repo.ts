@@ -103,4 +103,28 @@ export class AttachmentsRepo {
       )
       .run(now, JSON.stringify(ids));
   }
+
+  // Garbage collection (INF-PORT-08) ------------------------------------------------------------
+  /**
+   * Brings every row's unreferenced clock up to date: a row linked from any note (live or trashed) or listed in
+   * `alsoReferenced` (versions, open drafts) is referenced; any other row starts its grace period now.
+   */
+  reconcileReferences(alsoReferenced: readonly string[], now: number): void {
+    const extra = JSON.stringify(alsoReferenced);
+    const referenced = 'id IN (SELECT attachment_id FROM note_attachments) OR id IN (SELECT value FROM json_each(?))';
+    this.db.prepare<[string]>(`UPDATE attachments SET unreferenced_since = NULL WHERE unreferenced_since IS NOT NULL AND (${referenced})`).run(extra);
+    this.db.prepare<[number, string]>(`UPDATE attachments SET unreferenced_since = ? WHERE unreferenced_since IS NULL AND NOT (${referenced})`).run(now, extra);
+  }
+
+  /** Rows unreferenced since `cutoff` or earlier (call reconcileReferences first, in the same transaction). */
+  unreferencedSince(cutoff: number): AttachmentRow[] {
+    return this.db
+      .prepare<[number], AttachmentRow>(`SELECT ${COLUMNS} FROM attachments WHERE unreferenced_since IS NOT NULL AND unreferenced_since <= ?`)
+      .all(cutoff);
+  }
+
+  deleteRows(ids: readonly string[]): void {
+    if (ids.length === 0) return;
+    this.db.prepare<[string]>('DELETE FROM attachments WHERE id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));
+  }
 }

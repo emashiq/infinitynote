@@ -7,6 +7,7 @@ import { RemindersStore } from '../reminders/reminders-store';
 import type { EditorServices, ReferenceHost } from '../editor/editor-services';
 import type { AttachmentLimits } from '../editor/uploader';
 import { createCommandRunner, type CommandRunner } from './commands';
+import { createPortabilityCommands, type PortabilityCommands } from './portability-commands';
 import { browserHideEvents, createCoreServices } from './core-services';
 import { HomeStore } from './home-store';
 import { LayoutStore } from './layout-store';
@@ -52,6 +53,8 @@ export interface AppServices {
   ui: UiStore;
   notices: NoticeStore;
   commands: CommandRunner;
+  /** Backup, restore, export and import (D-099). */
+  portability: PortabilityCommands;
   windowSettings: WindowSettingsStore;
   reminders: RemindersStore;
   /** Attachment size limits from the public settings (followed live through settings:changed). */
@@ -90,7 +93,8 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
   const home = new HomeStore(bridge);
   const layout = new LayoutStore(bridge, viewport.width());
   const ui = new UiStore();
-  const commands = createCommandRunner({ bridge, tree, tabs, home, layout, ui, notices });
+  const portability = createPortabilityCommands({ bridge, notices, ui, flushActive: () => tabs.flushActive() });
+  const commands = createCommandRunner({ bridge, tree, tabs, home, layout, ui, notices, portability });
   const windowSettings = new WindowSettingsStore(bridge);
   const reminders = new RemindersStore(
     {
@@ -133,7 +137,14 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     }
     // Notes main was asked to open while this window loaded, for example a dock (D-071).
     for (const open of deps.initialOpens ?? []) await tabs.openNote(open.noteId, { takeEdit: open.takeEdit, blockId: open.blockId });
-    await Promise.all([home.load(), reminders.init(deps.initialReminders ?? null)]);
+    await Promise.all([home.load(), reminders.init(deps.initialReminders ?? null), announceRestore()]);
+  }
+
+  /** A restore applied at this start says how it went (D-099). */
+  async function announceRestore(): Promise<void> {
+    const status = await bridge.backup.status();
+    const restore = status.ok ? status.data.lastRestore : null;
+    if (restore) notices.push(restore.message, restore.status === 'failed' ? 'error' : 'info');
   }
 
   core.track(bridge.subscribe('settings:changed', ({ key, value }) => windowSettings.applyChange(key, value)));
@@ -205,6 +216,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     ui,
     notices,
     commands,
+    portability,
     windowSettings,
     reminders,
     attachmentLimits: core.attachmentLimits,

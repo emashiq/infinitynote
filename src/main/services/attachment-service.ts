@@ -74,15 +74,26 @@ export class AttachmentService {
 
   async importBytes(req: AttachmentImportBytesRequestType): Promise<{ attachment: AttachmentDtoType }> {
     await this.deps.beforeImport?.();
-    const { kind, bytes } = req;
-    const limit = this.limitMb(kind);
-    if (bytes.byteLength > maxBytes(limit)) throw new AppError('LIMIT_EXCEEDED', tooLargeMessage(kind, limit));
-    const name = req.originalName === undefined ? null : sanitizeOriginalName(req.originalName);
+    const limit = this.limitMb(req.kind);
+    if (req.bytes.byteLength > maxBytes(limit)) throw new AppError('LIMIT_EXCEEDED', tooLargeMessage(req.kind, limit));
+    return { attachment: await this.store(req.kind, req.bytes, req.originalName ?? null) };
+  }
+
+  /**
+   * Stores an attachment from a portable import (INF-PORT-04). The archive is already bounded and hash-checked, so the
+   * user's size limits do not apply; images are still sniffed, and identical bytes reuse the stored row.
+   */
+  async importArchived(kind: AttachmentKindType, bytes: Uint8Array, originalName: string | null): Promise<AttachmentDtoType> {
+    return this.store(kind, bytes, originalName);
+  }
+
+  private async store(kind: AttachmentKindType, bytes: Uint8Array, originalName: string | null): Promise<AttachmentDtoType> {
+    const name = originalName === null ? null : sanitizeOriginalName(originalName);
     const info = this.inspect(kind, bytes, name);
     const sha256 = createHash('sha256').update(bytes).digest('hex');
 
     const existing = this.repo.findBySha(sha256);
-    if (existing) return { attachment: this.reuse(existing, kind, info) };
+    if (existing) return this.reuse(existing, kind, info);
 
     const id = this.deps.ids.uuid();
     const relativePath = `attachments/${id.slice(0, 2)}/${id}.${info.ext}`;
@@ -98,11 +109,11 @@ export class AttachmentService {
       await fs.promises.rm(finalPath, { force: true });
       // Another import of the same bytes won the race: use its row.
       const winner = this.repo.findBySha(sha256);
-      if (winner) return { attachment: this.reuse(winner, kind, info) };
+      if (winner) return this.reuse(winner, kind, info);
       this.deps.logger.error(`attachment: register failed ${errorDetail(err)}`);
       throw new AppError('INTERNAL', importFailedMessage(kind));
     }
-    return { attachment: { id, kind, mime: info.mime, sizeBytes: bytes.byteLength, originalName: name, width: info.width, height: info.height } };
+    return { id, kind, mime: info.mime, sizeBytes: bytes.byteLength, originalName: name, width: info.width, height: info.height };
   }
 
   /** Identical bytes reuse the stored row; valid image bytes stored earlier as a document become an image. */

@@ -133,9 +133,23 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
     ]);
   });
 
-  it('the Phase 07 channels are appended in order, and note:trashed was not added (D-063, D-098)', () => {
-    expect(INVOKE_CHANNELS.slice(71)).toEqual(['refs:list', 'notes:pick', 'search:query', 'tags:list', 'tags:set', 'attachment:open', 'attachment:showInFolder']);
-    expect(INVOKE_CHANNELS).toHaveLength(78);
+  it('the Phase 07 and Phase 08 channels are appended in order, and note:trashed was not added (D-063, D-098, D-099)', () => {
+    expect(INVOKE_CHANNELS.slice(71, 78)).toEqual(['refs:list', 'notes:pick', 'search:query', 'tags:list', 'tags:set', 'attachment:open', 'attachment:showInFolder']);
+    expect(INVOKE_CHANNELS.slice(78)).toEqual([
+      'backup:create',
+      'backup:prepareRestore',
+      'backup:restore',
+      'backup:status',
+      'backup:setAuto',
+      'backup:chooseAutoFolder',
+      'backup:deleteRollback',
+      'export:markdown',
+      'export:portable',
+      'import:portable',
+      'shortcut:getGlobal',
+      'shortcut:setGlobal',
+    ]);
+    expect(INVOKE_CHANNELS).toHaveLength(90);
     expect(EVENT_CHANNELS).toHaveLength(12);
     const all: string[] = [...INVOKE_CHANNELS, ...EVENT_CHANNELS];
     for (const name of ['note:trashed', 'sticky:removeSticky', 'attachment:importImageBytes']) {

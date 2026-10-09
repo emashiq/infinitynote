@@ -42,6 +42,8 @@ export interface Desktop {
   tray: TrayController;
   lifecycle: WindowLifecycle;
   displays: DisplayProvider;
+  /** Creates a sticky at the Common root and floats it (tray, global shortcut; D-069). */
+  newSticky(): Promise<void>;
   /**
    * Starts the tray and opens the main window; open stickies and the widget come back after its first load. A launch at
    * login with a tray starts in the background: no main window, the other windows come back at once.
@@ -133,17 +135,19 @@ export function createDesktop(deps: DesktopDeps): Desktop {
     deps.afterStartup?.();
   }
 
+  // A new sticky from the tray or the global shortcut lands at the Common root and floats (D-069).
+  const newSticky = async (): Promise<void> => {
+    if (!services || !stickies) return;
+    const { note } = services.hierarchy.createNote({ projectId: null, folderId: null }, true);
+    await stickies.float(note.id);
+  };
+
   const tray = new TrayController({
     tray: caps.tray,
     iconPath: deps.windows.iconPath,
     platform: process.platform,
     openMainWindow: () => mainWindow.show(),
-    // A new sticky from the tray lands at the Common root and floats (D-069).
-    newSticky: async () => {
-      if (!services || !stickies) return;
-      const { note } = services.hierarchy.createNote({ projectId: null, folderId: null }, true);
-      await stickies.float(note.id);
-    },
+    newSticky,
     showWidget: () => widget?.show(),
     quit: () => app.quit(),
     logger,
@@ -160,6 +164,7 @@ export function createDesktop(deps: DesktopDeps): Desktop {
     tray,
     lifecycle,
     displays: deps.displays,
+    newSticky,
     start() {
       tray.start();
       if (deps.launchedAtLogin && tray.isPresent()) {

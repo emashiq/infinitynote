@@ -298,6 +298,21 @@ export class ReminderService {
     return this.dtoOf(id);
   }
 
+  /**
+   * Adds an imported reminder inside the caller's transaction (portable import, INF-PORT-04); the zone and block are
+   * checked like `create`, and a past one-time reminder arrives overdue without a notification. Call
+   * `announceImported` after the commit.
+   */
+  insertImported(noteId: string, input: ReminderInputType): string {
+    this.checkZone(input.zoneId);
+    if (input.blockId !== null) this.checkBlock(this.liveNote(noteId), input.blockId);
+    return this.insertNew(noteId, input, this.deps.clock.now());
+  }
+
+  announceImported(noteIds: string[]): void {
+    this.committed('created', noteIds);
+  }
+
   /** A new reminder with its first occurrence, within the per-note limit. */
   private insertNew(noteId: string, input: Input, now: number): string {
     if (this.repo.countLiveForNote(noteId) >= MAX_REMINDERS_PER_NOTE) throw new AppError('LIMIT_EXCEEDED', M.limit);

@@ -1,7 +1,8 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FOLLOWUP_INTERVALS, FOLLOWUP_MAX_COUNTS, type ZonesListResponseType } from '../../shared/contracts/reminders';
 import { SETTINGS, type SettingValue, type SettingsChangedPayload } from '../../shared/contracts/settings';
 import { useServices } from '../state/use-store';
+import { SelectField as Select, SettingsSection, TimeField } from '../settings/fields';
 import { Switch } from '../ui/Switch';
 
 export const FULLY_QUIT_TEXT =
@@ -25,36 +26,6 @@ const KEYS = {
   endOfDay: 'reminders.endOfDayTime',
   dateOnly: 'reminders.dateOnlyTime',
 } as const;
-
-function Select({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (v: string) => void }) {
-  const id = useId();
-  return (
-    <div className="form-field">
-      <label htmlFor={id} className="field-label">
-        {label}
-      </label>
-      <select id={id} className="select" value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function TimeField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const id = useId();
-  return (
-    <div className="form-field">
-      <label htmlFor={id} className="field-label">
-        {label}
-      </label>
-      <input id={id} type="time" className="text-input" value={value} onChange={(e) => e.target.value && onChange(e.target.value)} />
-    </div>
-  );
-}
 
 /**
  * Settings > Reminders (D-083, D-094): default zone, follow-up defaults, quiet hours, what happens when the app is quit,
@@ -112,8 +83,7 @@ export function ReminderSettings({ notificationsSupported }: { notificationsSupp
   };
   const zoneOptions = zones.zones.map((z) => ({ value: z, label: z }));
   return (
-    <>
-      <h3 className="section-label">Reminders</h3>
+    <SettingsSection title="Reminders">
       <Select
         label="Default time zone for new reminders"
         value={values.defaultZone ?? ''}
@@ -178,7 +148,7 @@ export function ReminderSettings({ notificationsSupported }: { notificationsSupp
         />
       </div>
       <p className="muted">{ENGLISH_ONLY_TEXT}</p>
-    </>
+    </SettingsSection>
   );
 }
 

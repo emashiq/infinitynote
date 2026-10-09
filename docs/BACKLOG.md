@@ -60,8 +60,8 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-KEY-02 | Ctrl+Shift+N creates a sticky in the current scope | 02 | E | e2e/keyboard.spec › ctrl+shift+n; unit/shortcuts.test | done |
 | INF-KEY-03 | Ctrl+K command palette with common actions and title search | 02 | E | e2e/palette.spec › actions and titles; integration/palette.test; unit/palette-actions.test | done |
 | INF-KEY-04 | Ctrl+F find in the current note | 03 | E | e2e/editor.spec › find in note (INF-KEY-04); unit/renderer/editor/find.test | done |
-| INF-KEY-05 | Optional global quick-sticky shortcut, off by default, capability checked, failure reported | 08 | I,N | integration/shortcuts.test; native check | planned |
-| INF-KEY-06 | Keyboard help listing shortcuts | 08 | E | e2e/settings.spec › keyboard help | planned |
+| INF-KEY-05 | Optional global quick-sticky shortcut, off by default, capability checked, failure reported | 08 | I,N | integration/shortcuts.test (off by default, register/press, held shortcut reported, unsupported refused); unit/capabilities.test › global shortcut; e2e/settings.spec › global quick-sticky shortcut, unavailable desktop; native check (Phase 09 matrix) | in_progress |
+| INF-KEY-06 | Keyboard help listing shortcuts | 08 | E | e2e/settings.spec › keyboard help (Ctrl+/, groups, focus return); unit/shortcuts.test › Ctrl+/ | done |
 | INF-EDIT-01 | One shared Tiptap editor component for tabs and stickies; no custom contentEditable engine | 03 | R,E | review (unit/boundaries.test, single useEditor in editor/NoteEditor.tsx); e2e/editor.spec; unit/renderer/shell-smoke.test | done |
 | INF-EDIT-02 | Headings, bold, italic, bullet/numbered lists, checklist, links, inline code, code blocks, undo/redo | 03 | U,E | unit/renderer/editor/editor-schema.test; unit/renderer/editor/doc-drift.test; e2e/editor.spec › formatting survives reload; › undo and redo | done |
 | INF-EDIT-03 | Title editing; empty title shows Untitled; rename flushes | 03 | E | e2e/editor.spec › rename flushes (INF-EDIT-03); › editor save increments revision and survives relaunch | done |
@@ -97,7 +97,7 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-STKY-13 | Unsupported pin/positioning shown as unobtrusive capability fallback; X11 not forced | 04 | U,N | unit/capabilities.test; unit/boundaries.test › no code forces an ozone platform; e2e/stickies.spec › unsupported pin is shown as unavailable; native WSLg check (observed, docs/progress/phase-04.md) | in_progress |
 | INF-DESK-01 | First main-window close asks keep running in background or quit; remembered and editable; states that quitting stops reminders | 04 | E | unit/close-dialog.test; integration/main-window-controller.test; e2e/lifecycle.spec › first close asks; choice is remembered and editable; › the close question names the relaunch path where no tray is supported | done |
 | INF-DESK-02 | Tray menu (Open, New sticky, Show widget, Quit) where available; tray-less fallback: relaunch focuses running instance | 04 | E,N | unit/tray-probe.test; e2e/lifecycle.spec › tray menu (four items incl. Show widget, W05-03); › without a tray host a second launch brings the window back; e2e/smoke.spec › second instance recreates a main window closed to background; native tray (Phase 09 matrix) | in_progress |
-| INF-DESK-03 | Launch at login optional, default off, capability checked | 08 | I,N | unit/autostart.test; integration/autostart.test (mechanism in Phase 05, D-082); integration/ipc-handlers-phase05.test › autostart; e2e/reminders.spec › settings explain the lifecycle; e2e/packaged.spec › launch at login is only read; Settings completion Phase 08; native login check (Phase 09 matrix) | in_progress |
+| INF-DESK-03 | Launch at login optional, default off, capability checked | 08 | I,N | unit/autostart.test; integration/autostart.test (mechanism in Phase 05, D-082); integration/ipc-handlers-phase05.test › autostart; e2e/reminders.spec › settings explain the lifecycle; e2e/packaged.spec › launch at login is only read; e2e/settings.spec › lifecycle settings (Phase 08 layout, A05-F4); native login check (Phase 09 matrix) | in_progress |
 | INF-REM-01 | Create reminder on a note or block (including stickies) with title, date, time and IANA zone | 05 | I,E | integration/reminders.test › create (refusals, past, limits, sticky note); e2e/reminders.spec › add a reminder to a paragraph | done |
 | INF-REM-02 | Default zone is the OS zone, editable; never assumes UTC or a hard-coded zone | 05 | U | unit/zone-default.test; unit/boundaries.test › no hard-coded reminder zone; integration/reminders.test › zones; e2e/reminders.spec › default zone follows the computer and the setting | done |
 | INF-REM-03 | Show selected-zone time and local time when they differ | 05 | U,E | unit/format-time.test; unit/renderer/reminder-dialog.test › local line; e2e/reminders.spec › selected zone and local time | done |
@@ -167,25 +167,25 @@ Companion documents: [PRODUCT_SPEC](PRODUCT_SPEC.md), [UX_SPEC](UX_SPEC.md), [AR
 | INF-SRCH-04 | Highlighted snippets rendered safely | 07 | U,E | unit/renderer/snippet.test › no HTML injection; e2e/search.spec › highlighted snippets | done |
 | INF-SRCH-05 | Debounced capped results (<=50); 10,000-note fixture measured | 07 | P,I | integration/search.test › p95 (10,000 notes, measured p95 recorded in docs/progress/phase-07.md); release target in Phase 09 (INF-PERF-03) | done |
 | INF-SRCH-06 | Ctrl+K palette opens exact note/tab without unsaved edit loss | 07 | E | e2e/palette.spec › open with pending edit; e2e/search.spec › pinned and favorite notes | done |
-| INF-PORT-01 | Backup: consistent snapshot including WAL data, referenced attachments, manifest with hashes | 08 | I | integration/backup.test › WAL content present | planned |
-| INF-PORT-02 | Restore with preflight, staging and rollback; failed restore leaves data usable | 08 | I,E | integration/restore.test › failure rollback | planned |
-| INF-PORT-03 | Import rejects traversal, symlinks, oversized, bombs and unsupported schema | 08 | I | integration/import-security.test | planned |
-| INF-PORT-04 | Portable import remaps note/block/attachment IDs and references | 08 | I | integration/import.test › remap | planned |
-| INF-PORT-05 | Markdown/plain-text export with documented lossy limits | 08 | I | integration/export.test | planned |
-| INF-PORT-06 | Automatic backup option, default off, configurable destination and retention | 08 | I,E | integration/backup.test › auto schedule | planned |
-| INF-PORT-07 | Configurable trash and version retention; version history with restore | 08 | I,E | integration/versions.test › retention; e2e/versions.spec | planned |
-| INF-PORT-08 | Attachment GC only after reference checks and grace period | 08 | I | integration/attachment-gc.test | planned |
-| INF-PREF-01 | Theme System/Light/Dark | 08 | E,V | e2e/settings.spec › theme | planned |
-| INF-PREF-02 | Reminder defaults: zone, end-of-day 17:00, date-only 09:00, follow-up defaults | 08 | I,E | integration/settings.test › reminder defaults (defaultZone and followupDefault Phase 05; endOfDayTime, dateOnlyTime and suggestFromText Phase 06, D-094); e2e/settings.spec › reminder defaults (Phase 08) | planned |
-| INF-PREF-03 | Quiet hours settings | 08 | E | e2e/settings.spec › quiet hours | planned |
-| INF-PREF-04 | Window, tray, close, widget, startup and restore-stickies settings with fully-quit explanation | 08 | E | e2e/settings.spec › lifecycle settings | planned |
-| INF-PREF-05 | Attachment size limits configurable within bounds | 08 | I | integration/settings.test › limits bounds | planned |
-| INF-A11Y-01 | Keyboard-only use of tree, tabs, dialogs, editor, widget and palette | 08 | E,V | e2e/a11y-keyboard.spec | planned |
-| INF-A11Y-02 | Focus returns to the invoking control after dialogs/menus | 08 | E | e2e/a11y-keyboard.spec › focus return | planned |
-| INF-A11Y-03 | Accessible names and roles for icon buttons and regions | 08 | E | e2e/a11y-keyboard.spec › getByRole coverage | planned |
-| INF-A11Y-04 | Text contrast >= 4.5:1 and UI boundaries >= 3:1 in both themes | 08 | U,V | unit/contrast.test › token pairs | planned |
-| INF-A11Y-05 | Reduced motion honored | 08 | U,V | unit/css-motion.test; screenshot | planned |
-| INF-A11Y-06 | High-DPI rendering (125-200%) is crisp | 08 | V,N | native scaling check | planned |
+| INF-PORT-01 | Backup: consistent snapshot including WAL data, referenced attachments, manifest with hashes | 08 | I | integration/backup.test › WAL content present; e2e/backup.spec › back up an edited note with images while SQLite uses WAL | done |
+| INF-PORT-02 | Restore with preflight, staging and rollback; failed restore leaves data usable | 08 | I,E | integration/restore.test › failure rollback (open failure, failed move, interrupted swap, changed staging), clean-profile restore, older schema; e2e/backup.spec › restore into a clean profile, malicious archive | done |
+| INF-PORT-03 | Import rejects traversal, symlinks, oversized, bombs and unsupported schema | 08 | I | integration/import-security.test | done |
+| INF-PORT-04 | Portable import remaps note/block/attachment IDs and references | 08 | I | integration/import.test › remap, same notebook never aliases; e2e/backup.spec › export and import | done |
+| INF-PORT-05 | Markdown/plain-text export with documented lossy limits | 08 | I | integration/export.test; e2e/backup.spec › export a note as Markdown and plain text | done |
+| INF-PORT-06 | Automatic backup option, default off, configurable destination and retention | 08 | I,E | integration/backup.test › auto schedule, retry; e2e/backup.spec › automatic backup | done |
+| INF-PORT-07 | Configurable trash and version retention; version history with restore | 08 | I,E | integration/versions.test › retention; e2e/versions.spec; e2e/settings.spec › notes and attachments | done |
+| INF-PORT-08 | Attachment GC only after reference checks and grace period | 08 | I | integration/attachment-gc.test | done |
+| INF-PREF-01 | Theme System/Light/Dark | 08 | E,V | e2e/settings.spec › theme; e2e/visual.spec (screens) | done |
+| INF-PREF-02 | Reminder defaults: zone, end-of-day 17:00, date-only 09:00, follow-up defaults | 08 | I,E | integration/settings.test › reminder defaults; e2e/settings.spec › reminder defaults | done |
+| INF-PREF-03 | Quiet hours settings | 08 | E | e2e/settings.spec › quiet hours | done |
+| INF-PREF-04 | Window, tray, close, widget, startup and restore-stickies settings with fully-quit explanation | 08 | E | e2e/settings.spec › lifecycle settings | done |
+| INF-PREF-05 | Attachment size limits configurable within bounds | 08 | I | integration/settings.test › limits bounds; e2e/settings.spec › notes and attachments | done |
+| INF-A11Y-01 | Keyboard-only use of tree, tabs, dialogs, editor, widget and palette | 08 | E,V | e2e/a11y-keyboard.spec › keyboard-only primary flows, tree, tabs keyboard-only; e2e/widget.spec (keyboard activation) | done |
+| INF-A11Y-02 | Focus returns to the invoking control after dialogs/menus | 08 | E | e2e/a11y-keyboard.spec › dialogs return focus, keyboard-only primary flows (menus); e2e/settings.spec › keyboard help | done |
+| INF-A11Y-03 | Accessible names and roles for icon buttons and regions | 08 | E | e2e/a11y-keyboard.spec › getByRole coverage, accessibility structure on every view | done |
+| INF-A11Y-04 | Text contrast >= 4.5:1 and UI boundaries >= 3:1 in both themes | 08 | U,V | unit/contrast.test › token pairs | done |
+| INF-A11Y-05 | Reduced motion honored | 08 | U,V | unit/css-motion.test | done |
+| INF-A11Y-06 | High-DPI rendering (125-200%) is crisp | 08 | V,N | e2e/visual.spec › high DPI 200% (vector icons, device scale factor 2); native scaling check (Phase 09 matrix) | in_progress |
 | INF-PERF-01 | Fixtures: 10,000 notes, 100 projects, 10 tabs, 10 stickies, 1,000 reminders | 09 | P | perf/fixtures generator | planned |
 | INF-PERF-02 | Cold startup measured against <3 s target on documented machine | 09 | P | perf/startup | planned |
 | INF-PERF-03 | Search p95 measured against <300 ms target at 10,000 notes | 09 | P | perf/search | planned |

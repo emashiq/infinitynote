@@ -24,6 +24,9 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: 'note.find', label: 'Find in note', shortcut: 'Ctrl+F' },
   { id: 'note.insertReference', label: 'Link to note…' },
   { id: 'note.float', label: 'Float current note' },
+  { id: 'note.exportMarkdown', label: 'Export note as Markdown…' },
+  { id: 'backup.create', label: 'Back up now…' },
+  { id: 'help.shortcuts', label: 'Keyboard shortcuts', shortcut: 'Ctrl+/' },
 ];
 
 /** Case-insensitive substring or word-prefix match; keeps list order. An empty query returns everything. */

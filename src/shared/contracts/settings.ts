@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import { DEFAULT_DOCUMENT_MAX_MB, DEFAULT_IMAGE_MAX_MB, DOCUMENT_MAX_MB_RANGE, IMAGE_MAX_MB_RANGE } from '../attachments/limits';
 import { isKnownZone } from '../time/zones';
+import { AUTO_VERSION_DAYS_RANGE, AUTO_VERSION_MAX_RANGE, DEFAULT_AUTO_VERSION_DAYS, DEFAULT_AUTO_VERSION_MAX } from '../versions/retention';
 import { HomeScope } from './home';
+import { AutoBackupSetting, LastAutoBackup } from './portability';
 import { FollowupInterval, FollowupMax, LocalTime, REMINDER_MESSAGES, ZoneId } from './reminders';
 import { DEFAULT_SESSION, TabSession } from './session';
+import { QuickStickySetting } from './shortcuts';
 import { CloseBehavior } from './windows';
 
 export const ThemeSetting = z.enum(['system', 'light', 'dark']);
@@ -20,6 +23,10 @@ export const QuietHoursSetting = z
   .strictObject({ enabled: z.boolean(), start: LocalTime, end: LocalTime, zoneId: ZoneId.nullable() })
   .refine((q) => q.start !== q.end, 'Quiet hours must start and end at different times')
   .refine((q) => !q.enabled || q.zoneId !== null, 'Quiet hours need a time zone');
+
+/** Days after which Trash is emptied automatically; null keeps it until the user empties it (D-034). */
+export const TRASH_RETENTION_DAYS = [30, 90] as const;
+export const TrashRetentionSetting = z.literal(TRASH_RETENTION_DAYS).nullable();
 
 /** Settings registry (D-041, D-045). Stored as {"v":<version>,"value":<value>}. `public: false` keys are main-only. */
 export const SETTINGS = {
@@ -63,6 +70,25 @@ export const SETTINGS = {
   'reminders.endOfDayTime': { version: 1, schema: LocalTime, default: '17:00', public: true },
   'reminders.dateOnlyTime': { version: 1, schema: LocalTime, default: '09:00', public: true },
   'reminders.suggestFromText': { version: 1, schema: z.boolean(), default: true, public: true },
+  // Retention (INF-PORT-07, D-034, D-099).
+  'retention.trashDays': { version: 1, schema: TrashRetentionSetting, default: null, public: true },
+  'retention.autoVersionDays': {
+    version: 1,
+    schema: z.number().int().min(AUTO_VERSION_DAYS_RANGE.min).max(AUTO_VERSION_DAYS_RANGE.max),
+    default: DEFAULT_AUTO_VERSION_DAYS,
+    public: true,
+  },
+  'retention.autoVersionMax': {
+    version: 1,
+    schema: z.number().int().min(AUTO_VERSION_MAX_RANGE.min).max(AUTO_VERSION_MAX_RANGE.max),
+    default: DEFAULT_AUTO_VERSION_MAX,
+    public: true,
+  },
+  // Main-only: the folder comes from main's folder dialog, never from a renderer (backup:* channels, D-099).
+  'backup.auto': { version: 1, schema: AutoBackupSetting, default: { enabled: false, directory: null, intervalDays: 7, keep: 5 }, public: false },
+  'backup.lastAuto': { version: 1, schema: LastAutoBackup, default: null, public: false },
+  // Main-only: written through shortcut:setGlobal, which registers it with the OS first (INF-KEY-05).
+  'shortcut.quickSticky': { version: 1, schema: QuickStickySetting, default: { enabled: false, accelerator: 'CommandOrControl+Alt+N' }, public: false },
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;

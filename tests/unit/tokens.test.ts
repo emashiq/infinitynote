@@ -23,8 +23,8 @@ describe('UX_SPEC section 3 tokens (INF-SHELL-05)', () => {
   const light = tokensOf(block(/:root,\s*\n:root\[data-theme='light'\]\s*\{/));
   const dark = tokensOf(block(/:root\[data-theme='dark'\]\s*\{/));
 
-  it('the spec table has 13 tokens', () => {
-    expect(rows).toHaveLength(13);
+  it('the spec table has 15 tokens', () => {
+    expect(rows).toHaveLength(15);
   });
 
   it('every token has the stated light and dark value', () => {

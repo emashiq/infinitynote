@@ -5,12 +5,16 @@
   --bg-rail: #f5f6fa;
   --bg-subtle: #f7f7fb;
   --border: #e4e6ee;
+  /* Outlines of inputs, buttons and switches: at least 3:1 on every surface (INF-A11Y-04). */
+  --border-strong: #80869a;
   --text: #1d2030;
   --text-muted: #5f6475;
   --accent: #6a5ae0;
   --accent-hover: #5848d0;
-  --accent-soft: #efedfd;
+  --accent-soft: #f5f4fe;
   --accent-border: #cfc9f7;
+  /* Text and icons drawn on --accent. */
+  --on-accent: #ffffff;
   --danger: #c0392b;
   --warning: #9a5b00;
   --success: #2e7d4f;
@@ -22,12 +26,14 @@
   --bg-rail: #1d1f26;
   --bg-subtle: #22242c;
   --border: #30333d;
+  --border-strong: #70758a;
   --text: #e7e8ee;
   --text-muted: #a0a4b3;
   --accent: #8e80ff;
   --accent-hover: #a196ff;
   --accent-soft: #2b2747;
   --accent-border: #4a4380;
+  --on-accent: #17181d;
   --danger: #ff7a6e;
   --warning: #f2b45c;
   --success: #6bcb8f;

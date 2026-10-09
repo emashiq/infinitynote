@@ -20,7 +20,14 @@ export type CommandId =
   | 'tab.close'
   | 'tab.next'
   | 'tab.prev'
-  | 'palette.open';
+  | 'palette.open'
+  | 'help.shortcuts'
+  | 'backup.create'
+  | 'backup.restore'
+  | 'note.exportMarkdown'
+  | 'note.exportText'
+  | 'notes.exportAll'
+  | 'notes.import';
 
 export interface CommandRunner {
   run(id: CommandId): Promise<void>;
@@ -33,9 +40,9 @@ export interface CommandRunner {
 }
 
 export function createCommandRunner(
-  services: Pick<AppServices, 'bridge' | 'tree' | 'tabs' | 'home' | 'layout' | 'ui' | 'notices'>,
+  services: Pick<AppServices, 'bridge' | 'tree' | 'tabs' | 'home' | 'layout' | 'ui' | 'notices' | 'portability'>,
 ): CommandRunner {
-  const { bridge, tree, tabs, home, layout, ui, notices } = services;
+  const { bridge, tree, tabs, home, layout, ui, notices, portability } = services;
 
   const currentLocation = (): LocationType => {
     const t = tree.store.getState();
@@ -150,6 +157,24 @@ export function createCommandRunner(
         case 'palette.open':
           ui.openPalette();
           return;
+        case 'help.shortcuts':
+          ui.openDialog({ kind: 'shortcuts' });
+          return;
+        case 'backup.create':
+          return portability.backUp();
+        case 'backup.restore':
+          return portability.restore();
+        case 'note.exportMarkdown':
+        case 'note.exportText': {
+          // Exporting needs a note tab; elsewhere the command does nothing (the menu item is disabled).
+          const noteId = activeNoteId();
+          if (noteId) await portability.exportNote(noteId, id === 'note.exportMarkdown' ? 'markdown' : 'text');
+          return;
+        }
+        case 'notes.exportAll':
+          return portability.exportAll();
+        case 'notes.import':
+          return portability.importNotes();
       }
     },
   };

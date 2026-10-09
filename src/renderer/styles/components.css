@@ -28,7 +28,7 @@
   font: inherit;
   color: var(--text);
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   padding: 5px 8px;
 }
@@ -145,7 +145,7 @@
   width: 34px;
   height: 20px;
   padding: 2px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: var(--bg-subtle);
   cursor: pointer;
@@ -167,7 +167,7 @@
 
 .switch[aria-checked='true'] .switch-thumb {
   transform: translateX(14px);
-  background: #ffffff;
+  background: var(--on-accent);
 }
 
 /* Dialogs, menus, listboxes */
@@ -898,6 +898,52 @@ dialog::backdrop {
 
 .shortcut-table td {
   padding: 4px 12px 4px 0;
+}
+
+/* Keyboard help (INF-KEY-06): groups side by side where they fit, scrolling inside the dialog. */
+.shortcut-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+.shortcut-table caption {
+  text-align: left;
+  font-weight: 600;
+  padding: 8px 0 4px;
+}
+
+/* Settings (Phase 08): one labelled region per section; long paths wrap instead of widening the page. */
+.settings-page {
+  max-width: 760px;
+}
+
+.settings-section {
+  margin-bottom: 8px;
+}
+
+.setting-value {
+  flex: 1 1 240px;
+  min-width: 0;
+  margin: 0;
+}
+
+.path-text {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.number-input {
+  width: 7em;
+}
+
+@media (max-width: 640px) {
+  .page,
+  .home {
+    padding: 16px;
+  }
 }
 
 .menu-item:has(.menu-shortcut) {

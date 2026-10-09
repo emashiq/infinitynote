@@ -21,6 +21,9 @@ export interface DataPaths {
   attachmentsDir: string;
   attachmentsTmp: string;
   preMigrationDir: string;
+  /** A verified backup waiting to replace the live data at the next start (D-099). */
+  restoreStagingDir: string;
+  restorePendingFile: string;
   logsDir: string;
 }
 
@@ -32,6 +35,8 @@ export function resolveDataPaths(userData: string): DataPaths {
     attachmentsDir: path.join(dataDir, 'attachments'),
     attachmentsTmp: path.join(dataDir, 'attachments', 'tmp'),
     preMigrationDir: path.join(dataDir, 'pre-migration'),
+    restoreStagingDir: path.join(dataDir, 'restore-staging'),
+    restorePendingFile: path.join(dataDir, 'restore-pending.json'),
     logsDir: path.join(userData, 'logs'),
   };
 }

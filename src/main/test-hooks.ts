@@ -17,6 +17,7 @@ import type { ReminderScheduler } from './services/reminder-scheduler';
 import { createFixedZoneProvider, type SystemZoneProvider } from './services/system-zone';
 import type { SaveFaults } from './services/note-writer';
 import type { AutostartAdapter } from './services/autostart';
+import type { GlobalShortcutAdapter } from './services/global-shortcut';
 import type { ShellAdapter } from './services/shell-adapter';
 import type { DisplayInfo } from './windows/display-clamp';
 import { createFakeDisplayProvider, type DisplayProvider, type FakeDisplays } from './windows/display-provider';
@@ -44,8 +45,20 @@ export interface FakeView {
 export interface TestState {
   blockedRequests: string[];
   shellCalls: Array<{ op: 'openPath' | 'showItemInFolder'; path: string } | { op: 'openExternal'; url: string }>;
-  /** Each file-dialog call takes the next entry; an empty queue means the user canceled. */
+  /** Each open-file or folder dialog call takes the next entry; an empty queue means the user canceled. */
   dialogQueue: string[][];
+  /** Each save dialog takes the next path; an empty queue means the user canceled. */
+  saveDialogQueue: string[];
+  /** The save, open-file and folder dialogs that would have been shown. */
+  pathDialogs: Array<{ kind: 'save' | 'open' | 'folder'; title: string; defaultName?: string }>;
+  /** Restarts asked for by a restore; under the hooks the app only quits, and the test starts it again. */
+  restarts: number;
+  /** The fake global-shortcut registry: registered accelerators, ones another app "holds", and a key press. */
+  globalShortcut: { registered: string[]; refuse: string[]; press(accelerator: string): Promise<void> };
+  /** Runs retention and attachment GC now (a fresh task). */
+  maintenance(): Promise<unknown>;
+  /** Runs the automatic backup check now (a fresh task). */
+  autoBackup(): Promise<void>;
   /** The next N `note:save` calls fail with INTERNAL. */
   failSaves: number;
   /** Delay before each attachment import starts. */
@@ -131,6 +144,10 @@ export interface TestHooks {
   reminderSeams: ReminderSeams;
   /** Never the real login items or autostart folder in tests (D-082). */
   autostart: AutostartAdapter;
+  /** Never a real OS-wide shortcut in tests (INF-KEY-05). */
+  globalShortcut: GlobalShortcutAdapter;
+  /** Replaces app.relaunch under the hooks: counts the request and quits. */
+  restart(quit: () => void): void;
   /** Exposes the scheduler once it exists (storage is up). */
   attachReminders(deps: { scheduler: ReminderScheduler; db: Db }): void;
 }
@@ -194,6 +211,12 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     blockedRequests: [],
     shellCalls: [],
     dialogQueue: [],
+    saveDialogQueue: [],
+    pathDialogs: [],
+    restarts: 0,
+    globalShortcut: { registered: [], refuse: [], press: async () => undefined },
+    maintenance: async () => null,
+    autoBackup: async () => undefined,
     failSaves: 0,
     importDelayMs: 0,
     flushLog: [],
@@ -239,6 +262,18 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
         state.closeDialogs.push(options);
         return state.closeChoices.shift() ?? { choice: 'cancel', remember: false };
       },
+      showSaveFile: async ({ title, defaultName }) => {
+        state.pathDialogs.push({ kind: 'save', title, defaultName });
+        return state.saveDialogQueue.shift() ?? null;
+      },
+      showOpenFile: async ({ title }) => {
+        state.pathDialogs.push({ kind: 'open', title });
+        return state.dialogQueue.shift()?.[0] ?? null;
+      },
+      showOpenFolder: async ({ title }) => {
+        state.pathDialogs.push({ kind: 'folder', title });
+        return state.dialogQueue.shift()?.[0] ?? null;
+      },
     },
     faults: {
       save: {
@@ -252,6 +287,8 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     },
     attachServices(deps) {
       state.fakeView = createFakeView(deps);
+      state.maintenance = () => onFreshTask(() => deps.services.maintenance.run());
+      state.autoBackup = () => onFreshTask(() => deps.services.portability.runAutoBackup());
     },
     ownsWebContents: (webContentsId) => webContentsId === FAKE_WEB_CONTENTS_ID,
     onReleaseRequest(noteId) {
@@ -298,8 +335,31 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
         state.autostart.enabled = enabled;
       },
     },
+    globalShortcut: createFakeGlobalShortcut(state),
+    restart(quit) {
+      state.restarts += 1;
+      quit();
+    },
     attachReminders({ scheduler, db }) {
       Object.assign(state, reminderTestState(reminderSeams, scheduler, db));
+    },
+  };
+}
+
+/** A global-shortcut registry that refuses the accelerators listed in `refuse` and fires on `press`. */
+function createFakeGlobalShortcut(state: TestState): GlobalShortcutAdapter {
+  const callbacks = new Map<string, () => void>();
+  state.globalShortcut.press = (accelerator) => onFreshTask(() => callbacks.get(accelerator)?.());
+  return {
+    register(accelerator, callback) {
+      if (state.globalShortcut.refuse.includes(accelerator)) return false;
+      callbacks.set(accelerator, callback);
+      state.globalShortcut.registered = [...callbacks.keys()];
+      return true;
+    },
+    unregister(accelerator) {
+      callbacks.delete(accelerator);
+      state.globalShortcut.registered = [...callbacks.keys()];
     },
   };
 }

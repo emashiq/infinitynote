@@ -38,6 +38,8 @@ interface BatchRoot {
   notes: number;
 }
 
+type PurgeCounts = { projects: number; folders: number; notes: number };
+
 /** Guard against corrupt parent chains while walking up the folder tree. */
 const MAX_ANCESTOR_STEPS = 100;
 
@@ -204,16 +206,25 @@ export class TrashService {
   }
 
   // Purge ----------------------------------------------------------------------
-  purge(req: TrashPurgeRequestType): { purged: { projects: number; folders: number; notes: number } } {
+  purge(req: TrashPurgeRequestType): { purged: PurgeCounts } {
+    const result = this.purgeBatches(() => {
+      if (req.target.kind === 'all') return this.repo.batchIds();
+      if (!this.batchRoots().has(req.target.batchId)) throw new AppError('NOT_FOUND', MSG.noBatch);
+      return [req.target.batchId];
+    });
+    return { purged: result ?? { projects: 0, folders: 0, notes: 0 } };
+  }
+
+  /** Automatic emptying of Trash (retention setting, D-034): batches trashed before `cutoff` are purged. */
+  purgeDeletedBefore(cutoff: number): PurgeCounts | null {
+    return this.purgeBatches(() => this.repo.batchIds(cutoff));
+  }
+
+  /** Purges the selected batches in one transaction; null (and no tree event) when there was nothing to purge. */
+  private purgeBatches(select: () => string[]): PurgeCounts | null {
     const purged = this.tx(() => {
-      let batches: string[];
-      if (req.target.kind === 'all') {
-        batches = this.repo.batchIds();
-      } else {
-        if (!this.batchRoots().has(req.target.batchId)) throw new AppError('NOT_FOUND', MSG.noBatch);
-        batches = [req.target.batchId];
-      }
-      if (batches.length === 0) return { projects: 0, folders: 0, notes: 0 };
+      const batches = select();
+      if (batches.length === 0) return null;
 
       const projects = new Set(this.repo.idsInBatches('projects', batches));
       const folders = new Set(this.repo.idsInBatches('folders', batches));
@@ -224,8 +235,8 @@ export class TrashService {
       this.hierarchy.assertInvariants();
       return { projects: projects.size, folders: folders.size, notes: notes.length };
     });
-    this.deps.onChange({ reason: 'purge', trashedNoteIds: [] });
-    return { purged };
+    if (purged) this.deps.onChange({ reason: 'purge', trashedNoteIds: [] });
+    return purged;
   }
 
   /**

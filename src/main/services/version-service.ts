@@ -1,7 +1,7 @@
 import type { NoteContentResponseType, VersionsListResponseType, VersionsRestoreRequestType } from '../../shared/contracts/notes';
 import { collectAttachmentRefs } from '../../shared/editor/doc-schema';
 import { extractPlainText } from '../../shared/text/plain-text';
-import { AUTO_VERSION_INTERVAL_MS, selectAutoVersionsToPrune } from '../../shared/versions/retention';
+import { AUTO_VERSION_INTERVAL_MS, selectAutoVersionsToPrune, type AutoVersionPolicy } from '../../shared/versions/retention';
 import type { Db } from '../db/driver';
 import { AttachmentsRepo } from '../db/repositories/attachments-repo';
 import { NotesRepo, serializedContent, storedContent, type ContentRow } from '../db/repositories/notes-repo';
@@ -22,7 +22,7 @@ export class VersionService {
   private readonly notes: NotesRepo;
 
   constructor(
-    private readonly deps: { db: Db; ids: IdGenerator; ops: ContentOps },
+    private readonly deps: { db: Db; ids: IdGenerator; ops: ContentOps; autoPolicy: () => AutoVersionPolicy },
   ) {
     this.versions = new VersionsRepo(deps.db);
     this.attachments = new AttachmentsRepo(deps.db);
@@ -39,14 +39,24 @@ export class VersionService {
 
   /**
    * Before a save: keeps the stored content as an automatic version when the note has saved content and no
-   * automatic version from the last 10 minutes, then prunes old automatic versions of that note.
+   * automatic version from the last 10 minutes, then prunes that note's automatic versions to the retention setting.
    */
   maybeAuto(row: ContentRow, now: number): void {
     if (row.revision < 1) return;
     if (row.plain_text === '' && !this.attachments.hasLinks(row.id)) return;
     if (this.versions.hasAutoSince(row.id, now - AUTO_VERSION_INTERVAL_MS)) return;
     this.snapshot(row, 'auto', now);
-    this.versions.deleteIds(selectAutoVersionsToPrune(this.versions.autoVersions(row.id), now));
+    this.versions.deleteIds(selectAutoVersionsToPrune(this.versions.autoVersions(row.id), now, this.deps.autoPolicy()));
+  }
+
+  /** Applies the retention setting to every note's automatic versions (after the setting changed, or over time). */
+  pruneAutoVersions(now: number): number {
+    const policy = this.deps.autoPolicy();
+    return this.deps.db.transaction(() => {
+      const ids = this.versions.notesWithAutoVersions().flatMap((noteId) => selectAutoVersionsToPrune(this.versions.autoVersions(noteId), now, policy));
+      this.versions.deleteIds(ids);
+      return ids.length;
+    }, 'immediate');
   }
 
   list(noteId: string, limit = DEFAULT_VERSION_LIST_LIMIT): VersionsListResponseType {

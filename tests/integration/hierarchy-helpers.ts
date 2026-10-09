@@ -3,13 +3,15 @@ import { expect } from 'vitest';
 import type { TreeChangedEventType } from '../../src/shared/contracts/hierarchy';
 import type { NoteLeaseEventType, NoteRevisionEventType } from '../../src/shared/contracts/notes';
 import type { ReminderChangedEventType } from '../../src/shared/contracts/reminders';
+import { resolveDataPaths } from '../../src/main/app-paths';
 import { HierarchyRepo } from '../../src/main/db/repositories/hierarchy-repo';
 import { createMainServices, type MainServicesDeps } from '../../src/main/main-services';
-import type { OpenFilesRequest } from '../../src/main/services/dialog-adapter';
+import type { OpenFilesRequest, PathRequest } from '../../src/main/services/dialog-adapter';
 import type { LeaseHolder } from '../../src/main/services/lease-manager';
 import type { FakeClock } from '../../src/main/services/clock';
 import { memoryLogger } from '../../src/main/services/logger';
 import { createFixedZoneProvider } from '../../src/main/services/system-zone';
+import { LATEST } from '../../src/main/db/migrations';
 import { fixedClock, openFresh, randomIds, type TestDb } from './helpers';
 
 /**
@@ -26,6 +28,8 @@ export async function setupServices(
     clock?: FakeClock;
     /** An already open database (a restart: see reopen); a fresh one by default. */
     testDb?: TestDb;
+    /** What a restore applied at this "start" did (backup tests). */
+    restoreOutcome?: MainServicesDeps['restoreOutcome'];
   } = {},
 ) {
   const t = opts.testDb ?? (await openFresh());
@@ -45,9 +49,18 @@ export async function setupServices(
   /** Each dialog call takes the next entry; null or an empty queue means the user canceled. */
   const dialogQueue: Array<string[] | null> = [];
   const dialogCalls: OpenFilesRequest[] = [];
+  /** Save, open-file and folder dialogs take the next entry; null or an empty queue means the user canceled. */
+  const pathQueue: Array<string | null> = [];
+  const pathDialogs: Array<PathRequest & { kind: 'save' | 'open' | 'folder' }> = [];
+  const pathDialog = (kind: 'save' | 'open' | 'folder') => async (req: PathRequest) => {
+    pathDialogs.push({ ...req, kind });
+    return pathQueue.shift() ?? null;
+  };
+  const restarts = { count: 0 };
   /** What the services handed to the OS shell; openPath answers with `shellError` (empty means success). */
   const shellCalls: Array<{ op: string; target: string }> = [];
   const shellResult = { error: '' };
+  const paths = resolveDataPaths(t.dir);
   const dataDir = path.join(t.dir, 'data');
   const services = createMainServices({
     db: t.db,
@@ -60,7 +73,17 @@ export async function setupServices(
         dialogCalls.push(req);
         return dialogQueue.shift() ?? null;
       },
+      showSaveFile: pathDialog('save'),
+      showOpenFile: pathDialog('open'),
+      showOpenFolder: pathDialog('folder'),
     },
+    restorePaths: paths,
+    appVersion: '0.1.0',
+    latestSchema: LATEST,
+    restart: () => {
+      restarts.count += 1;
+    },
+    restoreOutcome: opts.restoreOutcome ?? null,
     shell: {
       openPath: async (p) => {
         shellCalls.push({ op: 'openPath', target: p });
@@ -133,6 +156,10 @@ export async function setupServices(
     reminderWrites,
     dialogQueue,
     dialogCalls,
+    pathQueue,
+    pathDialogs,
+    restarts,
+    paths,
     shellCalls,
     shellResult,
     dataDir,

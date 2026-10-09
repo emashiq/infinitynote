@@ -16,6 +16,7 @@ import type { Logger } from './logger';
 import { MSG } from './messages';
 import { normalizeContent, type NoteContent, type NoteContentValue } from './note-content';
 import { RequestCache } from './request-cache';
+import { MAX_OPEN_LEASE_LOST_DRAFTS } from './retention-policy';
 import type { VersionService } from './version-service';
 
 /** Test-only fault injection (installed by the E2E test hooks, never in a packaged build). */
@@ -69,7 +70,12 @@ export class NoteWriter {
 
     if (lease === 'lost') {
       if (!this.notes.getContentRow(req.noteId)) throw new AppError('NOT_FOUND', MSG.missing);
-      const draftId = this.insertDraft(req, serialized, 'lease_lost');
+      const draftId = this.deps.db.transaction(() => {
+        const id = this.insertDraft(req, serialized, 'lease_lost');
+        // A renderer that keeps saving with a revoked token cannot pile up drafts (F-03-4).
+        this.drafts.capOpenLeaseLost(MAX_OPEN_LEASE_LOST_DRAFTS, this.deps.clock.now(), req.noteId);
+        return id;
+      }, 'immediate');
       throw this.reject(req, new AppError('LEASE_REQUIRED', 'Edit control was lost', { draftId }));
     }
 

@@ -27,7 +27,10 @@ export interface DraftInput {
 
 const COLUMNS = 'id, note_id, base_revision, format, title, content, reason, created_at';
 
-/** Rejected edits kept for the user (note_drafts). Rows are resolved, never deleted, in Phase 03. */
+/**
+ * Rejected edits kept for the user (note_drafts). Open drafts are never deleted; from Phase 08 the oldest open
+ * `lease_lost` drafts beyond a per-note cap are resolved, and resolved drafts are deleted after a while (F-03-4).
+ */
 export class DraftsRepo {
   constructor(private readonly db: Db) {}
 
@@ -52,6 +55,28 @@ export class DraftsRepo {
     return this.db
       .prepare<[string, string], DraftRow>(`SELECT ${COLUMNS} FROM note_drafts WHERE id = ? AND note_id = ? AND resolved_at IS NULL`)
       .get(draftId, noteId);
+  }
+
+  /** Resolves each note's oldest open `lease_lost` drafts beyond the newest `keep` (only for `noteId` when given). */
+  capOpenLeaseLost(keep: number, now: number, noteId: string | null = null): number {
+    return this.db
+      .prepare<[number, string | null, string | null, number]>(
+        `UPDATE note_drafts SET resolved_at = ? WHERE id IN (
+           SELECT id FROM (
+             SELECT id, row_number() OVER (PARTITION BY note_id ORDER BY created_at DESC, rowid DESC) AS n
+             FROM note_drafts WHERE reason = 'lease_lost' AND resolved_at IS NULL AND (? IS NULL OR note_id = ?))
+           WHERE n > ?)`,
+      )
+      .run(now, noteId, noteId, keep).changes;
+  }
+
+  deleteResolvedBefore(cutoff: number): number {
+    return this.db.prepare<[number]>('DELETE FROM note_drafts WHERE resolved_at IS NOT NULL AND resolved_at < ?').run(cutoff).changes;
+  }
+
+  /** The content of every open draft (attachment GC reads the attachments they use). */
+  openContents(): Array<{ format: 'rich' | 'plain'; content: string }> {
+    return this.db.prepare<[], { format: 'rich' | 'plain'; content: string }>('SELECT format, content FROM note_drafts WHERE resolved_at IS NULL').all();
   }
 
   resolve(draftId: string, now: number): void {

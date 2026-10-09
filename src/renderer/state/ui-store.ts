@@ -1,4 +1,5 @@
 import type { FolderTargetType } from '../../shared/contracts/hierarchy';
+import type { BackupSummaryType } from '../../shared/contracts/portability';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
 import type { CardRequest } from '../reminders/card-request';
 import { createStore, type Store } from './store';
@@ -16,7 +17,9 @@ export type DialogState =
   | { kind: 'suggestion'; request: CardRequest }
   /** Help menu (D-097). */
   | { kind: 'shortcuts' }
-  | { kind: 'about' };
+  | { kind: 'about' }
+  /** The confirmation of a checked backup before the app restarts to restore it (D-099). */
+  | { kind: 'restoreBackup'; summary: BackupSummaryType };
 
 export type FocusRequest =
   | { target: 'noteTitle'; noteId: string }

@@ -33,9 +33,9 @@ describe('attachment names', () => {
   });
 
   it('builds the exact size-limit messages', () => {
-    expect(imageTooLarge(20)).toBe('This image is larger than 20 MB. Use a smaller image.');
-    expect(fileTooLarge(50)).toBe('This file is larger than 50 MB. Use a smaller file.');
-    expect(tooLargeMessage('image', 1)).toBe('This image is larger than 1 MB. Use a smaller image.');
-    expect(tooLargeMessage('document', 2)).toBe('This file is larger than 2 MB. Use a smaller file.');
+    expect(imageTooLarge(20)).toBe('This image is larger than 20 MB. Change the limit in Settings or use a smaller image.');
+    expect(fileTooLarge(50)).toBe('This file is larger than 50 MB. Change the limit in Settings or use a smaller file.');
+    expect(tooLargeMessage('image', 1)).toBe('This image is larger than 1 MB. Change the limit in Settings or use a smaller image.');
+    expect(tooLargeMessage('document', 2)).toBe('This file is larger than 2 MB. Change the limit in Settings or use a smaller file.');
   });
 });

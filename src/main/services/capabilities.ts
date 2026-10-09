@@ -22,7 +22,6 @@ export interface CapabilityInputs {
 const supported = (reason: string): CapabilityStatusType => ({ status: 'supported', reason });
 const unsupported = (reason: string): CapabilityStatusType => ({ status: 'unsupported', reason });
 const unknown = (reason: string): CapabilityStatusType => ({ status: 'unknown', reason });
-const later = (): CapabilityStatusType => unknown('detected-in-later-phase');
 
 /** Electron reports notifications as supported even without a server, so the session bus decides (D-076). */
 function linuxNotifications(server: BusNamePresence | null): CapabilityStatusType {
@@ -43,7 +42,6 @@ export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
   const base = {
     notificationActions: unsupported('not-promised-on-all-desktops'),
     launchAtLogin: autostartCapability({ platform: i.platform, isPackaged: i.isPackaged, wsl: i.wslDistro !== null }),
-    globalShortcut: later(),
   };
 
   if (platform === 'win32') {
@@ -56,6 +54,7 @@ export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
       alwaysOnTop: supported('native-windows'),
       tray: supported('native-windows'),
       nativeNotifications: supported('native-windows'),
+      globalShortcut: supported('native-windows'),
       ...base,
     };
   }
@@ -77,6 +76,8 @@ export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
         alwaysOnTop: unsupported('wayland-or-wslg'),
         tray: linuxTray(i.statusNotifierHost),
         nativeNotifications: linuxNotifications(i.notificationServer),
+        // Wayland gives no global key grabs to applications (D-099).
+        globalShortcut: unsupported('wayland-or-wslg'),
         ...base,
       };
     }
@@ -89,6 +90,7 @@ export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
       alwaysOnTop: unknown('window-manager-dependent'),
       tray: linuxTray(i.statusNotifierHost),
       nativeNotifications: linuxNotifications(i.notificationServer),
+      globalShortcut: x11 ? supported('x11') : unknown('session-type-unknown'),
       ...base,
     };
   }
@@ -102,6 +104,7 @@ export function detectCapabilities(i: CapabilityInputs): CapabilitiesType {
     alwaysOnTop: unknown('unsupported-platform'),
     tray: unknown('unsupported-platform'),
     nativeNotifications: unknown('unsupported-platform'),
+    globalShortcut: unknown('unsupported-platform'),
     ...base,
   };
 }
@@ -116,12 +119,12 @@ export function readWslgVersion(file = '/mnt/wslg/versions.txt'): string | null 
 }
 
 /** Capabilities a test run may force (unpackaged E2E only, plan section 8.9). */
-const OVERRIDABLE = ['windowPositioning', 'alwaysOnTop', 'tray', 'nativeNotifications', 'launchAtLogin'] as const;
+const OVERRIDABLE = ['windowPositioning', 'alwaysOnTop', 'tray', 'nativeNotifications', 'launchAtLogin', 'globalShortcut'] as const;
 const STATUSES: ReadonlySet<string> = new Set(['supported', 'unsupported', 'unknown']);
 
 /**
- * Applies INFINITY_NOTES_TEST_CAPS, a JSON object mapping windowPositioning, alwaysOnTop, tray, nativeNotifications and
- * launchAtLogin to a status.
+ * Applies INFINITY_NOTES_TEST_CAPS, a JSON object mapping windowPositioning, alwaysOnTop, tray, nativeNotifications,
+ * launchAtLogin and globalShortcut to a status.
  * Unknown keys and values are ignored; invalid JSON leaves the capabilities unchanged and returns a warning.
  */
 export function applyCapabilityOverride(caps: CapabilitiesType, raw: string | undefined): { caps: CapabilitiesType; warning: string | null } {

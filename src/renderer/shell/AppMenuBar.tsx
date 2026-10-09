@@ -10,8 +10,10 @@ const MENUS: readonly MenuName[] = ['File', 'View', 'Help'];
  * alone moves the focus to it; Left and Right move between the menus, Down, Enter or Space opens one, Escape closes it.
  */
 export function AppMenuBar() {
-  const { commands, layout, theme, reminders, ui, bridge } = useServices();
+  const { commands, layout, theme, reminders, ui, bridge, tabs } = useServices();
   useStore(layout.store);
+  const { session } = useStore(tabs.store);
+  const noteTabActive = session.tabs.find((t) => t.id === session.activeTabId)?.kind === 'note';
   const themeValue = useStore(theme.store).value;
   const widgetOpen = useStore(reminders.store).widget.open;
   const [open, setOpen] = useState<{ name: MenuName; anchor: { x: number; y: number } } | null>(null);
@@ -47,6 +49,12 @@ export function AppMenuBar() {
       { id: 'new-note', label: 'New note', shortcut: 'Ctrl+N', onSelect: run('note.new') },
       { id: 'new-sticky', label: 'New sticky', shortcut: 'Ctrl+Shift+N', onSelect: run('sticky.new') },
       { id: 'close-tab', label: 'Close tab', shortcut: 'Ctrl+W', onSelect: run('tab.close') },
+      { id: 'export-markdown', label: 'Export note as Markdown…', separatorBefore: true, disabled: !noteTabActive, onSelect: run('note.exportMarkdown') },
+      { id: 'export-text', label: 'Export note as plain text…', disabled: !noteTabActive, onSelect: run('note.exportText') },
+      { id: 'export-all', label: 'Export all notes…', onSelect: run('notes.exportAll') },
+      { id: 'import', label: 'Import notes…', onSelect: run('notes.import') },
+      { id: 'backup', label: 'Back up now…', separatorBefore: true, onSelect: run('backup.create') },
+      { id: 'restore', label: 'Restore from backup…', onSelect: run('backup.restore') },
       { id: 'quit', label: 'Quit Infinity Notes', separatorBefore: true, onSelect: () => void bridge.app.quit() },
     ],
     View: [
@@ -62,7 +70,7 @@ export function AppMenuBar() {
       { id: 'widget', label: widgetOpen ? 'Hide reminder widget' : 'Show reminder widget', separatorBefore: true, onSelect: () => void reminders.setWidgetOpen(!widgetOpen) },
     ],
     Help: [
-      { id: 'shortcuts', label: 'Keyboard shortcuts', onSelect: () => ui.openDialog({ kind: 'shortcuts' }) },
+      { id: 'shortcuts', label: 'Keyboard shortcuts', shortcut: 'Ctrl+/', onSelect: run('help.shortcuts') },
       { id: 'about', label: 'About Infinity Notes', onSelect: () => ui.openDialog({ kind: 'about' }) },
     ],
   };

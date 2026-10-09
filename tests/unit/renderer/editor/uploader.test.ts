@@ -111,7 +111,7 @@ describe('AttachmentUploader (INF-EDIT-08..10, INF-TABS-07)', () => {
     expect(nodes(editor)).toEqual([]);
     expect(big.reads + bigDoc.reads).toBe(0);
     expect(io.calls).toHaveLength(0);
-    expect(notices).toEqual(['This image is larger than 1 MB. Use a smaller image.', 'This file is larger than 2 MB. Use a smaller file.']);
+    expect(notices).toEqual(['This image is larger than 1 MB. Change the limit in Settings or use a smaller image.', 'This file is larger than 2 MB. Change the limit in Settings or use a smaller file.']);
   });
 
   it('at most 20 files per action', async () => {

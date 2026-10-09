@@ -44,3 +44,10 @@ export const TitleInput = z
   .max(1000)
   .transform(normalizeTitle)
   .refine((s) => validateTitle(s) === null, 'Invalid title');
+
+/** A file name for an exported note: its title without characters Windows or Linux refuse, at most 100 characters. */
+export function suggestedFileName(title: string): string {
+  // eslint-disable-next-line no-control-regex
+  const cleaned = title.replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '');
+  return [...cleaned].slice(0, 100).join('') || 'Untitled';
+}

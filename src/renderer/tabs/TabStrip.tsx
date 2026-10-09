@@ -5,6 +5,7 @@ import type { TabType } from '../../shared/contracts/session';
 import type { AppServices } from '../state/app-services';
 import { useServices, useStore } from '../state/use-store';
 import { IconButton } from '../ui/IconButton';
+import { scrollBehavior } from '../ui/motion';
 import { AllTabsMenu } from './AllTabsMenu';
 
 export interface TabView {
@@ -121,7 +122,7 @@ export function TabStrip() {
     }
   };
 
-  const scrollBy = (dx: number) => listRef.current?.scrollBy?.({ left: dx, behavior: 'smooth' });
+  const scrollBy = (dx: number) => listRef.current?.scrollBy?.({ left: dx, behavior: scrollBehavior() });
 
   return (
     <div className="tab-strip">

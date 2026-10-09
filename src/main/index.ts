@@ -1,5 +1,5 @@
 import './windows/schemes';
-import { Menu, Notification, app, ipcMain, nativeTheme, protocol, screen, session, shell } from 'electron';
+import { Menu, Notification, app, globalShortcut, ipcMain, nativeTheme, protocol, screen, session, shell } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,6 +11,7 @@ import type { ReminderAlertEventType, ReminderChangedEventType } from '../shared
 import { ThemeSetting } from '../shared/contracts/settings';
 import { LAUNCHED_AT_LOGIN_ARG } from '../shared/contracts/widget';
 import { assertNotInstallDir, ensureDataDirs, resolveDataPaths, resolveUserDataOverride } from './app-paths';
+import { LATEST } from './db/migrations';
 import { openDatabase } from './db/open-database';
 import { createDesktop, type Desktop } from './desktop';
 import { createEventBus } from './ipc/event-bus';
@@ -18,6 +19,7 @@ import { registerIpcHandlers } from './ipc/register-handlers';
 import { createIpcRouter } from './ipc/router';
 import { createSenderPolicy } from './ipc/sender-policy';
 import { createMainServices, type MainServices } from './main-services';
+import { openWithPendingRestore } from './portability/restore';
 import { errorMessage } from './services/app-error';
 import { createAutostartControl, createXdgAutostart, type AutostartAdapter } from './services/autostart';
 import { applyCapabilityOverride, collectCapabilityInputs, detectCapabilities, type CapabilityInputs } from './services/capabilities';
@@ -27,12 +29,14 @@ import { createLoginItemsAutostart } from './services/electron-autostart';
 import { createElectronNotificationAdapter } from './services/electron-notifications';
 import { electronPowerEvents } from './services/electron-power';
 import { FlushCoordinator, type FlushOutcome } from './services/flush-coordinator';
+import { GlobalShortcutService, type GlobalShortcutAdapter } from './services/global-shortcut';
 import { systemIds } from './services/ids';
 import { createFileLogger, nullLogger, type Logger } from './services/logger';
 import { installNetworkGuard } from './services/network-guard';
 import { capabilityGate } from './services/notification-adapter';
 import { detectNotificationServer } from './services/notification-probe';
 import { ReminderScheduler, type WakeReason } from './services/reminder-scheduler';
+import { MAINTENANCE_INTERVAL_MS } from './services/retention-policy';
 import type { ShellAdapter } from './services/shell-adapter';
 import { intlZoneProvider } from './services/system-zone';
 import { detectStatusNotifierHost, nodeExecFile } from './services/tray-probe';
@@ -47,6 +51,9 @@ import { installWebSecurity } from './windows/web-security';
 import { WindowRegistry } from './windows/window-registry';
 
 const registry = new WindowRegistry();
+/** Housekeeping waits until the startup windows had time to load. */
+const HOUSEKEEPING_DELAY_MS = 30_000;
+const AUTO_BACKUP_CHECK_MS = 60 * 60 * 1000;
 let logger: Logger | null = null;
 let desktop: Desktop | null = null;
 
@@ -125,7 +132,12 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     app.exit(1);
     return;
   }
-  const opened = await openDatabase({ dbFile: paths.dbFile, preMigrationDir: paths.preMigrationDir, logger: log });
+  // A restore scheduled in the previous run is applied here, before anything uses the database (D-099).
+  const { opened, restore: restoreOutcome } = await openWithPendingRestore({
+    paths,
+    openDatabase: () => openDatabase({ dbFile: paths.dbFile, preMigrationDir: paths.preMigrationDir, logger: log }),
+    logger: log,
+  });
   const db = opened.ok ? opened.db : null;
   protocol.handle(ATTACHMENT_SCHEME, createAttachmentHandler({ db, dataDir: paths.dataDir, logger: log }));
 
@@ -164,6 +176,17 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       dataDir: paths.dataDir,
       dialog,
       shell: shellAdapter,
+      restorePaths: paths,
+      appVersion: APP_VERSION,
+      latestSchema: LATEST,
+      restart: () => {
+        if (hooks) hooks.restart(() => app.quit());
+        else {
+          app.relaunch();
+          app.quit();
+        }
+      },
+      restoreOutcome,
       onSettingsChanged: (payload) => {
         if (payload.key === 'appearance.theme') applyNativeTheme(payload.value);
         eventBus.broadcast('settings:changed', payload);
@@ -202,6 +225,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     } catch {
       log.warn('suggestions: pruning dismissals failed');
     }
+    startHousekeeping(services, log);
   }
 
   const startup: StartupStateType = opened.ok ? { status: 'ok' } : { status: 'error', code: opened.code };
@@ -279,6 +303,15 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     });
     hooks?.attachReminders({ scheduler, db });
   }
+  const shortcut = services
+    ? new GlobalShortcutService({
+        adapter: hooks ? hooks.globalShortcut : electronGlobalShortcut(),
+        settings: services.settings,
+        capability: () => capabilities.globalShortcut,
+        onTrigger: () => void windowsSide.newSticky(),
+        logger: log,
+      })
+    : null;
   registerIpcHandlers(router, {
     app: {
       getInfo,
@@ -291,6 +324,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     services,
     desktop: {
       ...windowsSide,
+      shortcut,
       autostart: createAutostartControl({
         adapter: hooks ? hooks.autostart : nativeAutostart(),
         capability: () => capabilities.launchAtLogin,
@@ -299,6 +333,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     },
   });
   hooks?.attachDesktop({ desktop: windowsSide, registry, services, inspector: createElectronInspector() });
+  shortcut?.start();
 
   // No OS menu bar: the main window draws its own File, View and Help menus (D-097).
   Menu.setApplicationMenu(null);
@@ -306,6 +341,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
 
   app.on('will-quit', () => {
     scheduler?.stop();
+    shortcut?.stop();
     try {
       db?.close();
     } catch {
@@ -323,6 +359,35 @@ function computeCapabilities(inputs: CapabilityInputs, testOverrides: boolean, l
     `capabilities positioning=${caps.windowPositioning.status} alwaysOnTop=${caps.alwaysOnTop.status} tray=${caps.tray.status}(${caps.tray.reason}) session=${caps.sessionType} ozone=${caps.ozonePlatform ?? 'unset'} notifications=${caps.nativeNotifications.status}(${caps.nativeNotifications.reason}) autostart=${caps.launchAtLogin.status}`,
   );
   return caps;
+}
+
+/** Electron's OS-wide shortcut registry; registration throws for an accelerator it cannot parse, which counts as refused. */
+function electronGlobalShortcut(): GlobalShortcutAdapter {
+  return {
+    register: (accelerator, callback) => {
+      try {
+        return globalShortcut.register(accelerator, callback);
+      } catch {
+        return false;
+      }
+    },
+    unregister: (accelerator) => globalShortcut.unregister(accelerator),
+  };
+}
+
+/**
+ * Retention, attachment GC and the automatic backup (D-099): once shortly after startup, then maintenance every six
+ * hours and the backup check every hour. Timers never keep the process alive.
+ */
+function startHousekeeping(services: MainServices, log: Logger): void {
+  const maintain = () => void services.maintenance.run().catch((err: unknown) => log.error(`maintenance: ${errorMessage(err)}`));
+  const backup = () => void services.portability.runAutoBackup().catch((err: unknown) => log.error(`auto backup: ${errorMessage(err)}`));
+  setTimeout(() => {
+    maintain();
+    backup();
+  }, HOUSEKEEPING_DELAY_MS).unref();
+  setInterval(maintain, MAINTENANCE_INTERVAL_MS).unref();
+  setInterval(backup, AUTO_BACKUP_CHECK_MS).unref();
 }
 
 /** The OS login entry of this executable (D-082): Windows login items, else an XDG autostart file. */
