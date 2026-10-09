@@ -115,7 +115,14 @@ test('panel toggle', async () => {
   const { app, page } = await h.start();
   await setContentSize(app, page, 1280, 800);
   const panel = page.getByRole('complementary', { name: 'Details' });
+  // The Details panel starts closed (D-102); the title bar toggle opens it.
+  await expect(panel).toHaveCount(0);
+  const toggle = page.getByRole('button', { name: /Toggle details panel/ });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await activate(toggle);
   await expect(panel).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect.poll(() => h.setting('layout.panelOpen')).toEqual({ v: 1, value: true });
   const w = (await panel.boundingBox())!.width;
   expect(w).toBeGreaterThanOrEqual(280);
   expect(w).toBeLessThanOrEqual(340);
@@ -140,7 +147,7 @@ test('panel toggle', async () => {
   expect(h.one<{ pinned_at: number | null }>('SELECT pinned_at FROM notes WHERE id = ?', b)?.pinned_at).not.toBeNull();
   expect(h.one<{ pinned_at: number | null }>('SELECT pinned_at FROM notes WHERE id = ?', a)?.pinned_at).toBeNull();
 
-  await activate(page.getByRole('button', { name: /Toggle details panel/ }));
+  await activate(toggle);
   await expect(panel).toHaveCount(0);
   await page.keyboard.press('Control+Shift+Backslash');
   await expect(panel).toBeVisible();
@@ -205,6 +212,11 @@ test('breakpoints', async () => {
   await expect.poll(treeDocked).toBe(0);
   await setContentSize(app, page, 960, 700);
   await expect.poll(treeDocked).toBe(1);
+  // The Details panel starts closed (D-102); once open it docks from 1180 px.
+  await setContentSize(app, page, 1180, 700);
+  await expect.poll(panelDocked).toBe(0);
+  await page.keyboard.press('Control+Shift+Backslash');
+  await expect.poll(panelDocked).toBe(1);
   await setContentSize(app, page, 1179, 700);
   await expect.poll(panelDocked).toBe(0);
   await setContentSize(app, page, 1180, 700);

@@ -1,6 +1,6 @@
-import type { JSONContent } from '@tiptap/core';
+import { posToDOMRect, type JSONContent } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ATTACHMENT_MESSAGES } from '../../shared/attachments/limits';
 import type { AttachmentKindType } from '../../shared/contracts/attachments';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
@@ -13,20 +13,23 @@ import { plainExtensions, richExtensions } from './extensions';
 import type { FileActions } from './file-attachment';
 import { FindBar } from './FindBar';
 import { findPrefill } from './find-core';
+import { FormatBubble } from './FormatBubble';
 import { applyLink, LINK_OPEN_FAILED, linkHrefAt, removeLink, selectedLinkHref } from './link';
 import { LinkDialog } from './LinkDialog';
+import { insertItems, noteMenuItems, type NoteActions } from './note-actions';
 import { ReferencePicker, type PickedReference } from './ReferencePicker';
 import { createPasteProps } from './paste';
 import type { CardRequest } from '../reminders/card-request';
 import { blockIdAtSelection, chipsMeta, findBlock, REMINDER_CHIP_EVENT, selectionAtBlockStart, type ChipInfo } from './reminder-chips';
 import { useStore } from '../state/use-store';
+import { Menu } from '../ui/Menu';
 import { DISMISS_FAILED } from '../reminders/suggestion-context';
 import { SuggestionBar } from './SuggestionBar';
 import { SuggestionDetector } from './suggestion-detector';
 import { requestForLive, requestFromText } from './suggestion-requests';
 import { textOfBlock } from './block-text';
 import { candidateAt, type LiveCandidate } from './suggestions';
-import { Toolbar } from './Toolbar';
+import { useSlashMenu } from './SlashMenu';
 import type { EditorServices } from './editor-services';
 import { attachmentNode, AttachmentUploader, insertBlocks } from './uploader';
 
@@ -69,17 +72,20 @@ export interface NoteEditorProps {
   /** A block to select, scroll to and highlight (a reminder opened the note); onRevealDone says whether it was found. */
   reveal?: { blockId: string; nonce: number } | null;
   onRevealDone?: (found: boolean) => void;
-  /** Toolbar More "Add reminder…" (main window only). */
+  /** "Add reminder…" in the note menus (main window only). */
   onAddReminder?: () => void;
-  /** Reminder suggestions and More "Create reminder from text"; absent where a note cannot get reminders. */
+  /** "Float as sticky" in the context menu (tabs only). */
+  onFloat?: () => void;
+  /** Reminder suggestions and "Create reminder from text"; absent where a note cannot get reminders. */
   suggestions?: SuggestionHost;
 }
 
 /**
  * The one editor for every note (INF-EDIT-01, D-053). It mounts only for the active note tab, saves lazily
  * through the controller (edits mark the note dirty; the controller reads the content when it saves) and owns the
- * paste, upload, link and find behavior. Mount it with a key of the format and content key: content replaced from
- * outside (reload, conversion, restore) creates a fresh editor with a clean undo history.
+ * paste, upload, link and find behavior. It has no toolbar row (D-102): formatting floats over the selection (Alt+F10),
+ * "/" opens the insert menu and right-click or Shift+F10 the note menu. Mount it with a key of the format and content
+ * key: content replaced from outside (reload, conversion, restore) creates a fresh editor with a clean undo history.
  */
 export function NoteEditor(props: NoteEditorProps) {
   const { host, format, content, editable, services } = props;
@@ -98,6 +104,9 @@ export function NoteEditor(props: NoteEditorProps) {
       showInFolder: (attachmentId) => report(services.bridge.attachment.showInFolder({ noteId: host.noteId, attachmentId })),
     };
   });
+
+  // The insert menu sees the editor's keys first while it is open (set after every render).
+  const slashKeys = useRef<(event: KeyboardEvent) => boolean>(() => false);
 
   const openLink = (href: string) => {
     void services.bridge.shell.openExternal({ url: href }).then((r) => {
@@ -118,6 +127,7 @@ export function NoteEditor(props: NoteEditorProps) {
       editorProps: {
         attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Note text', spellcheck: 'false', class: 'note-editor-content' },
         ...createPasteProps({ format, uploader, notify: services.notify, flushPending: () => host.flush() }),
+        handleKeyDown: (_view, event) => slashKeys.current(event),
         // Links open only with Ctrl+Click (or Open link); a plain click places the cursor (INF-SEC-01).
         handleClick: (view, pos, event) => {
           if (!(event.ctrlKey || event.metaKey)) return false;
@@ -168,6 +178,9 @@ export function NoteEditor(props: NoteEditorProps) {
     if (!editor || editor.isDestroyed) return;
     editor.setEditable(editable);
     editor.view.dom.setAttribute('aria-readonly', String(!editable));
+    // Read-only text stays reachable from the keyboard: to read, select, find and open the note menu (Shift+F10).
+    if (editable) editor.view.dom.removeAttribute('tabindex');
+    else editor.view.dom.setAttribute('tabindex', '0');
     handle?.editableChanged();
   }, [editor, editable, handle]);
 
@@ -236,14 +249,16 @@ export function NoteEditor(props: NoteEditorProps) {
   // Note references (D-098): the picker inserts a chip followed by a space, so typing goes on after it.
   const canReference = format === 'rich' && editable && services.references !== undefined;
   const [picker, setPicker] = useState(false);
+  // The focus moves at once (Tiptap's focus command waits for a frame), so keys typed right after the pick reach the text.
   const insertReference = (ref: PickedReference) => {
     setPicker(false);
     if (!editor || editor.isDestroyed) return;
     editor
       .chain()
-      .focus()
       .insertContent([{ type: 'noteRef', attrs: { ...ref } }, { type: 'text', text: ' ' }])
+      .scrollIntoView()
       .run();
+    editor.view.focus();
   };
   // A palette request opens the picker once (state adjusted while rendering); the request is then consumed.
   const { referenceRequest, onReferenceRequestHandled } = props;
@@ -275,7 +290,7 @@ export function NoteEditor(props: NoteEditorProps) {
   useEffect(() => detector?.refresh(), [detector, suggestions?.reminders]);
 
   const noteRef = () => ({ noteId: suggestions!.noteId, noteTitle: suggestions!.noteTitle, format });
-  // The card returns the focus to where it was opened from. It opens on the next task, after the More menu has given
+  // The card returns the focus to where it was opened from. It opens on the next task, after a menu has given
   // the focus back to its button, with the editor focused: closing the card returns to the editor, at the phrase.
   const openCard = (request: CardRequest) => {
     setTimeout(() => {
@@ -300,7 +315,7 @@ export function NoteEditor(props: NoteEditorProps) {
     });
   };
 
-  // More → "Create reminder from text": the selection, else the phrase or paragraph at the cursor (D-089).
+  // "Create reminder from text": the selection, else the phrase or paragraph at the cursor (D-089).
   const createFromText = async () => {
     if (!editor || !suggestions) return;
     const { selection } = editor.state;
@@ -330,33 +345,69 @@ export function NoteEditor(props: NoteEditorProps) {
     editor.commands.focus();
   };
 
-  if (!editor) return null;
+  const actions: NoteActions = {
+    insertAttachment: (kind) => void insertAttachment(kind),
+    insertReference: canReference ? () => setPicker(true) : undefined,
+    addReminder: props.onAddReminder,
+    createFromText: suggestions ? () => void createFromText() : undefined,
+    openFind,
+    convert: props.onConvert,
+    openVersions: props.onOpenVersions,
+    float: props.onFloat,
+  };
+  const slash = useSlashMenu(editor, insertItems(editor, actions), format === 'rich' && editable);
+
+  useEffect(() => {
+    slashKeys.current = slash.onKeyDown;
+  });
+
+  // Alt+F10 in the text shows the formatting toolbar and moves the focus into it; Shift+F10 opens the note menu at the
+  // cursor (a right-click opens it at the pointer). Read-only notes get the note menu too.
+  const [bubbleRequest, setBubbleRequest] = useState<object | null>(null);
+  const [noteMenu, setNoteMenu] = useState<{ x: number; y: number } | null>(null);
+  const onTextKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.target !== editor.view.dom || e.key !== 'F10' || e.ctrlKey || e.metaKey || e.altKey === e.shiftKey) return;
+    e.preventDefault();
+    if (e.altKey) {
+      setBubbleRequest({});
+      return;
+    }
+    const caret = posToDOMRect(editor.view, editor.state.selection.head, editor.state.selection.head);
+    setNoteMenu({ x: caret.left, y: caret.bottom + 4 });
+  };
+
   return (
     <div className={`note-editor note-editor-${props.variant}`}>
-      <Toolbar
-        editor={editor}
-        format={format}
-        editable={editable}
-        actions={{
-          editLink: () => {
-            const href = selectedLinkHref(editor.state);
-            setLinkDialog({ href: href ?? '', editing: href !== null });
-          },
-          removeLink: () => removeLink(editor),
-          openLink,
-          insertAttachment: (kind) => void insertAttachment(kind),
-          openFind,
-          convert: props.onConvert,
-          openVersions: props.onOpenVersions,
-          addReminder: props.onAddReminder,
-          createFromText: suggestions ? () => void createFromText() : undefined,
-          insertReference: canReference ? () => setPicker(true) : undefined,
-        }}
-      />
       {find ? <FindBar key={find.nonce} editor={editor} prefill={find.prefill} onClose={() => setFind(null)} /> : null}
       <div ref={scrollRef} className="note-editor-scroll" onScroll={(e) => props.onScroll(Math.round(e.currentTarget.scrollTop))}>
-        <EditorContent editor={editor} />
+        <div
+          className="note-editor-surface"
+          onKeyDown={onTextKeyDown}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setNoteMenu({ x: e.clientX, y: e.clientY });
+          }}
+        >
+          <EditorContent editor={editor} />
+          {format === 'rich' ? (
+            <FormatBubble
+              editor={editor}
+              editable={editable}
+              request={bubbleRequest}
+              link={{
+                edit: () => {
+                  const href = selectedLinkHref(editor.state);
+                  setLinkDialog({ href: href ?? '', editing: href !== null });
+                },
+                remove: () => removeLink(editor),
+                open: openLink,
+              }}
+            />
+          ) : null}
+          {slash.element}
+        </div>
       </div>
+      {noteMenu ? <Menu label="Note actions" anchor={noteMenu} items={noteMenuItems(actions, { format, editable })} onClose={() => setNoteMenu(null)} /> : null}
       {suggestions && suggestionSettings.suggestFromText ? (
         <SuggestionBar editor={editor} settings={suggestionSettings} updateInApp={suggestions.openInApp !== undefined} onCreate={(live) => openLive(live)} onUpdate={updateLive} onDismiss={dismissLive} />
       ) : null}

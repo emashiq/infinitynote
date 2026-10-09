@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 /**
  * Keyboard activation (D-050): steps whose subject is not pointer behavior focus the control and press
@@ -138,7 +138,24 @@ export async function confirmDialog(page: Page, title: string, button: string): 
   await dialog.waitFor({ state: 'detached' });
 }
 
-/** The note title field (getByLabel('Title') would also match 'Untitled' tab labels). */
+/**
+ * The note title field: over a note tab while it is renamed, or in a sticky header while it is renamed (D-102).
+ * getByLabel('Title') would also match 'Untitled' tab labels.
+ */
 export function titleInput(page: Page): Locator {
   return page.getByRole('textbox', { name: 'Title', exact: true });
+}
+
+/** The active tab's label: a note tab is the note's title (D-102). */
+export function activeTab(page: Page): Locator {
+  return page.locator('[role="tab"][aria-selected="true"] .tab-label');
+}
+
+/** Renames the active note tab from the keyboard: F2 on the tab opens its title field, focused (D-102). */
+export async function renameActiveTab(page: Page): Promise<Locator> {
+  const tab = page.locator('[role="tab"][aria-selected="true"]');
+  await tab.focus();
+  await tab.press('F2');
+  await expect(titleInput(page)).toBeFocused();
+  return titleInput(page);
 }

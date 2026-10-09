@@ -27,6 +27,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: 'Ctrl+W', action: 'Close tab' },
       { keys: 'Ctrl+Tab', action: 'Next tab' },
       { keys: 'Ctrl+Shift+Tab', action: 'Previous tab' },
+      { keys: 'F2, double-click', action: 'Rename the note of a tab' },
       { keys: 'Ctrl+K', action: 'Search notes and commands' },
       { keys: 'Ctrl+F', action: 'Find in note' },
       { keys: 'Ctrl+\\', action: 'Toggle notes tree' },
@@ -60,6 +61,9 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: 'Ctrl+Z', action: 'Undo' },
       { keys: 'Ctrl+Shift+Z, Ctrl+Y', action: 'Redo' },
       { keys: 'Ctrl+Click', action: 'Open a link' },
+      { keys: 'Alt+F10', action: 'Formatting toolbar' },
+      { keys: '/', action: 'Insert menu (at the start of a line or after a space)' },
+      { keys: 'Shift+F10', action: 'Note menu' },
       { keys: 'Enter, Shift+Enter', action: 'Next, previous match in Find' },
     ],
   },
@@ -68,6 +72,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     items: [
       { keys: 'Ctrl+W', action: 'Hide the sticky' },
       { keys: 'Ctrl+F', action: 'Find in the sticky' },
+      { keys: 'F2', action: 'Rename the sticky' },
     ],
   },
 ];

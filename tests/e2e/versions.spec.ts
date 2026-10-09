@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { useApp } from './harness';
-import { chooseMore, editorText } from './editor-ui';
+import { chooseNoteMenu, editorText } from './editor-ui';
 import { COMMON, createNote, saveText } from './seed';
 import { settingsSection } from './portability-ui';
 import { dialogByName, openFromTree, railGo } from './ui';
@@ -38,7 +38,7 @@ test('version history with restore, and the retention settings prune automatic v
   expect(kept().every((v) => v.created_at > now - 30 * DAY)).toBe(true);
 
   await openFromTree(second, id);
-  await chooseMore(second, 'Version history…');
+  await chooseNoteMenu(second, 'Version history…');
   const history = dialogByName(second, 'Version history');
   await expect(history.locator('.version-row')).toHaveCount(10);
   const newest = history.locator('.version-row').first();

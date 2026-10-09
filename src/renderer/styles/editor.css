@@ -7,52 +7,82 @@
   min-height: 0;
 }
 
-.editor-toolbar {
+/* The text area: the floating toolbar and the insert menu are placed inside it, so they scroll with the text (D-102). */
+.note-editor-surface {
+  position: relative;
+}
+
+.floating {
+  position: absolute;
+  z-index: 20;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg);
+  box-shadow: var(--shadow-popover);
+}
+
+.format-bubble {
   display: flex;
-  flex: none;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
-  min-height: 36px;
-  margin-bottom: 8px;
+  max-width: 100%;
   padding: 2px;
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
 }
 
-.editor-toolbar .icon-btn {
-  width: 32px;
-  height: 32px;
+.format-bubble .icon-btn {
+  width: 30px;
+  height: 30px;
 }
 
-.editor-toolbar .toolbar-menu-btn {
-  width: auto;
-  padding: 0 4px;
+.format-bubble .bubble-menu-btn {
   display: inline-flex;
   gap: 2px;
+  width: auto;
+  padding: 0 4px;
 }
 
-.editor-toolbar .icon-btn.is-on {
+.format-bubble .icon-btn.is-on {
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.editor-toolbar .icon-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-  background: transparent;
-  color: var(--text-muted);
+.bubble-separator {
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 2px;
+  background: var(--border);
 }
 
-.editor-toolbar .segmented {
-  margin-left: 8px;
-  flex: none;
+.format-bubble .icon-btn + .link-bar {
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+
+.slash-menu {
+  width: 220px;
+  max-height: 280px;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.slash-item {
+  padding: 5px 10px;
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.slash-item:hover,
+.slash-item[aria-selected='true'] {
+  background: var(--accent-soft);
 }
 
 .link-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: 8px;
+  padding: 0 4px;
   min-width: 0;
 }
 

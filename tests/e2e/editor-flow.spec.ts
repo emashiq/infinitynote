@@ -5,6 +5,7 @@ import { makePng } from '../support/png';
 import {
   blockedRequests,
   blockIds,
+  chooseNoteMenu,
   docOf,
   editor,
   editorSelectionText,
@@ -19,7 +20,7 @@ import {
 } from './editor-ui';
 import { waitForExit } from './fixtures';
 import { useApp } from './harness';
-import { dialogByName, openFromTree, titleInput } from './ui';
+import { activeTab, dialogByName, openFromTree, titleInput } from './ui';
 
 const h = useApp();
 
@@ -84,7 +85,7 @@ test('edit, paste and reload', async () => {
   const original = path.join(h.userData, 'from-disk.png');
   fs.writeFileSync(original, makePng(30, 20));
   await queueDialog(app, [original]);
-  await pressToolbar(page, 'Insert image');
+  await chooseNoteMenu(page, 'Insert image');
   await expect(editor(page).locator('img')).toHaveCount(2);
   fs.rmSync(original);
 
@@ -107,7 +108,7 @@ test('edit, paste and reload', async () => {
   const second = await h.restart();
   const p = second.page;
   await openFromTree(p, id);
-  await expect(titleInput(p)).toHaveValue('Field notes বাংলা');
+  await expect(activeTab(p)).toHaveText('Field notes বাংলা');
   const e = editor(p);
   await expect(e.locator('h1')).toHaveText('Plan');
   await expect(e.locator('strong').first()).toHaveText('bold');

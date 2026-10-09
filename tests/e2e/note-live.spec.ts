@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { setContentSize } from './fixtures';
 import { useApp } from './harness';
 import { COMMON, createFolder, createNote, createProject, reloadUi, trashFolder } from './seed';
-import { chooseMenu, expandRows, openFromTree, tabItem, titleInput, toasts, treeByKey } from './ui';
+import { activeTab, chooseMenu, expandRows, openFromTree, renameActiveTab, tabItem, titleInput, toasts, treeByKey } from './ui';
 
 const h = useApp();
 type Res = { ok: boolean; data?: { items?: Array<{ id: string; batchId: string }> }; error?: { code: string; message: string } };
@@ -22,10 +22,12 @@ test('an open note follows rename, folder rename and move done elsewhere (QA-P02
   await reloadUi(page);
   await expandRows(page, [`project:${a}`, `folder:${f}`]);
   await openFromTree(page, n);
-  const header = page.locator('.note-meta .muted');
-  const panel = page.locator('aside');
-  await expect(titleInput(page)).toHaveValue('Old title');
-  await expect(header).toHaveText('Alpha › Fold');
+  // The note view is only the title and the text (D-102); the location is in the Details panel's Info.
+  await page.keyboard.press('Control+Shift+Backslash');
+  const panel = page.getByRole('complementary', { name: 'Details' });
+  const location = panel.locator('dt', { hasText: /^Location$/ }).locator('xpath=following-sibling::dd[1]');
+  await expect(activeTab(page)).toHaveText('Old title');
+  await expect(location).toHaveText('Alpha › Fold');
 
   const row = treeByKey(page, `note:${n}`);
   await row.focus();
@@ -34,19 +36,17 @@ test('an open note follows rename, folder rename and move done elsewhere (QA-P02
   await input.fill('Tree renamed');
   await input.press('Enter');
   await expect(tabItem(page, 'Tree renamed')).toBeVisible();
-  await expect(titleInput(page)).toHaveValue('Tree renamed');
+  await expect(activeTab(page)).toHaveText('Tree renamed');
   await expect(panel).toContainText('Tree renamed');
 
   await call(page, 'folder', 'rename', { folderId: f, name: 'Renamed folder' });
-  await expect(header).toHaveText('Alpha › Renamed folder');
-  await expect(panel.locator('dd', { hasText: 'Alpha › Renamed folder' })).toBeVisible();
+  await expect(location).toHaveText('Alpha › Renamed folder');
 
   const b = await createProject(page, 'Beta');
   await call(page, 'note', 'move', { noteId: n, target: { projectId: b, folderId: null } });
-  await expect(header).toHaveText('Beta');
-  await expect(panel.locator('dd', { hasText: /^Beta$/ })).toBeVisible();
+  await expect(location).toHaveText('Beta');
   await call(page, 'note', 'move', { noteId: n, target: COMMON });
-  await expect(header).toHaveText('Common');
+  await expect(location).toHaveText('Common');
 });
 
 test('an external rename does not replace a title that is being typed', async () => {
@@ -54,7 +54,7 @@ test('an external rename does not replace a title that is being typed', async ()
   const n = await createNote(page, COMMON, 'Start');
   await reloadUi(page);
   await openFromTree(page, n);
-  await titleInput(page).click();
+  await renameActiveTab(page);
   await page.keyboard.press('Control+A');
   await page.keyboard.type('Typing in progress');
   await call(page, 'note', 'rename', { noteId: n, title: 'Elsewhere' });
@@ -63,10 +63,11 @@ test('an external rename does not replace a title that is being typed', async ()
   // Leaving the field flushes the typed title, which is the last writer.
   await page.getByRole('textbox', { name: 'Note text' }).click();
   await expect.poll(() => h.one<{ title: string }>('SELECT title FROM notes WHERE id = ?', n)?.title).toBe('Typing in progress');
-  await expect(titleInput(page)).toHaveValue('Typing in progress');
-  // Once unfocused the field follows later renames again.
+  await expect(titleInput(page)).toHaveCount(0);
+  await expect(activeTab(page)).toHaveText('Typing in progress');
+  // Once the field is closed the tab follows later renames again.
   await call(page, 'note', 'rename', { noteId: n, title: 'Later' });
-  await expect(titleInput(page)).toHaveValue('Later');
+  await expect(activeTab(page)).toHaveText('Later');
 });
 
 test('the save indicator never reads Saved while an edit is pending (QA-P02-2)', async () => {
@@ -87,8 +88,8 @@ test('the title field is filled on its first render when a note opens (QA-P02-3)
   const n = await createNote(page, COMMON, 'Orig');
   await reloadUi(page);
   await openFromTree(page, n);
+  await renameActiveTab(page);
   await expect(titleInput(page)).toHaveValue('Orig');
-  await titleInput(page).click();
   await page.keyboard.press('Control+A');
   await page.keyboard.type('Renamed quickly');
   await page.keyboard.press('Control+W');

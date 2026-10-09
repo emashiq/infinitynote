@@ -1,4 +1,4 @@
-/** Shown in the toolbar row while the selection is inside a link: the address and its actions (INF-SEC-01). */
+/** Shown in the floating toolbar while the cursor or selection is inside a link: the address and its actions (INF-SEC-01). */
 export function LinkBar({
   href,
   editable,

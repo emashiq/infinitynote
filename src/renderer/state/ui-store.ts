@@ -22,6 +22,7 @@ export type DialogState =
   | { kind: 'restoreBackup'; summary: BackupSummaryType };
 
 export type FocusRequest =
+  /** Renames the note in its tab (a new note, a double-click or F2 on the tab; D-102). */
   | { target: 'noteTitle'; noteId: string }
   | { target: 'noteFind'; noteId: string }
   /** Opens the reference picker of the note's editor (palette "Link to note…"). */
@@ -36,10 +37,19 @@ export interface UiState {
   paletteQuery: string;
   menu: { key: string; anchor: { x: number; y: number } } | null;
   focusRequest: FocusRequest | null;
+  /** The tab whose label is being edited: the tab is the note's title (D-102). */
+  renamingTab: string | null;
 }
 
 export class UiStore {
-  readonly store: Store<UiState> = createStore<UiState>({ dialog: null, paletteOpen: false, paletteQuery: '', menu: null, focusRequest: null });
+  readonly store: Store<UiState> = createStore<UiState>({
+    dialog: null,
+    paletteOpen: false,
+    paletteQuery: '',
+    menu: null,
+    focusRequest: null,
+    renamingTab: null,
+  });
 
   openDialog(dialog: DialogState): void {
     this.store.setState({ dialog, menu: null });
@@ -58,6 +68,12 @@ export class UiStore {
   }
   closeMenu(): void {
     this.store.setState({ menu: null });
+  }
+  startTabRename(tabId: string): void {
+    this.store.setState({ renamingTab: tabId });
+  }
+  endTabRename(): void {
+    if (this.store.getState().renamingTab !== null) this.store.setState({ renamingTab: null });
   }
   requestFocus(request: FocusRequest): void {
     this.store.setState({ focusRequest: request });

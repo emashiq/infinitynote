@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { displayTitle } from '../../shared/names';
 import { EditorHandle } from '../editor/editor-handle';
 import { NoteEditor } from '../editor/NoteEditor';
@@ -7,7 +8,7 @@ import { ReminderChipBar } from '../reminders/ReminderChipBar';
 import { NoteBanners } from '../notes/NoteBanners';
 import type { ActionResult } from '../notes/note-controller';
 import { NoteDialogs, type NoteDialog } from '../notes/NoteDialogs';
-import { NoteTitleInput } from '../notes/NoteTitleInput';
+import { TitleRenameInput } from '../notes/TitleRenameInput';
 import { NoticeList } from '../shell/Notices';
 import { useStore } from '../state/use-store';
 import { ConfirmRunner, TRASH_CONFIRM } from '../ui/ConfirmDialog';
@@ -113,18 +114,24 @@ export function StickyView() {
   const caps = useStore(services.caps).current;
   const note = useStore(controller.store);
   const { request: focusRequest } = useStore(services.focusEditor);
-  const titleRef = useRef<HTMLInputElement>(null);
   const [editorHandle] = useState(() => new EditorHandle());
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [findRequest, setFindRequest] = useState<object | null>(null);
+  const [renaming, setRenaming] = useState(false);
   const trashed = sticky?.trashed != null || note.status === 'trashed';
   const collapsed = sticky?.collapsed ?? false;
+  const canRename = !trashed && note.status === 'ready';
 
-  // Ctrl+W hides the window and Ctrl+F finds in the note (UX_SPEC section 7). The window closes when the W key is
-  // released, so the key's release never reaches a closed window or the window that gets the focus next.
+  // Ctrl+W hides the window, Ctrl+F finds in the note and F2 renames it (UX_SPEC section 7). The window closes when
+  // the W key is released, so the key's release never reaches a closed window or the window that gets the focus next.
   useEffect(() => {
     let hidePending = false;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && canRename) {
+        e.preventDefault();
+        setRenaming(true);
+        return;
+      }
       if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
       const key = e.key.toLowerCase();
       if (key === 'w') {
@@ -146,7 +153,7 @@ export function StickyView() {
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keyup', onKeyUp, true);
     };
-  }, [actions, collapsed, trashed]);
+  }, [actions, collapsed, trashed, canRename]);
 
   // Float of an open sticky: bring the caret into the editor.
   useEffect(() => {
@@ -163,21 +170,31 @@ export function StickyView() {
         state={sticky}
         trashed={trashed}
         pinSupported={caps?.alwaysOnTop.status !== 'unsupported'}
-        titleField={
-          <NoteTitleInput
-            controller={controller}
-            liveTitle={sticky.title}
-            readOnly={trashed || note.status !== 'ready'}
-            className="sticky-title-input"
-            inputRef={titleRef}
-            editor={editorHandle}
-          />
+        canRename={canRename}
+        renameField={
+          renaming && canRename ? (
+            <TitleRenameInput
+              controller={controller}
+              initial={sticky.title}
+              className="sticky-title-input"
+              editor={editorHandle}
+              onDone={(how) => {
+                if (how !== 'escape') {
+                  setRenaming(false);
+                  return;
+                }
+                flushSync(() => setRenaming(false));
+                editorHandle.focus('end');
+              }}
+            />
+          ) : null
         }
         actions={{
           setColor: (color) => void actions.setColor(color),
           togglePinned: () => void actions.togglePinned(),
           toggleCollapsed: () => void actions.toggleCollapsed(),
           openInApp: () => void actions.dock(),
+          rename: () => setRenaming(true),
           hide: () => void actions.hide(),
           remove: () => void actions.remove(),
           trash: () => setConfirmTrash(true),

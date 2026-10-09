@@ -212,8 +212,10 @@ describe('command runner (INF-KEY-01, INF-KEY-02, INF-HOME-03)', () => {
     expect(services.tabs.store.getState().session.tabs).toHaveLength(3);
     await services.commands.run('view.toggleTree');
     expect(services.layout.store.getState().treeOpen).toBe(false);
-    await services.commands.run('view.togglePanel');
+    // The details panel starts closed (D-102): the toggle opens it.
     expect(services.layout.store.getState().panelOpen).toBe(false);
+    await services.commands.run('view.togglePanel');
+    expect(services.layout.store.getState().panelOpen).toBe(true);
     await services.commands.run('palette.open');
     expect(services.ui.store.getState().paletteOpen).toBe(true);
     await services.commands.run('project.new');
@@ -226,10 +228,10 @@ describe('app services', () => {
     const { createFakeBridge } = await import('../support/fake-bridge');
     const fake = createFakeBridge();
     fake.data.settings.set('layout.treeWidth', 260);
-    fake.data.settings.set('layout.panelOpen', false);
+    fake.data.settings.set('layout.panelOpen', true);
     fake.data.settings.set('appearance.theme', 'dark');
     const { services } = await setupServices({ fake });
-    expect(services.layout.store.getState()).toMatchObject({ treeWidth: 260, panelOpen: false });
+    expect(services.layout.store.getState()).toMatchObject({ treeWidth: 260, panelOpen: true });
     expect(services.theme.store.getState().value).toBe('dark');
     expect(services.meta.getState().info?.version).toBe('0.1.0');
     fake.emit('settings:changed', { key: 'appearance.theme', value: 'light', updatedAt: 1 });

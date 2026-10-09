@@ -29,13 +29,16 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: 'help.shortcuts', label: 'Keyboard shortcuts', shortcut: 'Ctrl+/' },
 ];
 
-/** Case-insensitive substring or word-prefix match; keeps list order. An empty query returns everything. */
-export function filterActions(actions: readonly PaletteAction[], query: string): PaletteAction[] {
+/**
+ * Case-insensitive substring or word-prefix match on the label and the optional keywords; keeps list order. An empty
+ * query returns everything. The palette and the editor's insert menu share it.
+ */
+export function filterActions<T extends { label: string; keywords?: string }>(actions: readonly T[], query: string): T[] {
   const q = query.trim().toLowerCase();
   if (q === '') return [...actions];
   const tokens = q.split(/\s+/);
   return actions.filter((a) => {
-    const label = a.label.toLowerCase();
+    const label = (a.keywords ? `${a.label} ${a.keywords}` : a.label).toLowerCase();
     if (label.includes(q)) return true;
     const words = label.split(/\s+/);
     return tokens.every((t) => words.some((w) => w.startsWith(t)));

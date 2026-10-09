@@ -76,9 +76,14 @@ export function detailsPanel(page: Page): Locator {
   return page.getByRole('complementary', { name: 'Details' });
 }
 
-/** A main window wide enough for the docked Details panel (its Reminders section). */
+/**
+ * A main window wide enough for the docked Details panel (its Reminders section), opened with its title-bar toggle
+ * when it is closed (it starts closed, D-102).
+ */
 export async function withPanel(app: ElectronApplication, page: Page): Promise<void> {
   await setContentSize(app, page, 1400, 860);
+  const toggle = page.getByRole('button', { name: /^Toggle details panel/ });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await activate(toggle);
   await detailsPanel(page).waitFor();
 }
 

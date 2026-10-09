@@ -199,6 +199,8 @@ export async function setContentSize(app: ElectronApplication, page: Page, width
     win.setContentSize(w!, h!);
   }, [width, height]);
   await page.waitForFunction(([w, h]) => window.innerWidth === w && window.innerHeight === h, [width, height], { timeout: 10_000 });
+  // The resize event (and the layout it switches, such as the docked Details panel) runs before the next frame.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
 /** Sets the whole main window size (frame included) for the visual specs. */

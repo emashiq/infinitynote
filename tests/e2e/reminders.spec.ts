@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import { useApp } from './harness';
 import { COMMON, createNote, createProject, saveDoc } from './seed';
 import { activate, activeTabLabel, openFromTree, railGo, tabItem, toasts } from './ui';
-import { chooseMore, editor, focusEditorEnd, queueDialog, waitSaved } from './editor-ui';
+import { chooseNoteMenu, editor, focusEditorEnd, queueDialog, waitSaved } from './editor-ui';
 import { closeWindowByUrl, floatFromTab, mainPageOf, queueClose, stickyPage, windowsOf } from './sticky-ui';
 import {
   MINUTE,
@@ -39,7 +39,7 @@ async function openNote(page: import('@playwright/test').Page, title: string): P
 }
 
 async function addReminderDialog(page: import('@playwright/test').Page) {
-  await chooseMore(page, 'Add reminder…');
+  await chooseNoteMenu(page, 'Add reminder…');
   await expect(reminderDialog(page)).toBeVisible();
 }
 
@@ -148,7 +148,7 @@ test('chips stay on their anchored paragraphs after Enter at the end and after a
   await expect(chipsIn(P1)).toHaveAttribute('data-reminder-id', one.id);
   await expect(chipsIn(added)).toHaveCount(0);
 
-  // (b) Caret at the end of the other anchored paragraph, More > Attach file.
+  // (b) Caret at the end of the other anchored paragraph, note menu > Attach file.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'infinity-chips-'));
   try {
     const pdf = path.join(dir, 'report.pdf');
@@ -157,7 +157,7 @@ test('chips stay on their anchored paragraphs after Enter at the end and after a
     await page.keyboard.press('End');
     await caretAtEndOf(P2);
     await queueDialog(app, [pdf]);
-    await chooseMore(page, 'Attach file');
+    await chooseNoteMenu(page, 'Attach file');
     await expect(editor(page).locator('.file-chip')).toHaveCount(1);
     await waitSaved(page);
   } finally {

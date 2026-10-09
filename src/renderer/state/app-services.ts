@@ -4,6 +4,7 @@ import type { ReminderViewType } from '../../shared/contracts/reminders';
 import type { WidgetStateType } from '../../shared/contracts/widget';
 import type { AppOpenNoteEventType } from '../../shared/contracts/windows';
 import { RemindersStore } from '../reminders/reminders-store';
+import { EditorHandle } from '../editor/editor-handle';
 import type { EditorServices, ReferenceHost } from '../editor/editor-services';
 import type { AttachmentLimits } from '../editor/uploader';
 import { createCommandRunner, type CommandRunner } from './commands';
@@ -61,6 +62,8 @@ export interface AppServices {
   attachmentLimits: Store<AttachmentLimits>;
   /** What every note editor uses from the app; one stable object. */
   editor: EditorServices;
+  /** The active note tab's editor as the tab strip sees it: Enter in the tab's title moves into the text (D-102). */
+  noteEditor: EditorHandle;
   ready: Promise<void>;
   init(): Promise<void>;
   dispose(): Promise<void>;
@@ -128,7 +131,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     if (settings) {
       layout.hydrate({
         treeOpen: settings['layout.treeOpen'] ?? true,
-        panelOpen: settings['layout.panelOpen'] ?? true,
+        panelOpen: settings['layout.panelOpen'] ?? false,
         treeWidth: settings['layout.treeWidth'] ?? 248,
       });
       if (settings['home.scope']) home.hydrate(settings['home.scope']);
@@ -221,6 +224,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     reminders,
     attachmentLimits: core.attachmentLimits,
     editor,
+    noteEditor: new EditorHandle(),
     ready,
     init: () => ready,
     async dispose() {

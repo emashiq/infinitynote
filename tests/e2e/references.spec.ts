@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { useApp } from './harness';
-import { chooseMore, editor, focusEditorEnd, queueDialog, shellCalls, waitSaved } from './editor-ui';
+import { chooseNoteMenu, editor, focusEditorEnd, queueDialog, shellCalls, waitSaved } from './editor-ui';
 import { detailsPanel, withPanel } from './reminder-ui';
 import { COMMON, createNote, reloadUi, saveDoc, trashNote } from './seed';
 import { activeTabLabel, dialogByName, openByPalette, toasts } from './ui';
@@ -22,9 +22,9 @@ async function seedDesign(page: Page): Promise<{ design: string; target: string 
   return { design, target };
 }
 
-/** Inserts a reference through More → "Link to note…": the note by title, then the whole note or a paragraph. */
+/** Inserts a reference through the note menu → "Link to note…": the note by title, then the whole note or a paragraph. */
 async function linkTo(page: Page, title: string, paragraph: string | null): Promise<void> {
-  await chooseMore(page, 'Link to note…');
+  await chooseNoteMenu(page, 'Link to note…');
   const picker = dialogByName(page, 'Link to note');
   await picker.getByRole('combobox', { name: 'Search notes by title' }).fill(title.slice(0, 3));
   await expect(picker.getByRole('option', { name: new RegExp(title) })).toBeVisible();
@@ -171,7 +171,7 @@ test('attached documents open only through the validated hand-off; programs are 
     fs.writeFileSync(exe, 'MZ test');
     await focusEditorEnd(page);
     await queueDialog(app, [pdf, exe]);
-    await chooseMore(page, 'Attach file');
+    await chooseNoteMenu(page, 'Attach file');
     await expect(editor(page).locator('.file-chip')).toHaveCount(2);
     await waitSaved(page);
 

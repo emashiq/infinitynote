@@ -29,13 +29,14 @@ The app always runs inside Chromium's sandbox; never start it with `--no-sandbox
 
 ## 2. Everyday use
 
-- **Notes** live in **Common** or in a **project**, inside folders as deep as you like. Create them from the tree, from Home, or with **Ctrl+N**. Type the title, press **Enter**, and keep typing the text.
+- **Notes** live in **Common** or in a **project**, inside folders as deep as you like. Create them from the tree, from Home, or with **Ctrl+N**. A note's tab is its title: type the title in the new tab, press **Enter**, and keep typing the text. Double-click a tab (or press **F2** on it) to rename the note.
+- **Formatting.** Select text and a small toolbar appears above it (**Alt+F10** shows it at the cursor). Type **/** at the start of a line or after a space to insert a heading, list, checklist, image, file, note link or reminder. Right-click the text (or **Shift+F10**) for the note's menu: insert, reminders, Find, Convert, Version history and Float as sticky.
 - **Rich or plain text.** Notes support headings, lists, checklists, quotes, code, links and images (paste, drop or insert). A note can be converted to plain text and back.
 - **Tabs.** Each note opens in a tab; tabs are restored when you start the app again.
 - **Search.** **Ctrl+K** searches note titles and text, and runs commands. Filters narrow it to a project or tags.
-- **References.** Link to another note (toolbar **More > Link to note…**). The note's Details panel shows incoming and outgoing links.
-- **Stickies.** **Float as sticky** (or **Ctrl+Shift+N** for a new one) opens a note in its own window that stays outside the main window. Pick a color, collapse it, or keep it on top where your desktop allows it. Closing a sticky only hides it.
-- **Reminders.** Add a reminder from a note (toolbar **More > Add reminder…**), or accept a suggestion when you type a phrase such as "tomorrow at 5": the app shows the date and time and asks you to confirm; nothing is created on its own. Reminders have a time zone, can repeat, and can follow up. The **Reminders** page and the small **reminder widget** (View > Show reminder widget) show what is due; **Done** completes it, **Snooze** moves it.
+- **References.** Link to another note (**/link** or the note menu's **Link to note…**). The Details panel (closed until you open it with its title bar button or **Ctrl+Shift+**) shows incoming and outgoing links.
+- **Stickies.** **Float as sticky** in the note menu (or **Ctrl+Shift+N** for a new one) opens a note in its own window that stays outside the main window. Pick a color, collapse it, or keep it on top where your desktop allows it. Drag a sticky by its header; rename it with **F2** or **Rename** in its menu. Closing a sticky only hides it.
+- **Reminders.** Add a reminder from a note (the note menu's **Add reminder…** or **/reminder**), or accept a suggestion when you type a phrase such as "tomorrow at 5": the app shows the date and time and asks you to confirm; nothing is created on its own. Reminders have a time zone, can repeat, and can follow up. The **Reminders** page and the small **reminder widget** (View > Show reminder widget) show what is due; **Done** completes it, **Snooze** moves it.
 - **Keyboard.** **Ctrl+/** shows every shortcut. **Alt** opens the menu bar.
 
 ### What to expect from reminders

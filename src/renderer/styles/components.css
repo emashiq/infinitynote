@@ -385,6 +385,19 @@ dialog::backdrop {
   white-space: nowrap;
 }
 
+/* The field over a note tab's label while it is renamed (the tab is the note's title, D-102). */
+.tab-rename {
+  position: absolute;
+  inset: 3px 28px 3px 6px;
+  min-width: 0;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
 .tab-close {
   position: absolute;
   right: 4px;
@@ -650,46 +663,30 @@ dialog::backdrop {
   padding: 24px 32px;
 }
 
+/* Only the text: the tab is the title (D-102). The save state shows up only when the note is not saved. */
 .note-header {
+  display: flex;
   flex: none;
-  margin-bottom: 12px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 
-.note-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.note-header:has(.save-status-alert, [role='alert']) {
+  margin-bottom: 8px;
 }
 
-.note-title {
-  flex: 1;
-  min-width: 0;
-  width: 100%;
-  padding: 2px 4px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 22px;
-  font-weight: 600;
+.note-header .field-error {
+  align-self: stretch;
 }
 
-.note-title:hover,
-.note-title:focus {
-  border-color: var(--border);
-}
-
-.note-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 4px;
-  padding: 0 4px;
-}
-
-.note-meta .save-status {
-  margin-left: auto;
+.save-status-alert {
+  padding: 1px 8px;
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  color: var(--danger);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .badge {

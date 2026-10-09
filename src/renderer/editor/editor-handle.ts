@@ -4,7 +4,7 @@ import { Selection } from '@tiptap/pm/state';
 export type EditorFocusTarget = 'start' | 'end';
 
 /**
- * The editor of one note view as seen from outside it (the title field, a sticky's float request). Focus moves
+ * The editor of one note view as seen from outside it (the tab or sticky title field, a sticky's float request). Focus moves
  * synchronously, so keys typed right after Enter in the title already reach the text, and a request made before the
  * editor is attached or editable is kept and applied once it is (A08-F1).
  */

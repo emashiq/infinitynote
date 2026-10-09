@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { App } from '../../../src/renderer/App';
 import { liveEditor } from '../../../src/renderer/editor/editor-registry';
+import { NOTE_TOO_LARGE_MESSAGE } from '../../../src/shared/contracts/notes';
 import { createFakeBridge, type FakeBridge } from './support/fake-bridge';
 
 beforeAll(() => {
@@ -72,7 +73,8 @@ describe('Phase 02 shell (smoke)', () => {
     expect(byLabel(el, 'Primary')?.tagName).toBe('NAV');
     expect(el.querySelector('nav[aria-label="Notes"]')).not.toBeNull();
     expect(el.querySelector('main')).not.toBeNull();
-    expect(byLabel(el, 'Details')?.tagName).toBe('ASIDE');
+    // The Details panel starts closed (D-102).
+    expect(byLabel(el, 'Details')).toBeNull();
     expect(el.querySelectorAll('h1')).toHaveLength(1);
     const home = el.querySelector('[role="tab"]#tab-home');
     expect(home?.getAttribute('aria-selected')).toBe('true');
@@ -115,6 +117,7 @@ describe('Phase 02 shell (smoke)', () => {
       editor!.commands.insertContentAt(1, 'hello world');
     });
     expect(el.querySelector('[role="status"].save-status')?.textContent).toBe('Editing…');
+    expect(el.querySelector('.save-status')?.classList.contains('sr-only')).toBe(true);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 450));
     });
@@ -206,6 +209,47 @@ describe('Phase 02 shell (smoke)', () => {
     expect(el.querySelector('#tree-pane')).toBeNull();
     expect(notes.getAttribute('aria-expanded')).toBe('false');
     const toggle = [...el.querySelectorAll('header button')].find((b) => b.getAttribute('aria-label')?.startsWith('Toggle details panel'));
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    await click(toggle ?? null);
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(byLabel(el, 'Details')?.tagName).toBe('ASIDE');
+  });
+
+  it('a note shows only its text, its tab is its title; the save state appears only when not saved (D-102)', async () => {
+    const { el, fake } = await mount();
+    await click([...el.querySelectorAll('button.tile')].find((b) => b.textContent === 'New note') ?? null);
+    const view = el.querySelector('.note-view')!;
+    // A new note's tab is being renamed; the note view has no title field.
+    const title = byLabel(el, 'Title') as HTMLInputElement;
+    expect(title.classList.contains('tab-rename')).toBe(true);
+    expect(view.contains(title)).toBe(false);
+    expect(document.activeElement).toBe(title);
+    expect(view.querySelectorAll('input, button, [contenteditable="true"]')).toHaveLength(1);
+    expect(byLabel(view, 'Note text')?.getAttribute('role')).toBe('textbox');
+    // Enter moves into the text; the tab shows the title again.
+    await key(title, 'Enter');
+    expect(byLabel(el, 'Title')).toBeNull();
+    expect(document.activeElement).toBe(byLabel(view, 'Note text'));
+    // No toolbar row, float button, location line or Details panel around the text.
+    expect(view.querySelector('[role="toolbar"]')).toBeNull();
+    expect(byLabel(view, 'Float as sticky')).toBeNull();
+    expect(view.textContent).not.toContain('Common');
+    expect(byLabel(el, 'Details')).toBeNull();
+    const status = view.querySelector('[role="status"].save-status')!;
+    expect(status.textContent).toBe('Saved');
+    expect(status.classList.contains('sr-only')).toBe(true);
+
+    fake.failNext('note:save', { code: 'LIMIT_EXCEEDED', message: NOTE_TOO_LARGE_MESSAGE });
+    await act(async () => {
+      liveEditor()!.commands.insertContentAt(1, 'too much');
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 450));
+    });
+    await settle(8);
+    expect(status.textContent).toBe('Not saved');
+    expect(status.classList.contains('sr-only')).toBe(false);
+    expect(status.classList.contains('save-status-alert')).toBe(true);
+    expect(view.querySelector('[role="alert"]')?.textContent).toBe(NOTE_TOO_LARGE_MESSAGE);
   });
 });

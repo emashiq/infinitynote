@@ -219,7 +219,7 @@ test('sticky in folder', async () => {
   await expect(stickyRow.locator('.sticky-path')).toHaveText('Alpha › L1');
   await expect(stickyRow.getByRole('button', { name: /^Open/ })).toBeVisible();
   await activate(stickyRow.getByRole('button', { name: /^Open/ }));
-  await expect(titleInput(page)).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Note text', exact: true })).toBeVisible();
 });
 
 async function moveVia(page: Page, row: ReturnType<typeof treeByKey>, filter: string): Promise<void> {

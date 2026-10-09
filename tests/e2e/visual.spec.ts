@@ -5,10 +5,10 @@ import { closeApp, launchApp, repoRoot, setContentSize } from './fixtures';
 import { useApp } from './harness';
 import { makePng } from '../support/png';
 import { COMMON, createNote, importImage, reloadUi, saveDoc, saveText, seedNotebook, type Notebook } from './seed';
-import { activate, openByPalette, openFromTree, railGo, tabItem, treeByKey, titleInput } from './ui';
-import { chooseMore, editor, fakeView, findInput } from './editor-ui';
+import { activate, activeTab, openByPalette, openFromTree, railGo, tabItem, treeByKey } from './ui';
+import { chooseNoteMenu, editor, fakeView, findInput } from './editor-ui';
 import { stickyHeader, stickyPage } from './sticky-ui';
-import { advance, createReminder, fillReminder, reminderDialog, reminderEnv, widgetPage } from './reminder-ui';
+import { advance, createReminder, detailsPanel, fillReminder, reminderDialog, reminderEnv, widgetPage, withPanel } from './reminder-ui';
 
 const SHOTS = process.env.INFINITY_SCREENSHOT_DIR ?? path.join(repoRoot, 'test-results', 'screens');
 const h = useApp();
@@ -50,7 +50,7 @@ test('1100x720 light: home and note', async () => {
   await page.getByRole('button', { name: /Launch plan/ }).first().focus();
   await page.keyboard.press('Enter');
   await expect(editor(page)).toHaveText(/Ship the shell/);
-  await expect(titleInput(page)).toHaveValue('Launch plan');
+  await expect(activeTab(page)).toHaveText('Launch plan');
   await shot(page, '1100x720-light-note.png');
 });
 
@@ -78,6 +78,7 @@ test('1280x800 light: details panel', async () => {
   await setContentSize(app, page, 1280, 800);
   await page.getByRole('button', { name: /Launch plan/ }).first().focus();
   await page.keyboard.press('Enter');
+  await page.keyboard.press('Control+Shift+Backslash');
   await expect(page.getByRole('complementary', { name: 'Details' }).getByText('Launch plan')).toBeVisible();
   await expandAlpha(page, nb);
   await shot(page, '1280x800-light-panel.png');
@@ -210,14 +211,18 @@ test('1100x720 light: conflict and read-only banners, find bar', async () => {
   await shot(page, '1100x720-light-read-only-banner.png');
 });
 
-test('760x560 light: editor toolbar', async () => {
+test('760x560 light: formatting toolbar on a selection', async () => {
   const { app, page } = await h.start();
   await richNote(page);
   await reloadUi(page);
   await setContentSize(app, page, 760, 560);
   await openByPalette(page, 'Editor tour');
-  await expect(page.getByRole('toolbar', { name: 'Formatting' })).toBeVisible();
   await expect(editor(page)).toContainText('Launch plan');
+  await expect(page.getByRole('toolbar', { name: 'Formatting' })).toHaveCount(0);
+  await editor(page).click();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Shift+End');
+  await expect(page.getByRole('toolbar', { name: 'Formatting' })).toBeVisible();
   await shot(page, '760x560-light-editor-toolbar.png');
 });
 
@@ -270,7 +275,7 @@ test('sticky pin unsupported', async () => {
   await shot(sp, 'sticky-pin-unsupported.png', 3_000);
 });
 
-test('1100x720 light: stickies page, settings windows and tray, tab float button', async () => {
+test('1100x720 light: stickies page, settings windows and tray, tab note menu', async () => {
   const { app, page } = await boot();
   await setContentSize(app, page, 1100, 720);
   await railGo(page, 'Stickies');
@@ -280,9 +285,10 @@ test('1100x720 light: stickies page, settings windows and tray, tab float button
   await expect(page.getByRole('radiogroup', { name: 'When the main window closes' })).toBeVisible();
   await shot(page, 'settings-windows-and-tray.png');
   await openByPalette(page, 'Launch plan');
-  await expect(titleInput(page)).toHaveValue('Launch plan');
-  await page.getByRole('button', { name: 'Float as sticky' }).focus();
-  await shot(page, 'tab-float-button.png');
+  await expect(activeTab(page)).toHaveText('Launch plan');
+  await editor(page).click({ button: 'right' });
+  await expect(page.getByRole('menu', { name: 'Note actions' }).getByRole('menuitem', { name: 'Float as sticky' })).toBeVisible();
+  await shot(page, 'tab-note-menu.png');
 });
 
 // Phase 05 reminders (plan section 12.6), on a frozen reminder clock in Asia/Dhaka.
@@ -310,8 +316,10 @@ test('reminders: page, dialog, chips, panel, Home, alert banner, settings', asyn
   await openFromTree(page, noteId);
   await expect(page.locator(`[data-id="${block}"] .reminder-chip`)).toBeVisible();
   await shot(page, 'note-with-chip-light.png');
+  await withPanel(app, page);
+  await expect(detailsPanel(page).getByRole('listitem', { name: 'Pay rent' })).toBeVisible();
   await shot(page, 'panel-reminders.png');
-  await chooseMore(page, 'Add reminder…');
+  await chooseNoteMenu(page, 'Add reminder…');
   await fillReminder(page, { zone: 'America/New_York', date: '2026-10-09', time: '09:00' });
   await shot(page, 'reminder-dialog.png');
   await fillReminder(page, { date: '2027-03-14', time: '02:30' });
@@ -374,7 +382,7 @@ async function suggestionBoot(title: string): Promise<{ page: Page; app: Electro
 const suggestionCard = (page: Page) => page.getByRole('dialog', { name: /^(Create|Update) reminder$/ });
 
 test('suggestions: underline and bar (light, dark), cards, changed source, settings', async () => {
-  const { page } = await suggestionBoot('Report');
+  const { app, page } = await suggestionBoot('Report');
   await page.keyboard.type('Have to submit this by tomorrow end of the day');
   await expect(page.locator('.nlp-candidate')).toHaveText(['tomorrow end of the day'], { timeout: 5_000 });
   await expect(page.getByRole('group', { name: 'Reminder suggestion' })).toBeVisible();
@@ -384,7 +392,7 @@ test('suggestions: underline and bar (light, dark), cards, changed source, setti
   await shot(page, 'nlp-underline-bar-dark.png');
   await page.evaluate(() => window.infinity.settings.set({ key: 'appearance.theme', value: 'light' }));
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await chooseMore(page, 'Create reminder from text');
+  await chooseNoteMenu(page, 'Create reminder from text');
   await expect(suggestionCard(page)).toContainText('17:00 (default end of day)');
   await shot(page, 'suggestion-card.png');
   await activate(suggestionCard(page).getByRole('button', { name: 'Cancel' }));
@@ -393,7 +401,7 @@ test('suggestions: underline and bar (light, dark), cards, changed source, setti
   await page.keyboard.press('Enter');
   await page.keyboard.type('Meet 03/04 at 5');
   await expect(page.locator('.nlp-candidate').filter({ hasText: '03/04 at 5' })).toHaveCount(1, { timeout: 5_000 });
-  await chooseMore(page, 'Create reminder from text');
+  await chooseNoteMenu(page, 'Create reminder from text');
   await expect(suggestionCard(page)).toContainText('Choose the date order');
   await shot(page, 'suggestion-card-choices.png');
   await activate(suggestionCard(page).getByRole('button', { name: 'Cancel' }));
@@ -402,7 +410,7 @@ test('suggestions: underline and bar (light, dark), cards, changed source, setti
   await page.keyboard.press('Enter');
   await page.keyboard.type('Backup on Nov 1 at 1:30am');
   await expect(page.locator('.nlp-candidate').filter({ hasText: 'Nov 1 at 1:30am' })).toHaveCount(1, { timeout: 5_000 });
-  await chooseMore(page, 'Create reminder from text');
+  await chooseNoteMenu(page, 'Create reminder from text');
   await suggestionCard(page).getByLabel('Time zone', { exact: true }).selectOption('America/New_York');
   await expect(suggestionCard(page)).toContainText('happens twice on this date');
   await shot(page, 'suggestion-card-dst.png');
@@ -413,12 +421,13 @@ test('suggestions: underline and bar (light, dark), cards, changed source, setti
   await page.keyboard.press('Enter');
   await page.keyboard.type('Call the bank tomorrow');
   await expect(page.locator('.nlp-candidate').filter({ hasText: 'tomorrow' })).toHaveCount(1, { timeout: 5_000 });
-  await chooseMore(page, 'Create reminder from text');
+  await chooseNoteMenu(page, 'Create reminder from text');
   await activate(suggestionCard(page).getByRole('button', { name: 'Add', exact: true }));
   await expect(suggestionCard(page)).toHaveCount(0);
   for (let i = 0; i < 'tomorrow'.length; i += 1) await page.keyboard.press('Backspace');
   await page.keyboard.type('next Friday');
-  const panel = page.getByRole('complementary', { name: 'Details' });
+  await withPanel(app, page);
+  const panel = detailsPanel(page);
   await expect(panel).toContainText('The text this reminder came from changed: “tomorrow”.');
   await shot(page, 'panel-source-changed.png');
 

@@ -66,7 +66,7 @@ describe('settings (INF-FND-06)', () => {
     expect(service.get(['layout.treeOpen', 'layout.treeWidth', 'layout.panelOpen', 'home.scope', 'tree.expanded'])).toEqual({
       'layout.treeOpen': true,
       'layout.treeWidth': 248,
-      'layout.panelOpen': true,
+      'layout.panelOpen': false,
       'home.scope': { kind: 'all' },
       'tree.expanded': ['common', 'projects'],
     });

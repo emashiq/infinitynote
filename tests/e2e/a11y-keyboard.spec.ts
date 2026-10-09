@@ -6,7 +6,7 @@ import { useApp } from './harness';
 import { COMMON, createFolder, createNote, createProject, reloadUi } from './seed';
 import { editor } from './editor-ui';
 import { queueSave, tempFolder } from './portability-ui';
-import { activeTabLabel, dialogByName, openContextMenu, openFromTree, railGo, tabLabels, tabs, titleInput, toasts, treeByKey, treeItem } from './ui';
+import { activeTab, activeTabLabel, dialogByName, openContextMenu, openFromTree, railGo, tabLabels, tabs, titleInput, toasts, treeByKey, treeItem } from './ui';
 
 const h = useApp();
 const COMMON_PARENT = { projectId: null, parentId: null };
@@ -209,6 +209,9 @@ test('accessibility structure on every view', async () => {
   await setContentSize(app, page, 1280, 800);
   await createNote(page, COMMON, 'A11y note');
   await reloadUi(page);
+  // The Details panel starts closed (D-102); the audit covers it open.
+  await page.keyboard.press('Control+Shift+Backslash');
+  await expect(page.getByRole('complementary', { name: 'Details' })).toBeVisible();
   const audit = () =>
     page.evaluate(() => {
       const accessibleName = (el: Element): string => {
@@ -264,7 +267,7 @@ test('Enter right after typing a new title moves the very next keys into the tex
     await page.keyboard.press('Enter');
     await page.keyboard.type(`Body ${n}`);
     await expect(editor(page)).toBeFocused();
-    await expect(titleInput(page)).toHaveValue(`Quick ${n}`);
+    await expect(activeTab(page)).toHaveText(`Quick ${n}`);
   }
   await expect
     .poll(() => h.all('SELECT title, plain_text FROM notes ORDER BY title'))

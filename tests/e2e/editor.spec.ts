@@ -4,7 +4,7 @@ import path from 'node:path';
 import { makePng } from '../support/png';
 import {
   blockedRequests,
-  chooseMore,
+  chooseNoteMenu,
   docOf,
   editor,
   editorSelectionText,
@@ -13,6 +13,8 @@ import {
   focusEditorEnd,
   nodesOf,
   paletteAction,
+  noteMenu,
+  openFormatting,
   pressToolbar,
   queueDialog,
   saveStatus,
@@ -28,7 +30,7 @@ import {
 import { readMainLog, waitForExit } from './fixtures';
 import { useApp } from './harness';
 import { COMMON, createNote, importImage, reloadUi, saveDoc, saveText } from './seed';
-import { activeTabLabel, dialogByName, openFromTree, tabItem, tabLabels, titleInput, toasts, treeByKey } from './ui';
+import { activeTab, activeTabLabel, dialogByName, openFromTree, renameActiveTab, tabItem, tabLabels, titleInput, toasts, treeByKey } from './ui';
 
 const h = useApp();
 
@@ -94,8 +96,8 @@ test('editor save increments revision and survives relaunch', async () => {
   expect(JSON.parse(noteRow(id).content_json!).type).toBe('doc');
   expect(noteRow(id).plain_text).toContain('more');
 
-  // Renaming through the title field keeps the revision unchanged by rename and the id stable.
-  const title = titleInput(page);
+  // Renaming through the tab (the note's title, D-102) keeps the revision unchanged by rename and the id stable.
+  const title = await renameActiveTab(page);
   await title.fill('Renamed by title field');
   await title.press('Enter');
   await expect.poll(() => noteRow(id).title).toBe('Renamed by title field');
@@ -304,7 +306,7 @@ test('rename flushes (INF-EDIT-03)', async () => {
   await reloadUi(page);
   await openFromTree(page, id);
   const revision = noteRow(id).revision;
-  await titleInput(page).click();
+  await renameActiveTab(page);
   await page.keyboard.press('Control+A');
   await page.keyboard.insertText('Renamed note');
   await page.keyboard.press('Control+W');
@@ -313,7 +315,7 @@ test('rename flushes (INF-EDIT-03)', async () => {
   await expect(treeByKey(page, `note:${id}`)).toContainText('Renamed note');
 
   await openFromTree(page, id);
-  await titleInput(page).click();
+  await renameActiveTab(page);
   await page.keyboard.press('Control+A');
   await page.keyboard.press('Delete');
   await expect(titleInput(page)).toHaveAttribute('placeholder', 'Untitled');
@@ -330,10 +332,21 @@ test('plain note (INF-EDIT-04)', async () => {
   await expect(titleInput(page)).toBeFocused();
   const id = h.one<{ id: string }>('SELECT id FROM notes ORDER BY created_at DESC LIMIT 1')!.id;
   expect(noteRow(id)).toMatchObject({ format: 'plain', content_text: '', content_json: null });
-  await expect(toolbarButton(page, 'Bold')).toHaveCount(0);
-  await expect(toolbarButton(page, 'Find in note')).toBeVisible();
-  await expect(toolbarButton(page, 'Convert to rich text')).toBeVisible();
-  await expect(toolbarButton(page, 'Version history')).toBeVisible();
+  // No formatting in a plain-text note; its note menu has Find, Convert to rich text and Version history (D-102).
+  await openFormatting(page);
+  await expect(toolbar(page)).toHaveCount(0);
+  await page.keyboard.press('Shift+F10');
+  await expect(noteMenu(page).getByRole('menuitem')).toHaveText([
+    'Add reminder…',
+    'Create reminder from text',
+    'Find in note',
+    'Convert to rich text',
+    'Version history…',
+    'Float as sticky',
+  ]);
+  await page.keyboard.press('Escape');
+  await expect(noteMenu(page)).toHaveCount(0);
+  await expect(editor(page)).toBeFocused();
 
   await focusEditorEnd(page);
   await page.keyboard.press('Control+B');
@@ -355,7 +368,8 @@ test('plain note (INF-EDIT-04)', async () => {
 
   const second = await h.restart();
   await expect.poll(() => editorText(second.page)).toBe('first line\nBig\nbold words');
-  await expect(toolbarButton(second.page, 'Bold')).toHaveCount(0);
+  await openFormatting(second.page);
+  await expect(toolbar(second.page)).toHaveCount(0);
 });
 
 test('conversion warning and version history (INF-EDIT-05, INF-SAVE-06)', async () => {
@@ -374,27 +388,30 @@ test('conversion warning and version history (INF-EDIT-05, INF-SAVE-06)', async 
   await openFromTree(page, id);
   await expect(editor(page).locator('h1')).toHaveText('Plan');
 
-  await chooseMore(page, 'Convert to plain text…');
+  await chooseNoteMenu(page, 'Convert to plain text…');
   const dialog = dialogByName(page, 'Convert to plain text?');
   await expect(dialog.getByRole('heading')).toHaveText('Convert to plain text?');
   await expect(dialog.locator('.dialog-body')).toHaveText('Formatting, checklists, links and images will be removed. A version of the current note is saved so you can restore it.');
   await dialog.getByRole('button', { name: 'Cancel' }).press('Enter');
   await expect(dialog).toHaveCount(0);
+  await openFormatting(page);
   await expect(toolbarButton(page, 'Bold')).toBeVisible();
+  await page.keyboard.press('Escape');
   expect(noteRow(id).format).toBe('rich');
 
-  await chooseMore(page, 'Convert to plain text…');
+  await chooseNoteMenu(page, 'Convert to plain text…');
   const convert = dialogByName(page, 'Convert to plain text?').getByRole('button', { name: 'Convert' });
   await convert.focus();
   await convert.press('Enter');
   await expect(page.getByText('Converted to plain text. A version with formatting and images was saved.')).toBeVisible();
-  await expect(toolbarButton(page, 'Bold')).toHaveCount(0);
+  await openFormatting(page);
+  await expect(toolbar(page)).toHaveCount(0);
   await expect.poll(() => noteRow(id).format).toBe('plain');
   expect(noteRow(id).content_text).toBe('Plan\nbody text');
   await expect.poll(() => editorText(page)).toBe('Plan\nbody text');
 
   // The version is listed in Version history; restore it from the banner.
-  await pressToolbar(page, 'Version history');
+  await chooseNoteMenu(page, 'Version history…');
   const history = dialogByName(page, 'Version history');
   await expect(history.locator('.version-row')).toHaveCount(1);
   await expect(history.locator('.version-row')).toContainText('Before conversion');
@@ -409,7 +426,7 @@ test('conversion warning and version history (INF-EDIT-05, INF-SAVE-06)', async 
   await expect.poll(() => noteRow(id).format).toBe('rich');
 
   // Version history now also lists the plain text saved before the restore; restoring it asks first.
-  await chooseMore(page, 'Version history…');
+  await chooseNoteMenu(page, 'Version history…');
   const again = dialogByName(page, 'Version history');
   const restoreRow = again.locator('.version-row').filter({ hasText: 'Before restoring a version' });
   await expect(restoreRow).toContainText('Plain text');
@@ -419,8 +436,8 @@ test('conversion warning and version history (INF-EDIT-05, INF-SAVE-06)', async 
   await confirm.getByRole('button', { name: 'Restore' }).press('Enter');
   await expect.poll(() => noteRow(id).format).toBe('plain');
   await expect.poll(() => editorText(page)).toBe('Plan\nbody text');
-  // And back to the formatted version for the restart check (plain notes have Version history on the toolbar).
-  await pressToolbar(page, 'Version history');
+  // And back to the formatted version for the restart check.
+  await chooseNoteMenu(page, 'Version history…');
   await dialogByName(page, 'Version history').locator('.version-row').filter({ hasText: 'Rich text' }).first().getByRole('button', { name: 'Restore' }).press('Enter');
   await dialogByName(page, 'Restore this version?').getByRole('button', { name: 'Restore' }).press('Enter');
   await expect.poll(() => noteRow(id).format).toBe('rich');
@@ -437,7 +454,7 @@ test('image size preset (INF-EDIT-11)', async () => {
   await openFromTree(page, id);
   await focusEditorEnd(page);
   await queueDialog(app, [tempPng('wide.png', 800, 200)]);
-  await pressToolbar(page, 'Insert image');
+  await chooseNoteMenu(page, 'Insert image');
   const img = editor(page).locator('img');
   await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(800);
   const width = () => img.evaluate((i) => Math.round(i.getBoundingClientRect().width));
@@ -464,7 +481,7 @@ test('Bangla title and text are stored exactly (INF-EDIT-12)', async () => {
   const id = await createNote(page, COMMON, 'Temp');
   await reloadUi(page);
   await openFromTree(page, id);
-  await titleInput(page).click();
+  await renameActiveTab(page);
   await page.keyboard.press('Control+A');
   await page.keyboard.insertText('বাংলা নোট');
   await focusEditorEnd(page);
@@ -477,7 +494,7 @@ test('Bangla title and text are stored exactly (INF-EDIT-12)', async () => {
 
   const second = await h.restart();
   await expect.poll(() => editorText(second.page)).toBe(body);
-  await expect(titleInput(second.page)).toHaveValue('বাংলা নোট');
+  await expect(activeTab(second.page)).toHaveText('বাংলা নোট');
 });
 
 test('save indicator (INF-EDIT-13)', async () => {

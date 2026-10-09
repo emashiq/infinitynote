@@ -5,7 +5,7 @@ import { makePng } from '../support/png';
 import {
   blockedRequests,
   blockIds,
-  chooseMore,
+  chooseNoteMenu,
   docOf,
   dropFiles,
   editor,
@@ -13,7 +13,6 @@ import {
   focusEditorEnd,
   nodesOf,
   paste,
-  pressToolbar,
   queueDialog,
   saveStatus,
   seedClipboardHtml,
@@ -130,7 +129,7 @@ test('the original image file may be removed (INF-EDIT-09)', async () => {
   const original = path.join(h.userData, 'photo.png');
   fs.writeFileSync(original, makePng(50, 40));
   await queueDialog(app, [original]);
-  await pressToolbar(page, 'Insert image');
+  await chooseNoteMenu(page, 'Insert image');
   await expect.poll(() => naturalWidth(page)).toBe(50);
   await waitSaved(page);
   fs.rmSync(original);
@@ -174,7 +173,7 @@ test('oversized and unsupported files show the exact messages (INF-EDIT-10)', as
   const big = path.join(h.userData, 'big.png');
   fs.writeFileSync(big, Buffer.concat([makePng(1, 1), Buffer.alloc(21 * MB)]));
   await queueDialog(app, [big]);
-  await pressToolbar(page, 'Insert image');
+  await chooseNoteMenu(page, 'Insert image');
   await expect(toasts(page).filter({ hasText: 'This image is larger than 20 MB. Change the limit in Settings or use a smaller image.' })).toHaveCount(2);
   expect(attachments()).toEqual([]);
 
@@ -190,7 +189,7 @@ test('document chip (INF-EDIT-14)', async () => {
   fs.writeFileSync(pdf, Buffer.from('%PDF-1.4\n% test document\n'.repeat(100)));
   const size = fs.statSync(pdf).size;
   await queueDialog(app, [pdf]);
-  await chooseMore(page, 'Attach file');
+  await chooseNoteMenu(page, 'Attach file');
   const chip = editor(page).locator('.file-chip');
   await expect(chip).toContainText('report.pdf');
   await expect(chip).toContainText(`${(size / 1024).toFixed(1)} KB`);

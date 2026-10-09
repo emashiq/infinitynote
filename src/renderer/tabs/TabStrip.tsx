@@ -1,6 +1,7 @@
 import { Bell, ChevronLeft, ChevronRight, FileText, House, Settings, StickyNote, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { displayTitle } from '../../shared/names';
+import { TitleRenameInput, type RenameEnd } from '../notes/TitleRenameInput';
 import type { TabType } from '../../shared/contracts/session';
 import type { AppServices } from '../state/app-services';
 import { useServices, useStore } from '../state/use-store';
@@ -58,8 +59,9 @@ function TabIcon({ view }: { view: TabView }) {
 
 export function TabStrip() {
   const services = useServices();
-  const { tabs: tabsStore } = services;
-  const { session } = useStore(tabsStore.store);
+  const { tabs: tabsStore, ui } = services;
+  const { session, controllerNoteId } = useStore(tabsStore.store);
+  const { renamingTab } = useStore(ui.store);
   useStore(services.tree.store);
   const views = tabViews(services, session.tabs);
   const listRef = useRef<HTMLDivElement>(null);
@@ -87,6 +89,30 @@ export function TabStrip() {
     document.getElementById(`tab-${id}`)?.focus();
   };
 
+  // A note tab is the note's title (D-102): double-click or F2 renames it once its note is open in the tab.
+  const rename = (tab: TabType) => {
+    if (tab.kind !== 'note') return;
+    void tabsStore.activate(tab.id).then(() => ui.requestFocus({ target: 'noteTitle', noteId: tab.noteId }));
+  };
+  const endRename = (tabId: string, how: RenameEnd) => {
+    ui.endTabRename();
+    if (how === 'escape') focusTab(tabId);
+  };
+  const renameField = (tab: TabType) => {
+    const controller = tabsStore.activeController();
+    if (tab.kind !== 'note' || tab.id !== renamingTab || tab.id !== session.activeTabId || controllerNoteId !== tab.noteId || !controller) return null;
+    const live = services.tree.store.getState().snapshot.notes.find((n) => n.id === tab.noteId);
+    return (
+      <TitleRenameInput
+        controller={controller}
+        initial={live?.title ?? controller.store.getState().title}
+        className="tab-rename"
+        editor={services.noteEditor}
+        onDone={(how) => endRename(tab.id, how)}
+      />
+    );
+  };
+
   const onKeyDown = (e: KeyboardEvent, index: number) => {
     const last = views.length - 1;
     const move = (i: number) => {
@@ -111,6 +137,10 @@ export function TabStrip() {
       case ' ':
         e.preventDefault();
         void tabsStore.activate(id);
+        break;
+      case 'F2':
+        e.preventDefault();
+        rename(views[index]!.tab);
         break;
       case 'Delete':
         if (id !== 'home') {
@@ -150,6 +180,7 @@ export function TabStrip() {
                 className="tab-main"
                 onClick={() => void tabsStore.activate(id)}
                 onFocus={() => setFocusId(id)}
+                onDoubleClick={() => rename(view.tab)}
                 onMouseDown={(e: MouseEvent) => {
                   if (e.button === 1) e.preventDefault();
                 }}
@@ -164,6 +195,7 @@ export function TabStrip() {
                 <TabIcon view={view} />
                 <span className="tab-label">{view.label}</span>
               </div>
+              {renameField(view.tab)}
               {id !== 'home' ? (
                 <button type="button" tabIndex={-1} className="tab-close" aria-label={`Close ${view.label}`} onClick={() => void tabsStore.close(id)}>
                   <X size={12} strokeWidth={1.75} aria-hidden />

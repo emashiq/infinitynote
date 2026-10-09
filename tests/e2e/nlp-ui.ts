@@ -1,5 +1,5 @@
 import { expect, type ElectronApplication, type Locator, type Page } from '@playwright/test';
-import { chooseMore } from './editor-ui';
+import { chooseNoteMenu } from './editor-ui';
 
 /** Types like a user, key by key (`delay` ms between keys). */
 export async function typeText(page: Page, text: string, delay = 0): Promise<void> {
@@ -25,9 +25,9 @@ export function card(page: Page): Locator {
   return page.getByRole('dialog', { name: /^(Create|Update) reminder$/ });
 }
 
-/** More → "Create reminder from text", with the keyboard (D-050). */
+/** Note menu → "Create reminder from text", with the keyboard (D-050, D-102). */
 export async function openCreateFromText(page: Page): Promise<void> {
-  await chooseMore(page, 'Create reminder from text');
+  await chooseNoteMenu(page, 'Create reminder from text');
 }
 
 export interface SourceRow {

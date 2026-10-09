@@ -34,16 +34,21 @@ describe('LayoutStore (INF-SHELL-02..04)', () => {
     expect(sets(fake)).toEqual([{ key: 'layout.treeWidth', value: 280 }]);
   });
 
-  it('docked toggles flip and persist the setting', () => {
+  it('docked toggles flip and persist the setting; the details panel starts closed (D-102)', () => {
     const { layout, fake } = make(1280);
+    expect(layout.treeVisible()).toBe(true);
+    expect(layout.panelVisible()).toBe(false);
     layout.toggleTree();
     layout.togglePanel();
-    expect(layout.store.getState()).toMatchObject({ treeOpen: false, panelOpen: false });
+    expect(layout.store.getState()).toMatchObject({ treeOpen: false, panelOpen: true });
+    expect(layout.panelVisible()).toBe(true);
     layout.toggleTree();
+    layout.togglePanel();
     expect(sets(fake)).toEqual([
       { key: 'layout.treeOpen', value: false },
-      { key: 'layout.panelOpen', value: false },
+      { key: 'layout.panelOpen', value: true },
       { key: 'layout.treeOpen', value: true },
+      { key: 'layout.panelOpen', value: false },
     ]);
     expect(layout.treeVisible()).toBe(true);
     expect(layout.panelVisible()).toBe(false);

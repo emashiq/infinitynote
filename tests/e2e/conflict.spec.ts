@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { editor, editorText, fakeView, focusEditorEnd, toolbarButton, waitSaved } from './editor-ui';
+import { editor, editorText, fakeView, focusEditorEnd, openFormatting, toolbar, waitSaved } from './editor-ui';
 import { useApp } from './harness';
 import { COMMON, createNote, reloadUi, saveText, trashNote } from './seed';
 import { dialogByName, openFromTree, toasts } from './ui';
@@ -81,7 +81,9 @@ test('read-only mirror and take control (INF-SAVE-04)', async () => {
   await openFromTree(page, id);
   await expect(page.getByText('This note is being edited in another window')).toBeVisible();
   await expect(editor(page)).toHaveAttribute('contenteditable', 'false');
-  await expect(toolbarButton(page, 'Bold')).toBeDisabled();
+  // Read-only text cannot be formatted: Alt+F10 shows no formatting toolbar (D-102).
+  await openFormatting(page);
+  await expect(toolbar(page)).toHaveCount(0);
   expect(await fakeView.save(app, id, 'from other')).toMatchObject({ ok: true });
   await expect.poll(() => editorText(page)).toBe('from other');
 

@@ -36,7 +36,7 @@ export class LayoutStore {
       viewportWidth,
       ...modes(viewportWidth),
       treeOpen: true,
-      panelOpen: true,
+      panelOpen: false,
       treeWidth: TREE_DEFAULT,
       treeDrawerOpen: false,
       panelDrawerOpen: false,

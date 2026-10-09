@@ -37,6 +37,7 @@ export async function typeLines(page: Page, text: string): Promise<void> {
   }
 }
 
+/** The floating formatting toolbar of a rich note (D-102). */
 export function toolbar(page: Page): Locator {
   return page.getByRole('toolbar', { name: 'Formatting' });
 }
@@ -45,17 +46,30 @@ export function toolbarButton(page: Page, name: string): Locator {
   return toolbar(page).getByRole('button', { name, exact: true });
 }
 
-/** Keyboard activation of a toolbar button (D-050): focus it and press Enter. */
+/** Shows the formatting toolbar from the keyboard: Alt+F10 in the text, at the selection or the cursor (D-102). */
+export async function openFormatting(page: Page): Promise<void> {
+  await editor(page).focus();
+  await page.keyboard.press('Alt+F10');
+}
+
+/** Keyboard activation of a formatting button (D-050): Alt+F10, focus the button and press Enter. */
 export async function pressToolbar(page: Page, name: string): Promise<void> {
+  await openFormatting(page);
   const button = toolbarButton(page, name);
   await button.focus();
   await button.press('Enter');
 }
 
-/** Opens the toolbar's More menu and chooses an item, with the keyboard. */
-export async function chooseMore(page: Page, item: string): Promise<void> {
-  await pressToolbar(page, 'More');
-  const entry = page.getByRole('menu', { name: 'More' }).getByRole('menuitem', { name: item, exact: true });
+/** The note menu of the text (right-click or Shift+F10; D-102). */
+export function noteMenu(page: Page): Locator {
+  return page.getByRole('menu', { name: 'Note actions' });
+}
+
+/** Opens the note menu with Shift+F10 in the text and chooses an item, with the keyboard. */
+export async function chooseNoteMenu(page: Page, item: string): Promise<void> {
+  await editor(page).focus();
+  await page.keyboard.press('Shift+F10');
+  const entry = noteMenu(page).getByRole('menuitem', { name: item, exact: true });
   await entry.focus();
   await entry.press('Enter');
 }
@@ -72,8 +86,9 @@ export function findInput(page: Page): Locator {
   return page.getByRole('textbox', { name: 'Find in note', exact: true });
 }
 
+/** The note tab's save state; shown only when the note is not saved, always read by screen readers (D-102). */
 export function saveStatus(page: Page): Locator {
-  return page.locator('.note-meta .save-status');
+  return page.locator('.note-view .save-status');
 }
 
 export async function waitSaved(page: Page): Promise<void> {

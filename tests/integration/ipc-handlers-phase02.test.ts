@@ -145,7 +145,7 @@ describe('Phase 02 IPC handlers', () => {
     const keys = ['layout.treeOpen', 'layout.treeWidth', 'layout.panelOpen', 'home.scope', 'tree.expanded'];
     expect(await call('settings:get', { keys })).toEqual({
       ok: true,
-      data: { values: { 'layout.treeOpen': true, 'layout.treeWidth': 248, 'layout.panelOpen': true, 'home.scope': { kind: 'all' }, 'tree.expanded': ['common', 'projects'] } },
+      data: { values: { 'layout.treeOpen': true, 'layout.treeWidth': 248, 'layout.panelOpen': false, 'home.scope': { kind: 'all' }, 'tree.expanded': ['common', 'projects'] } },
     });
     expect(await call('settings:set', { key: 'layout.treeWidth', value: 240 })).toMatchObject({ ok: true });
     expect(await call('settings:set', { key: 'layout.treeWidth', value: 300 })).toMatchObject({ ok: false });

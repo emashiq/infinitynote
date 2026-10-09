@@ -1,6 +1,7 @@
 import { expect, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import type { CloseChoice } from '../../src/main/services/close-dialog';
 import type { StickyWindowInfo } from '../../src/main/test-hooks';
+import { chooseNoteMenu } from './editor-ui';
 import { activate } from './ui';
 
 /** The main window's page (never `windows()[0]`: window order is not creation order, D-064). */
@@ -52,8 +53,9 @@ export function windowCount(app: ElectronApplication): Promise<number> {
 }
 
 /** Floats the active note tab with its header button. */
+/** Note menu → "Float as sticky" in the open note tab (D-102). */
 export async function floatFromTab(page: Page): Promise<void> {
-  await activate(page.getByRole('button', { name: 'Float as sticky', exact: true }));
+  await chooseNoteMenu(page, 'Float as sticky');
 }
 
 export function stickyHeader(page: Page): Locator {

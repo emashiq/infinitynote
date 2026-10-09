@@ -1,19 +1,28 @@
-import { PictureInPicture2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { REMINDER_MESSAGES } from '../../shared/contracts/reminders';
-import { EditorHandle } from '../editor/editor-handle';
 import { NoteEditor } from '../editor/NoteEditor';
 import { newReminderDialog, useNoteReminders } from '../reminders/note-reminders';
 import { ReminderChipBar } from '../reminders/ReminderChipBar';
 import { useServices, useStore } from '../state/use-store';
-import { IconButton } from '../ui/IconButton';
 import { useLiveNote } from './live-note';
 import { NoteBanners } from './NoteBanners';
 import type { ActionResult, NoteController } from './note-controller';
 import { NoteDialogs, type NoteDialog } from './NoteDialogs';
-import { NoteTitleInput } from './NoteTitleInput';
 
 const SAVE_LABEL = { saved: 'Saved', pending: 'Editing…', saving: 'Saving…', retrying: 'Not saved - retrying', error: 'Not saved' } as const;
+
+/**
+ * The save state, read out by screen readers as it changes. It is visible only when the note is not saved (D-102);
+ * the reason (for example a note too large to save) is shown below it.
+ */
+function SaveStatus({ save, message }: { save: keyof typeof SAVE_LABEL; message?: string }) {
+  const attention = save === 'retrying' || save === 'error';
+  return (
+    <span role="status" className={attention ? 'save-status save-status-alert' : 'save-status sr-only'} title={save === 'error' ? message : undefined}>
+      {SAVE_LABEL[save]}
+    </span>
+  );
+}
 
 export function NoteView({ controller, tabId }: { controller: NoteController; tabId: string }) {
   const services = useServices();
@@ -23,22 +32,21 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
   const session = useStore(tabs.store).session;
   const live = useLiveNote(controller);
   const liveTitle = live?.title ?? state.title;
-  const titleRef = useRef<HTMLInputElement>(null);
-  const [editorHandle] = useState(() => new EditorHandle());
   const [dialog, setDialog] = useState<NoteDialog | null>(null);
   const noteReminders = useNoteReminders(services.bridge, controller.noteId);
   const tab = session.tabs.find((t) => t.id === tabId);
   const savedScroll = tab?.kind === 'note' ? (tab.scrollTop ?? 0) : 0;
 
-  // Focus request after creating a note; Ctrl+F requests are handed to the editor below.
+  // The tab is the note's title (D-102): a title request renames the tab once the note is open (read-only notes keep
+  // their title). Ctrl+F requests are handed to the editor below.
   const request = uiState.focusRequest;
   const shown = state.status === 'ready' || state.status === 'readOnly';
   useEffect(() => {
-    if (request?.target === 'noteTitle' && request.noteId === controller.noteId && shown && titleRef.current) {
+    if (request?.target === 'noteTitle' && request.noteId === controller.noteId && shown) {
       ui.consumeFocus();
-      titleRef.current.focus();
+      if (state.status === 'ready') ui.startTabRename(tabId);
     }
-  }, [request, shown, controller.noteId, ui]);
+  }, [request, shown, state.status, controller.noteId, tabId, ui]);
   const findRequest = request?.target === 'noteFind' && request.noteId === controller.noteId ? request : null;
   const referenceRequest = request?.target === 'noteReference' && request.noteId === controller.noteId ? request : null;
   // A reference to this note may have brought the user here: offer to look for what they meant (INF-REF-06).
@@ -111,7 +119,6 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
   }
 
   const readOnly = state.status === 'readOnly';
-  const note = state.note;
   const editReminder = (reminderId: string) => {
     const reminder = noteReminders.reminders.find((r) => r.id === reminderId);
     if (reminder) ui.openDialog({ kind: 'reminder', noteId: reminder.noteId, reminder, blockId: reminder.blockId, title: reminder.title });
@@ -120,22 +127,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
     <div className="note-view">
       <h2 className="sr-only">{liveTitle.trim() === '' ? 'Untitled note' : liveTitle}</h2>
       <div className="note-header">
-        <div className="note-title-row">
-          <NoteTitleInput controller={controller} liveTitle={liveTitle} readOnly={readOnly} className="note-title" inputRef={titleRef} editor={editorHandle} />
-          <IconButton label="Float as sticky" icon={PictureInPicture2} onClick={() => void commands.float(controller.noteId)} />
-        </div>
-        <div className="note-meta">
-          {note?.sticky ? (
-            <span className="badge">
-              {note.color ? <span className={`dot dot-${note.color}`} aria-hidden /> : null}
-              Sticky
-            </span>
-          ) : null}
-          <span className="muted">{(live?.path ?? note?.path ?? []).join(' › ')}</span>
-          <span role="status" className="save-status" title={state.save === 'error' ? state.message : undefined}>
-            {SAVE_LABEL[state.save]}
-          </span>
-        </div>
+        <SaveStatus save={state.save} message={state.message} />
         {state.save === 'error' && state.message ? (
           <p role="alert" className="field-error save-error">
             {state.message}
@@ -174,7 +166,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         onFindRequestHandled={() => ui.consumeFocus()}
         referenceRequest={referenceRequest}
         onReferenceRequestHandled={() => ui.consumeFocus()}
-        handle={editorHandle}
+        handle={services.noteEditor}
         onConvert={(target) => (target === 'plain' ? setDialog({ kind: 'convert' }) : report(controller.convert('rich')))}
         onOpenVersions={() => setDialog({ kind: 'versions' })}
         chips={noteReminders.chips}
@@ -185,6 +177,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
           controller.revealDone();
         }}
         onAddReminder={() => ui.openDialog(newReminderDialog(controller, liveTitle))}
+        onFloat={() => void commands.float(controller.noteId)}
         suggestions={{
           noteId: controller.noteId,
           noteTitle: liveTitle,

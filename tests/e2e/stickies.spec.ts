@@ -2,7 +2,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { appArgs, appEnv, appExecutable, readMainLog, spawnAndWait } from './fixtures';
 import { useApp } from './harness';
 import { COMMON, createFolder, createNote, createProject, reloadUi, saveText } from './seed';
-import { activate, chooseMenu, confirmDialog, dialogByName, openByPalette, openFromTree, railGo, tabs, titleInput, treeByKey } from './ui';
+import { activate, chooseMenu, confirmDialog, dialogByName, openByPalette, openFromTree, railGo, tabs, treeByKey } from './ui';
 import { editor, editorText, paletteAction } from './editor-ui';
 import {
   closeWindowByUrl,
@@ -106,7 +106,7 @@ test('float opens one native window for the same note id (INF-STKY-01)', async (
   const sp = await stickyPage(app, id);
   expect(sp.url()).toBe(`infinity-app://renderer/index.html#/sticky/${id}`);
   await expect.poll(async () => (await windowsOf(app)).stickies.map((s) => ({ noteId: s.noteId, visible: s.visible }))).toEqual([{ noteId: id, visible: true }]);
-  await expect(titleInput(sp)).toHaveValue('Groceries');
+  await expect(stickyHeader(sp).locator('.sticky-title')).toHaveText('Groceries');
   await expect(editor(sp)).toHaveText('milk');
   expect(noteRow(id)).toMatchObject({ sticky_enabled: 1, color: 'yellow', revision: revisionBefore });
   expect(h.all('SELECT id FROM notes')).toHaveLength(notesBefore);
@@ -284,6 +284,7 @@ test('header controls (INF-STKY-04)', async () => {
   await activate(header.getByRole('button', { name: 'Sticky actions' }));
   await expect(sp.getByRole('menu', { name: 'Sticky actions' }).getByRole('menuitem')).toHaveText([
     'Open in app',
+    'Rename',
     'Change color',
     'Hide',
     'Remove from stickies',

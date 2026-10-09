@@ -33,7 +33,8 @@ export const SETTINGS = {
   'appearance.theme': { version: 1, schema: ThemeSetting, default: 'system', public: true },
   'layout.treeOpen': { version: 1, schema: z.boolean(), default: true, public: true },
   'layout.treeWidth': { version: 1, schema: z.number().int().min(220).max(280), default: 248, public: true },
-  'layout.panelOpen': { version: 1, schema: z.boolean(), default: true, public: true },
+  // The Details panel starts closed: the note view is only the text until it is opened (D-102).
+  'layout.panelOpen': { version: 1, schema: z.boolean(), default: false, public: true },
   'home.scope': { version: 1, schema: HomeScope, default: { kind: 'all' }, public: true },
   'tree.expanded': { version: 1, schema: TreeExpandedSetting, default: ['common', 'projects'], public: true },
   'session.tabs': { version: 1, schema: TabSession, default: DEFAULT_SESSION, public: false },

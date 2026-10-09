@@ -57,20 +57,21 @@ UI 13 px; editor body 15 px with line height 1.55; H1 22 px, H2 18 px, H3 15 px 
 - Home: one tab, always first, not closable. Header "Home" with scope filter `All | Common | Project v` (projects alphabetical), persisted in `home.scope`; a trashed project falls back to All. Sections in order: Quick actions (96x80 tiles: New note, New sticky, New project); Pinned (up to 12 tiles, "View all"); Recent (10 most recently updated notes with scope path and relative time); Reminders (Overdue and Due today, up to 5 each, link to Reminders) added in Phase 05 and absent before, with no placeholders. New note or sticky inherits the filter: Project goes to the project root, Common or All to the Common root.
 - Notes tree: groups Favorites, Common (always first, not renameable), Projects, Trash at the bottom; folders before notes, then case-insensitive alphabetical; duplicate sibling names disambiguated by path; empty title shows "Untitled".
 - Tab strip: Home, note tabs, singleton pages (Stickies, Reminders, Settings). Overflow scrolls horizontally with scroll buttons and an "All tabs" list button.
-- Note editor: title field and a slim formatting toolbar (H, B, I, bullet list, numbered list, checklist, link, code block, image, more); no giant toolbar. Image size presets. Save indicator in the header.
+- Note editor (D-102, replaces the title field and toolbar row): the note area is only the text. The note tab is the title: a new note's tab opens in rename mode ("Title" field, placeholder "Untitled"); double-click or F2 on a note tab renames it; Enter saves and moves into the text, a click elsewhere saves, Escape puts the title back and returns to the tab. Formatting floats: selecting text (or Alt+F10 at the cursor) shows the "Formatting" toolbar beside the selection (Heading menu, Bold, Italic, Inline code, Link, Bulleted list, Numbered list, Checklist, Code block; the link actions inside a link; "Image size" for a selected image). Left and Right move between its buttons, Escape returns to the text. "/" at the start of a line or after a space opens the "Insert" list (Heading 1-3, Bulleted list, Numbered list, Checklist, Code block, Insert image, Attach file, Link to note…, Add reminder…, Create reminder from text), filtered by the letters typed; Up/Down, Enter or Tab, Escape. Right-click or Shift+F10 opens "Note actions": Insert image, Attach file, Link to note…; Add reminder…, Create reminder from text; Find in note, Convert to plain text… (or Convert to rich text), Version history…, Float as sticky. The save state is read by screen readers and is visible only as a small "Not saved" pill when the note is not saved; its reason (for example too large) shows below it. Banners (conflict, recovered drafts, conversion, lease, Trash) are unchanged. The Details panel starts closed (`layout.panelOpen` default false) and opens with its title bar toggle, View menu or Ctrl+Shift+.
 - Context panel: collapsible sections for the active note: Info (Phase 02-03), Reminders (Phase 05), Outgoing references and Backlinks (Phase 07). Non-note tabs show "Open a note to see its details".
 - Stickies page: sticky notes from every scope with a color dot and path, each with Float (`Float <title>`) and Open (`Open <title>`) actions, and New sticky (Phase 04 keeps the accepted Phase 02 list layout).
-- Float (Phase 04): note tab header icon button "Float as sticky", tree note menu "Float as sticky", palette "Float current note". New sticky (Ctrl+Shift+N, Home tile, tree, Stickies page, palette, tray) creates the sticky where the user is working and floats it; no tab opens (D-069).
+- Float (Phase 04; D-102 moved the tab's button into the note menu): note menu "Float as sticky", tree note menu "Float as sticky", palette "Float current note". New sticky (Ctrl+Shift+N, Home tile, tree, Stickies page, palette, tray) creates the sticky where the user is working and floats it; no tab opens (D-069).
 - Sticky window (D-070):
   - Native frame and no application menu. The window background is the sticky color.
   - 36 px header, left to right:
     - color button "Sticky color" (menu of 6 radio items Yellow, Green, Blue, Pink, Violet, Gray);
-    - title field "Title" (placeholder "Untitled");
+    - the title as text (D-102; part of the drag region); Rename in the actions menu or F2 shows the no-drag field "Title" until Enter, Escape or a click elsewhere;
     - source badge with the path joined by " › " ("Common" at the Common root; full path as tooltip);
     - pin toggle "Keep on top" (always on top), disabled with the tooltip "Not supported by this desktop" where unsupported;
     - collapse toggle "Collapse sticky" / "Expand sticky";
-    - menu "Sticky actions": Open in app, Change color, Hide, Remove from stickies, Move to Trash, Quit Infinity Notes.
-  - Body: banners, the shared editor with a wrapping toolbar, notices. Collapsed shows only the header and cannot be resized.
+    - menu "Sticky actions": Open in app, Rename, Change color, Hide, Remove from stickies, Move to Trash, Quit Infinity Notes.
+  - The whole header drags the frameless window; only the color, pin, collapse, actions and × controls are no-drag (D-102).
+  - Body: banners, the shared editor (floating formatting, "/" and the note menu as in tabs, without Float), notices. Collapsed shows only the header and cannot be resized.
   - The OS close button, Hide and Ctrl+W hide the window and never delete. Open in app docks it into a tab with edit control. Remove from stickies clears the sticky flag and opens the note in the app. Move to Trash asks "Move to Trash?" with the tree's copy.
   - Default size 320x300, minimum 220x120. At most 50 open stickies: "You have 50 open stickies. Hide some to open more."
 - Reminders page (Phase 05): header "Reminders" with "Show widget"/"Hide widget"; tabs Today, Upcoming, Overdue, Completed with counts in their names ("Overdue, 2"); rows show the title, the source path, the selected-zone time and "Your time: …" when the local wall time differs, badges (Overdue, Snoozed until <time>, Missed, Done, Repeats daily/weekly) and actions Open, Snooze (overdue only; 5, 10, 15, 30 minutes, 1 hour, Tomorrow 09:00), Done, Edit, Delete. Completed lists completed and missed occurrences of the last 30 days. Empty texts: "Nothing due today.", "No upcoming reminders.", "Nothing is overdue.", "No completed reminders in the last 30 days."
@@ -168,12 +169,12 @@ Editor copy added in Phase 03 (D-053 to D-058; exact strings):
 - Converted banner: "Converted to plain text. A version with formatting and images was saved." with "Restore formatted version" and Dismiss.
 - Version history dialog: title "Version history"; reasons "Automatic", "Before conversion", "Before restoring a draft", "Before restoring a version", "Before import"; restore confirmation "Restore this version? The current content is saved as a version first." with Restore and Cancel.
 - Attachments: "This image is larger than N MB. Change the limit in Settings or use a smaller image."; "This file is larger than N MB. Change the limit in Settings or use a smaller file." (Phase 08 wording, once the Settings control exists); "This image type is not supported. Use PNG, JPEG, GIF or WebP."; "This image is too large to display. Use an image under 100 megapixels."; "Only the first 20 files were added."; "Plain-text notes cannot contain images. Convert to rich text to add images."; "Plain-text notes cannot contain files. Convert to rich text to add files." (D-059); generic "The image could not be added." and "The file could not be added."; in-content states "Adding image…", "Adding file…", "Image unavailable".
-- Note too large: "This note is too large to save (over 5 MB). Remove some content to keep editing safely." Shown as visible text below the save status (D-061).
+- Note too large: "This note is too large to save (over 5 MB). Remove some content to keep editing safely." Shown as visible text below the "Not saved" status (D-061, D-102).
 - Paste too large (D-060): "This paste is too large (over 8 MB). Paste a smaller part."
 - Document limits (D-061): "This would nest lists or quotes more deeply than a note can store. Use fewer levels." and "This would make the note too large to store. Paste or add a smaller part."
 - Link dialog: title "Link", field "Address", error "Use an address that starts with http:// or https://", buttons Save, Remove link, Cancel. Link bar: the address with "Open link", "Edit link", "Remove link"; links open only on Ctrl+Click or Open link.
 - Find bar: field "Find in note", counter "<i> of <n>" or "No results", buttons "Previous match", "Next match", "Close find".
-- Toolbar (role toolbar, label "Formatting"): Heading menu (Paragraph, Heading 1, Heading 2, Heading 3), Bold, Italic, Bulleted list, Numbered list, Checklist, Link, Code block, Insert image, More (Inline code, Attach file, Find in note, Convert to plain text or Convert to rich text, Version history). With an image selected the toolbar shows "Image size": Small (240 px), Medium (480 px), Full width. Plain-text notes show only Find in note, Convert to rich text and Version history.
+- Toolbar (role toolbar, label "Formatting"; floating since D-102, see section 5): Heading menu (Paragraph, Heading 1, Heading 2, Heading 3), Bold, Italic, Inline code, Link, Bulleted list, Numbered list, Checklist, Code block. With an image selected it shows "Image size": Small (240 px), Medium (480 px), Full width. Plain-text notes have no formatting toolbar; their note menu has Find in note, Convert to rich text and Version history.
 
 Phase 08 copy (D-099):
 - Settings sections (labelled regions): General ("Show data folder"); Appearance; Notes and attachments ("Largest image" MB, "Largest file" MB, "Empty Trash automatically" Never / After 30 days / After 90 days, "Keep automatic versions for" days, "Most automatic versions per note"; out of range: "Enter a whole number from N to M."); Reminders; Windows and tray; Backup ("Back up now…", "Restore from backup…", "Export all notes…", "Import notes…", switch "Back up automatically", "Backup folder" with "Choose folder…", "Back up every", "Keep", "Last automatic backup: <date>", "Delete previous data"); Keyboard (switch "Quick sticky from anywhere (Ctrl+Alt+N)", "Shortcut", "This shortcut is used by another app. Choose another one.", "Show keyboard shortcuts").
@@ -193,7 +194,10 @@ Phase 08 copy (D-099):
 | Ctrl+F | Find in note |
 | Ctrl+\ | Toggle tree |
 | Ctrl+Shift+\ | Toggle context panel |
-| F2 | Rename in tree |
+| F2 | Rename in tree; on a note tab, rename the note (D-102) |
+| Alt+F10 | Formatting toolbar at the selection or cursor (D-102) |
+| / | Insert list at the start of a line or after a space (D-102) |
+| Shift+F10 | Note menu in the text (D-102) |
 | Delete | Move to Trash (with confirmation) |
 | Enter | Open |
 | Arrow keys | Tree navigation |
@@ -208,7 +212,7 @@ Phase 08 copy (D-099):
 | Ctrl+Click | Open a link (http and https only) |
 | Enter / Shift+Enter in find | Next / previous match |
 
-In a sticky window (Phase 04): Ctrl+W hides the sticky, Ctrl+F finds in the note, Escape closes popovers, and the editor keys above apply. Ctrl+Shift+N in the main window floats the new sticky (D-069).
+In a sticky window (Phase 04): Ctrl+W hides the sticky, Ctrl+F finds in the note, F2 renames it (D-102), Escape closes popovers, and the editor keys above apply. Ctrl+Shift+N in the main window floats the new sticky (D-069).
 
 The global quick-sticky shortcut is optional and off by default; registration failure is shown in Settings.
 

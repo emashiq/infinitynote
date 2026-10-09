@@ -2,12 +2,14 @@ import { ChevronDown, ChevronUp, Ellipsis, Pin, X } from 'lucide-react';
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { NoteColorType } from '../../shared/contracts/hierarchy';
 import { STICKY_MESSAGES, type StickyStateType } from '../../shared/contracts/stickies';
+import { displayTitle } from '../../shared/names';
 import { IconButton } from '../ui/IconButton';
 import { Menu } from '../ui/Menu';
 import { ColorMenu } from './ColorMenu';
 
 export const STICKY_MENU_LABELS = {
   openInApp: 'Open in app',
+  rename: 'Rename',
   changeColor: 'Change color',
   hide: 'Hide',
   remove: 'Remove from stickies',
@@ -20,6 +22,8 @@ export interface StickyHeaderActions {
   togglePinned(): void;
   toggleCollapsed(): void;
   openInApp(): void;
+  /** Shows the title as a field to edit (also F2 in the sticky). */
+  rename(): void;
   hide(): void;
   remove(): void;
   /** Asks to move the note to Trash (the caller confirms first). */
@@ -37,20 +41,24 @@ const below = (ref: RefObject<HTMLButtonElement | null>) => {
 
 /**
  * The 36 px sticky header (D-070): color, title, source badge, pin (disabled where always-on-top is unsupported),
- * collapse, the actions menu and Close. The window is frameless (D-097): the header is its title bar and drag region;
- * its controls are not. Close hides the sticky, as closing its window always has.
+ * collapse, the actions menu and Close. The window is frameless (D-097): the whole header, its title and badge
+ * included, is the title bar and drag region; only the small controls are not (D-102). The title is text, so it drags
+ * too; Rename in the actions menu or F2 turns it into a field (`renameField`) until Enter, Escape or a click elsewhere.
+ * Close hides the sticky, as closing its window always has.
  */
 export function StickyHeader({
   state,
   pinSupported,
   trashed,
-  titleField,
+  canRename,
+  renameField,
   actions,
 }: {
   state: StickyStateType;
   pinSupported: boolean;
   trashed: boolean;
-  titleField: ReactNode;
+  canRename: boolean;
+  renameField: ReactNode;
   actions: StickyHeaderActions;
 }) {
   const [menu, setMenu] = useState<OpenMenu>(null);
@@ -61,6 +69,7 @@ export function StickyHeader({
   const openColors = () => setMenu({ kind: 'color', anchor: below(colorRef) });
   const items = [
     { id: 'open', label: STICKY_MENU_LABELS.openInApp, onSelect: actions.openInApp },
+    { id: 'rename', label: STICKY_MENU_LABELS.rename, onSelect: actions.rename, disabled: !canRename },
     { id: 'color', label: STICKY_MENU_LABELS.changeColor, onSelect: openColors },
     { id: 'hide', label: STICKY_MENU_LABELS.hide, onSelect: actions.hide },
     { id: 'remove', label: STICKY_MENU_LABELS.remove, onSelect: actions.remove, disabled: trashed },
@@ -81,7 +90,11 @@ export function StickyHeader({
       >
         <span className={`dot dot-${state.color}`} aria-hidden />
       </button>
-      {titleField}
+      {renameField ?? (
+        <span className="sticky-title" title={displayTitle(state.title)}>
+          {displayTitle(state.title)}
+        </span>
+      )}
       <span className="sticky-badge" title={path}>
         {path}
       </span>
