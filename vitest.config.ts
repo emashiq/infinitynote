@@ -24,7 +24,8 @@ export default defineConfig({
           include: ['tests/integration/**/*.test.ts'],
           environment: 'node',
           pool: 'forks',
-          testTimeout: 30000,
+          // GitHub's Windows runners have slow disks: 1,000-row transactional tests need far more than 30 s there.
+          testTimeout: process.env.CI ? 180_000 : 30_000,
         },
       },
     ],

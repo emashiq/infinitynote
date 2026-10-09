@@ -479,7 +479,7 @@ describe('scheduler: single timer (INF-SCHED-01)', () => {
     expect(new Set(deliveries.map((d) => d.batch_id)).size).toBe(1);
     expect(deliveries.every((d) => d.presentation === 'summary' && d.outcome === 'dispatched' && d.reason === 'resume')).toBe(true);
     expect(s.reminders.summary({ kind: 'all' }).overdueTotal).toBe(1000);
-  }, 120_000); // 1,000 transactional claims: slow CI disks need more than the 30 s default.
+  });
 
   it('a due alert on a trashed note does not drive the timer; a stuck claim backs off instead of looping', async () => {
     let failClaims = false;
