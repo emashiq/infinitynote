@@ -1,5 +1,5 @@
-import type { Editor } from '@tiptap/core';
 import { useEffect, useState, type RefObject } from 'react';
+import type { EditorHandle } from '../editor/editor-handle';
 import type { NoteController } from './note-controller';
 
 /**
@@ -12,14 +12,14 @@ export function NoteTitleInput({
   readOnly,
   className,
   inputRef,
-  editorRef,
+  editor,
 }: {
   controller: NoteController;
   liveTitle: string;
   readOnly: boolean;
   className: string;
   inputRef: RefObject<HTMLInputElement | null>;
-  editorRef: RefObject<Editor | null>;
+  editor: EditorHandle;
 }) {
   // Text typed into the field; null means the field shows the current title.
   const [typed, setTyped] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export function NoteTitleInput({
         if (e.key === 'Enter') {
           e.preventDefault();
           void controller.flush();
-          editorRef.current?.commands.focus('start');
+          editor.focus('start', e.currentTarget);
         }
       }}
     />

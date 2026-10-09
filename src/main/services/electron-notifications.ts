@@ -11,8 +11,17 @@ export interface NotificationLike {
 
 export type NotificationClass = new (options: NotificationConstructorOptions) => NotificationLike;
 
-/** Shown notifications are referenced until closed, so their click events survive garbage collection. */
+/**
+ * Shown notifications are referenced until clicked, so their click events survive garbage collection. Windows raises
+ * `close` when a toast times out into Action Center, where it can still be clicked (A05-F2), so a close does not drop
+ * the reference; the oldest references beyond this bound are dropped instead.
+ */
 export const MAX_KEPT_NOTIFICATIONS = 50;
+
+/** The Electron adapter also tells which notifications it still references (for diagnostics and tests). */
+export interface ElectronNotificationAdapter extends NotificationAdapter {
+  retained(): string[];
+}
 
 /**
  * Plain title and body only (D-026, D-076): no actions, no reply field and no toast XML, so nothing in a notification
@@ -28,7 +37,7 @@ export function createElectronNotificationAdapter(deps: {
   platform: NodeJS.Platform;
   iconPath: string;
   timers?: Timers;
-}): NotificationAdapter {
+}): ElectronNotificationAdapter {
   const kept = new Map<string, NotificationLike>();
   const clicks = new Set<(ref: string) => void>();
   const closes = new Set<(ref: string) => void>();
@@ -48,12 +57,15 @@ export function createElectronNotificationAdapter(deps: {
         const n = new deps.NotificationClass(notificationOptions(payload, deps));
         // Listeners first: without a notification server Linux reports the failure synchronously inside show().
         n.on('show', () => settle({ outcome: 'dispatched' }));
-        n.on('failed', (_event, error) => settle({ outcome: 'failed', detail: String(error) }));
+        n.on('failed', (_event, error) => {
+          kept.delete(payload.ref);
+          settle({ outcome: 'failed', detail: String(error) });
+        });
         n.on('click', () => {
+          kept.delete(payload.ref);
           for (const cb of [...clicks]) cb(payload.ref);
         });
         n.on('close', () => {
-          kept.delete(payload.ref);
           for (const cb of [...closes]) cb(payload.ref);
         });
         keep(payload.ref, n);
@@ -62,5 +74,6 @@ export function createElectronNotificationAdapter(deps: {
     },
     onClick: listen(clicks),
     onClose: listen(closes),
+    retained: () => [...kept.keys()],
   };
 }

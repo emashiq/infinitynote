@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { CHANNEL_SCHEMAS } from '../../src/shared/contracts/channels';
 import { livePathIndex } from '../../src/main/services/dto';
-import { prng, setupServices, thrown } from './hierarchy-helpers';
+import { prng } from '../support/perf-fixture';
+import { setupServices, thrown } from './hierarchy-helpers';
 
 describe('Common and projects (INF-HIER-01, INF-HIER-02)', () => {
   it('Common cannot be addressed by project:rename or project:trash', async () => {

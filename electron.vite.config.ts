@@ -46,6 +46,8 @@ export default defineConfig({
     base: './',
     resolve: { alias: moduleAliases(__dirname) },
     build: {
+      // electron-vite leaves the renderer unminified by default; the production React build is minified here (F-01-5).
+      minify: 'esbuild',
       rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html') } },
     },
     plugins: [react(), cspMeta()],

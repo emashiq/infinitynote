@@ -255,6 +255,22 @@ test('accessibility structure on every view', async () => {
   expect(await audit()).toEqual([]);
 });
 
+test('Enter right after typing a new title moves the very next keys into the text (A08-F1, INF-A11Y-01)', async () => {
+  const { page } = await h.start();
+  for (const n of [1, 2, 3]) {
+    await page.keyboard.press('Control+N');
+    await expect(titleInput(page)).toBeFocused();
+    await page.keyboard.type(`Quick ${n}`);
+    await page.keyboard.press('Enter');
+    await page.keyboard.type(`Body ${n}`);
+    await expect(editor(page)).toBeFocused();
+    await expect(titleInput(page)).toHaveValue(`Quick ${n}`);
+  }
+  await expect
+    .poll(() => h.all('SELECT title, plain_text FROM notes ORDER BY title'))
+    .toEqual([1, 2, 3].map((n) => ({ title: `Quick ${n}`, plain_text: `Body ${n}` })));
+});
+
 test('keyboard-only primary flows: write, search, menus, theme, help and backup without the mouse (INF-A11Y-01, INF-A11Y-02)', async () => {
   const { app, page } = await h.start();
   const files = tempFolder();
@@ -262,12 +278,11 @@ test('keyboard-only primary flows: write, search, menus, theme, help and backup 
     // A note: Ctrl+N, the title, Enter into the text.
     await page.keyboard.press('Control+N');
     await expect(titleInput(page)).toBeFocused();
+    // No wait between the title, Enter and the text (A08-F1).
     await page.keyboard.type('Keyboard note');
-    await expect(editor(page)).toHaveAttribute('contenteditable', 'true');
-    await expect.poll(() => h.all('SELECT title FROM notes')).toEqual([{ title: 'Keyboard note' }]);
     await page.keyboard.press('Enter');
-    await expect(editor(page)).toBeFocused();
     await page.keyboard.type('Typed without a mouse');
+    await expect(editor(page)).toBeFocused();
     await expect.poll(() => h.all('SELECT title, plain_text FROM notes')).toEqual([{ title: 'Keyboard note', plain_text: 'Typed without a mouse' }]);
 
     // The palette opens Settings.

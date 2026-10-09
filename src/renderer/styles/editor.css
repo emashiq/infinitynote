@@ -113,6 +113,11 @@
   margin: 0;
 }
 
+/* A block with a very long unbroken run breaks anywhere, which keeps its layout fast (F-03-1, long-runs.ts). */
+.note-editor-content .long-run {
+  word-break: break-all;
+}
+
 .note-editor-content h1,
 .note-editor-content h2,
 .note-editor-content h3 {

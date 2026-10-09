@@ -212,7 +212,11 @@ function readMarker(file: string): PendingMarkerType | null | 'invalid' {
 export async function openWithPendingRestore(opts: PendingRestoreOptions): Promise<PendingRestoreResult> {
   const { paths, logger } = opts;
   const marker = readMarker(paths.restorePendingFile);
-  if (marker === null) return { opened: await opts.openDatabase(), restore: null };
+  if (marker === null) {
+    // A restore prepared but never confirmed leaves its staging copy behind (A08-F2); without a marker it is unused.
+    await fs.promises.rm(paths.restoreStagingDir, { recursive: true, force: true });
+    return { opened: await opts.openDatabase(), restore: null };
+  }
   const failed = (detail: string): RestoreOutcomeType => {
     logger.error(`restore: failed ${detail}`);
     return { status: 'failed', message: PORTABILITY_MESSAGES.restoreFailed };

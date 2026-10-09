@@ -1,6 +1,6 @@
-import type { Editor } from '@tiptap/core';
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { displayTitle } from '../../shared/names';
+import { EditorHandle } from '../editor/editor-handle';
 import { NoteEditor } from '../editor/NoteEditor';
 import { useNoteReminders } from '../reminders/note-reminders';
 import { ReminderChipBar } from '../reminders/ReminderChipBar';
@@ -30,7 +30,7 @@ export function InvalidWindow() {
 }
 
 /** The editor part of a sticky: the same banners, editor, find, links and conversions as a tab (INF-EDIT-01). */
-function StickyNote({ editorRef, findRequest, onFindHandled }: { editorRef: RefObject<Editor | null>; findRequest: object | null; onFindHandled: () => void }) {
+function StickyNote({ editorHandle, findRequest, onFindHandled }: { editorHandle: EditorHandle; findRequest: object | null; onFindHandled: () => void }) {
   const { controller, core, now } = useSticky();
   const state = useStore(controller.store);
   const [dialog, setDialog] = useState<NoteDialog | null>(null);
@@ -79,7 +79,7 @@ function StickyNote({ editorRef, findRequest, onFindHandled }: { editorRef: RefO
         services={core.editor}
         findRequest={findRequest}
         onFindRequestHandled={onFindHandled}
-        editorRef={editorRef}
+        handle={editorHandle}
         onConvert={(target) => (target === 'plain' ? setDialog({ kind: 'convert' }) : report(controller.convert('rich')))}
         onOpenVersions={() => setDialog({ kind: 'versions' })}
         suggestions={{
@@ -114,7 +114,7 @@ export function StickyView() {
   const note = useStore(controller.store);
   const { request: focusRequest } = useStore(services.focusEditor);
   const titleRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<Editor | null>(null);
+  const [editorHandle] = useState(() => new EditorHandle());
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [findRequest, setFindRequest] = useState<object | null>(null);
   const trashed = sticky?.trashed != null || note.status === 'trashed';
@@ -150,8 +150,8 @@ export function StickyView() {
 
   // Float of an open sticky: bring the caret into the editor.
   useEffect(() => {
-    if (focusRequest > 0) editorRef.current?.commands.focus('end');
-  }, [focusRequest, note.contentKey]);
+    if (focusRequest > 0) editorHandle.focus('end');
+  }, [focusRequest, note.contentKey, editorHandle]);
 
   if (phase === 'invalid') return <InvalidWindow />;
   if (phase === 'loading' || !sticky) return <main className="sticky-window" aria-busy="true" />;
@@ -170,7 +170,7 @@ export function StickyView() {
             readOnly={trashed || note.status !== 'ready'}
             className="sticky-title-input"
             inputRef={titleRef}
-            editorRef={editorRef}
+            editor={editorHandle}
           />
         }
         actions={{
@@ -188,7 +188,7 @@ export function StickyView() {
         {trashed ? (
           <StickyTrashState onRestore={() => void actions.restore()} onClose={() => void actions.hide()} />
         ) : (
-          <StickyNote editorRef={editorRef} findRequest={findRequest} onFindHandled={() => setFindRequest(null)} />
+          <StickyNote editorHandle={editorHandle} findRequest={findRequest} onFindHandled={() => setFindRequest(null)} />
         )}
       </div>
       <NoticeList notices={core.notices} />

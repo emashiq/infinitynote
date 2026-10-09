@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Offline notes, stickies and reminders for Windows and Linux.",
+  "desktopName": "infinity-notes.desktop",
   "license": "UNLICENSED",
   "author": {
     "name": "Infinity Notes",
@@ -29,7 +30,8 @@
     "setup:electron": "node node_modules/electron/install.js",
     "package:current": "node tools/package.mjs current",
     "package:win": "node tools/package.mjs win",
-    "package:linux": "node tools/package.mjs linux"
+    "package:linux": "node tools/package.mjs linux",
+    "verify:install:win": "node tools/verify-windows-install.mjs"
   },
   "dependencies": {
     "better-sqlite3": "13.0.3",
@@ -39,10 +41,10 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@electron/fuses": "1.8.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.64.0",
     "@tiptap/core": "3.31.4",
-    "@tiptap/extension-image": "3.31.4",
     "@tiptap/extension-list": "3.31.4",
     "@tiptap/extension-unique-id": "3.31.4",
     "@tiptap/extensions": "3.31.4",

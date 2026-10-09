@@ -1,8 +1,11 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { useApp } from './harness';
 import { COMMON, createNote, createProject, saveDoc } from './seed';
 import { activate, activeTabLabel, openFromTree, railGo, tabItem, toasts } from './ui';
-import { chooseMore, editor, focusEditorEnd } from './editor-ui';
+import { chooseMore, editor, focusEditorEnd, queueDialog, waitSaved } from './editor-ui';
 import { closeWindowByUrl, floatFromTab, mainPageOf, queueClose, stickyPage, windowsOf } from './sticky-ui';
 import {
   MINUTE,
@@ -103,6 +106,67 @@ test('add a reminder to a paragraph: chip, panel, sticky, block removed (INF-REM
   await activate(row.getByRole('button', { name: 'Keep note-level' }));
   await expect.poll(async () => (await reminderRows(app)).reminders[0]).toMatchObject({ block_id: null, anchor_state: 'ok' });
   await expect(page.getByRole('group', { name: 'Note reminders' }).getByRole('button', { name: 'Reminder: Pay rent, Fri 9 Oct 2026, 17:00 · Asia/Dhaka' })).toBeVisible();
+});
+
+test('chips stay on their anchored paragraphs after Enter at the end and after a file attached there (N-D2)', async () => {
+  const { app, page } = await h.start(reminderEnv());
+  const id = await createNote(page, COMMON, 'Chips');
+  await saveDoc(page, id, { type: 'doc', content: [para(P1, 'Open me two'), para(P2, 'Open me four')] });
+  const one = await createReminder(page, { noteId: id, blockId: P1, title: 'Two' });
+  const two = await createReminder(page, { noteId: id, blockId: P2, title: 'Four' });
+  await openFromTree(page, id);
+  await expect(editor(page)).toHaveAttribute('aria-readonly', 'false');
+  const chipsIn = (blockId: string) => page.locator(`[data-id="${blockId}"] .reminder-chip`);
+  // ProseMirror reads a caret moved by a key on the asynchronous selectionchange event; wait for it like a person would.
+  const caretAtEndOf = (blockId: string) =>
+    expect
+      .poll(() =>
+        page.evaluate((b) => {
+          const view = (document.querySelector('#tabpanel .ProseMirror') as unknown as { editor: { state: { doc: { descendants(f: (n: { attrs: { id?: string }; nodeSize: number }, pos: number) => void): void }; selection: { empty: boolean; from: number } } } }).editor;
+          let end = -1;
+          view.state.doc.descendants((n, pos) => {
+            if (n.attrs.id === b) end = pos + n.nodeSize - 1;
+          });
+          return view.state.selection.empty && view.state.selection.from === end;
+        }, blockId),
+      )
+      .toBe(true);
+  await expect(chipsIn(P1)).toHaveCount(1);
+  await expect(chipsIn(P2)).toHaveCount(1);
+
+  // (a) Caret at the end of the anchored paragraph, End, Enter, type.
+  await page.locator(`[data-id="${P1}"]`).getByText('Open me two').click();
+  await page.keyboard.press('End');
+  await caretAtEndOf(P1);
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Open me three');
+  await waitSaved(page);
+  expect(h.one<{ t: string }>('SELECT plain_text AS t FROM notes WHERE id = ?', id)!.t).toBe(['Open me two', 'Open me three', 'Open me four'].join('\n'));
+  const added = (await paragraphIds(page))[1]!;
+  await expect(page.locator(`[data-id="${added}"]`)).toHaveText('Open me three');
+  await expect(chipsIn(P1)).toHaveCount(1);
+  await expect(chipsIn(P1)).toHaveAttribute('data-reminder-id', one.id);
+  await expect(chipsIn(added)).toHaveCount(0);
+
+  // (b) Caret at the end of the other anchored paragraph, More > Attach file.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'infinity-chips-'));
+  try {
+    const pdf = path.join(dir, 'report.pdf');
+    fs.writeFileSync(pdf, '%PDF-1.4 test');
+    await page.locator(`[data-id="${P2}"]`).getByText('Open me four').click();
+    await page.keyboard.press('End');
+    await caretAtEndOf(P2);
+    await queueDialog(app, [pdf]);
+    await chooseMore(page, 'Attach file');
+    await expect(editor(page).locator('.file-chip')).toHaveCount(1);
+    await waitSaved(page);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  await expect(chipsIn(P2)).toHaveCount(1);
+  await expect(chipsIn(P2)).toHaveAttribute('data-reminder-id', two.id);
+  await expect(page.locator('#tabpanel .reminder-chip')).toHaveCount(2);
+  expect((await reminderRows(app)).reminders.map((r) => [r.block_id, r.anchor_state]).sort()).toEqual([[P1, 'ok'], [P2, 'ok']].sort());
 });
 
 test('default zone follows the computer and the setting (INF-REM-02)', async () => {

@@ -2,6 +2,10 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   APP_ID,
+  DEV_APP_ID,
+  DEV_TOAST_ACTIVATOR_CLSID,
+  TOAST_ACTIVATOR_CLSID,
+  windowsNotificationIdentity,
   ATTACHMENT_SCHEME,
   LINUX_EXECUTABLE,
   NPM_NAME,
@@ -9,11 +13,13 @@ import {
   RENDERER_HOST,
   RENDERER_SCHEME,
 } from '../../src/shared/app-identity';
+import { AUTOSTART_FILE } from '../../src/main/services/autostart';
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as {
   name: string;
   version: string;
   productName: string;
+  desktopName: string;
   engines: { node: string };
   dependencies: Record<string, string>;
   devDependencies: Record<string, string>;
@@ -28,7 +34,9 @@ const builder = JSON.parse(fs.readFileSync('electron-builder.json', 'utf8')) as 
   buildDependenciesFromSource: boolean;
   asarUnpack: string[];
   publish: unknown;
-  linux: { executableName: string; maintainer: string };
+  nsis: { include: string; deleteAppDataOnUninstall: boolean };
+  electronFuses: Record<string, boolean>;
+  linux: { executableName: string; syncDesktopName: boolean; maintainer: string };
 };
 
 describe('app identity (INF-FND-11)', () => {
@@ -63,9 +71,48 @@ describe('app identity (INF-FND-11)', () => {
     expect(builder.linux.maintainer).toContain('@');
   });
 
-  it('main sets the AppUserModelID on win32', () => {
+  it('Linux window association: desktopName gives the .desktop file, WM_CLASS and app_id one name (F-01-6, F04-A3)', () => {
+    expect(pkg.desktopName).toBe(`${LINUX_EXECUTABLE}.desktop`);
+    expect(builder.linux.syncDesktopName).toBe(true);
+    // The launch-at-login entry uses the same name as the installed one.
+    expect(AUTOSTART_FILE).toBe(pkg.desktopName);
+  });
+
+  it('Electron fuses harden the packaged binary; only the inspector stays on, for Playwright (F-01-6, INF-SEC-02)', () => {
+    expect(builder.electronFuses).toEqual({
+      runAsNode: false,
+      enableNodeOptionsEnvironmentVariable: false,
+      // Playwright drives the packaged app through --inspect=0 (test:e2e:packaged); see docs/RELEASE_CHECKLIST.md.
+      enableNodeCliInspectArguments: true,
+      enableEmbeddedAsarIntegrityValidation: true,
+      onlyLoadAppFromAsar: true,
+      grantFileProtocolExtraPrivileges: false,
+    });
+  });
+
+  it('the production notification identity is used only by packaged builds; unpackaged runs get their own (N-D1)', () => {
+    expect(windowsNotificationIdentity(true)).toEqual({ appUserModelId: APP_ID, toastActivatorClsid: TOAST_ACTIVATOR_CLSID });
+    expect(windowsNotificationIdentity(false)).toEqual({ appUserModelId: DEV_APP_ID, toastActivatorClsid: DEV_TOAST_ACTIVATOR_CLSID });
+    expect(DEV_APP_ID).toBe('com.infinitynotes.desktop.dev');
+    expect(DEV_APP_ID).not.toBe(builder.appId);
+    expect(DEV_TOAST_ACTIVATOR_CLSID).not.toBe(TOAST_ACTIVATOR_CLSID);
+    for (const clsid of [TOAST_ACTIVATOR_CLSID, DEV_TOAST_ACTIVATOR_CLSID]) expect(clsid).toMatch(/^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/);
+  });
+
+  it('main sets the AppUserModelID and the pinned toast activator CLSID on win32 from isPackaged', () => {
     const main = fs.readFileSync('src/main/index.ts', 'utf8');
-    expect(main).toMatch(/process\.platform === 'win32'\) app\.setAppUserModelId\(APP_ID\)/);
+    expect(main).toContain('const identity = windowsNotificationIdentity(app.isPackaged);');
+    expect(main).toContain('app.setAppUserModelId(identity.appUserModelId);');
+    expect(main).toContain('app.setToastActivatorCLSID(identity.toastActivatorClsid);');
+  });
+
+  it("the uninstaller removes exactly the packaged app's toast activator key, and keeps it on an update (N-D3)", () => {
+    expect(builder.nsis.include).toBe('resources/installer.nsh');
+    expect(builder.nsis.deleteAppDataOnUninstall).toBe(false);
+    const nsh = fs.readFileSync(builder.nsis.include, 'utf8');
+    const deletes = [...nsh.matchAll(/^\s*DeleteRegKey\s+(\S+)\s+"([^"]+)"/gm)].map((m) => [m[1], m[2]]);
+    expect(deletes).toEqual([['HKCU', `Software\\Classes\\CLSID\\${TOAST_ACTIVATOR_CLSID}`]]);
+    expect(nsh).toMatch(/\$\{ifNot\} \$\{isUpdated\}[\s\S]*DeleteRegKey[\s\S]*\$\{endIf\}/);
   });
 
   it('the placeholder icons are a 512x512 PNG and an ICO with a 256 entry', () => {

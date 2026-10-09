@@ -22,6 +22,7 @@
     "tests/integration/**/*",
     "tests/e2e/**/*",
     "tests/support/**/*",
+    "tests/install/**/*",
     "*.config.ts"
   ],
   "exclude": ["tests/unit/renderer/**"]

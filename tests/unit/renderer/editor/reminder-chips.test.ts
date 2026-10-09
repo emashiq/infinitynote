@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { isUserEdit } from '../../../../src/renderer/editor/content';
 import { blockIdAtSelection, chipsMeta, findBlock, reminderChipsKey, type ChipInfo } from '../../../../src/renderer/editor/reminder-chips';
-import { makeEditor } from './support';
+import { attachmentNode, insertBlocks } from '../../../../src/renderer/editor/uploader';
+import { makeEditor, type TestEditor } from './support';
 
 const P = '1b4e28ba-2fa1-41d2-883f-0016d3cca427';
 const L = '2b4e28ba-2fa1-41d2-883f-0016d3cca427';
@@ -65,6 +66,59 @@ describe('reminder chips (INF-REM-04, D-080)', () => {
     expect(moved.node.textContent).toBe('Pay rent now');
     const [d] = reminderChipsKey.getState(t.editor.state)!.decorations.find();
     expect(d!.from).toBe(moved.pos + moved.node.nodeSize - 1);
+  });
+
+  /** The reminder ids of the chips drawn inside each block with an id, in document order. */
+  function chipsByBlock(t: TestEditor): Array<[string, string[]]> {
+    return [...t.editor.view.dom.querySelectorAll('[data-id]')].map((el) => [
+      (el as HTMLElement).dataset.id!,
+      [...el.querySelectorAll(':scope > .reminder-chip, :scope > p > .reminder-chip')].map((c) => (c as HTMLElement).dataset.reminderId!),
+    ]);
+  }
+
+  it('Enter at the end of an anchored paragraph and typing keeps the chip on that paragraph (N-D2 a)', () => {
+    const t = makeEditor({ content: doc });
+    t.editor.view.dispatch(chipsMeta(t.editor.state, { chips: [chip('a', P), chip('b', L)] }));
+    const p = findBlock(t.editor.state.doc, P)!;
+    t.editor.commands.setTextSelection(p.pos + p.node.nodeSize - 1);
+    t.editor.commands.splitBlock();
+    t.editor.commands.insertContent('Open me three');
+    const second = t.editor.state.doc.child(1);
+    expect(second.textContent).toBe('Open me three');
+    const byBlock = new Map(chipsByBlock(t));
+    expect(byBlock.get(P)).toEqual(['a']);
+    expect(byBlock.get(second.attrs.id as string)).toEqual([]);
+    expect(byBlock.get(L)).toEqual(['b']);
+    // Undo and redo keep it there too.
+    t.editor.commands.undo();
+    expect(new Map(chipsByBlock(t)).get(P)).toEqual(['a']);
+    expect(t.editor.view.dom.querySelectorAll('.reminder-chip')).toHaveLength(2);
+  });
+
+  it('a file inserted right after an anchored paragraph leaves its chip in place (N-D2 b)', () => {
+    const t = makeEditor({ content: doc });
+    t.editor.view.dispatch(chipsMeta(t.editor.state, { chips: [chip('a', P)] }));
+    const p = findBlock(t.editor.state.doc, P)!;
+    const end = p.pos + p.node.nodeSize - 1;
+    t.editor.commands.setTextSelection(end);
+    const file = attachmentNode({ id: '6b4e28ba-2fa1-41d2-883f-0016d3cca427', kind: 'document', mime: 'application/pdf', sizeBytes: 10, originalName: 'a.pdf', width: null, height: null }, 'a.pdf');
+    insertBlocks(t.editor, { from: end, to: end }, [file]);
+    expect(t.editor.state.doc.toJSON().content.some((n: { type: string }) => n.type === 'fileAttachment')).toBe(true);
+    expect(new Map(chipsByBlock(t)).get(P)).toEqual(['a']);
+    expect(t.editor.view.dom.querySelectorAll('.reminder-chip')).toHaveLength(1);
+  });
+
+  it('edits elsewhere and deleting the anchored block: chips stay on their blocks or go with the block', () => {
+    const t = makeEditor({ content: doc });
+    t.editor.view.dispatch(chipsMeta(t.editor.state, { chips: [chip('a', P), chip('b', LP)] }));
+    const lp = findBlock(t.editor.state.doc, LP)!;
+    t.editor.commands.insertContentAt(lp.pos + 1, 'First ');
+    expect(new Map(chipsByBlock(t)).get(P)).toEqual(['a']);
+    const p = findBlock(t.editor.state.doc, P)!;
+    t.editor.commands.deleteRange({ from: p.pos, to: p.pos + p.node.nodeSize });
+    expect(findBlock(t.editor.state.doc, P)).toBeNull();
+    expect(t.editor.view.dom.querySelectorAll('.reminder-chip')).toHaveLength(1);
+    expect(t.editor.view.dom.querySelector(`[data-id="${LP}"] .reminder-chip`)).not.toBeNull();
   });
 
   it('a reminder whose source text changed says so in its chip (D-092)', () => {

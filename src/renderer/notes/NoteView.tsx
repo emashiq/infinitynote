@@ -1,7 +1,7 @@
-import type { Editor } from '@tiptap/core';
 import { PictureInPicture2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { REMINDER_MESSAGES } from '../../shared/contracts/reminders';
+import { EditorHandle } from '../editor/editor-handle';
 import { NoteEditor } from '../editor/NoteEditor';
 import { newReminderDialog, useNoteReminders } from '../reminders/note-reminders';
 import { ReminderChipBar } from '../reminders/ReminderChipBar';
@@ -24,7 +24,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
   const live = useLiveNote(controller);
   const liveTitle = live?.title ?? state.title;
   const titleRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<Editor | null>(null);
+  const [editorHandle] = useState(() => new EditorHandle());
   const [dialog, setDialog] = useState<NoteDialog | null>(null);
   const noteReminders = useNoteReminders(services.bridge, controller.noteId);
   const tab = session.tabs.find((t) => t.id === tabId);
@@ -121,7 +121,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
       <h2 className="sr-only">{liveTitle.trim() === '' ? 'Untitled note' : liveTitle}</h2>
       <div className="note-header">
         <div className="note-title-row">
-          <NoteTitleInput controller={controller} liveTitle={liveTitle} readOnly={readOnly} className="note-title" inputRef={titleRef} editorRef={editorRef} />
+          <NoteTitleInput controller={controller} liveTitle={liveTitle} readOnly={readOnly} className="note-title" inputRef={titleRef} editor={editorHandle} />
           <IconButton label="Float as sticky" icon={PictureInPicture2} onClick={() => void commands.float(controller.noteId)} />
         </div>
         <div className="note-meta">
@@ -174,7 +174,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         onFindRequestHandled={() => ui.consumeFocus()}
         referenceRequest={referenceRequest}
         onReferenceRequestHandled={() => ui.consumeFocus()}
-        editorRef={editorRef}
+        handle={editorHandle}
         onConvert={(target) => (target === 'plain' ? setDialog({ kind: 'convert' }) : report(controller.convert('rich')))}
         onOpenVersions={() => setDialog({ kind: 'versions' })}
         chips={noteReminders.chips}

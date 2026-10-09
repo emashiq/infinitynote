@@ -1,3 +1,4 @@
+import { FuseV1Options, getCurrentFuseWire } from '@electron/fuses';
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,6 +41,19 @@ test('packaged app starts, reports diagnostics and persists the theme @packaged'
   const restarted = await h.restart();
   await railGo(restarted.page, 'Settings');
   await expect(restarted.page.getByRole('radio', { name: 'Dark' })).toBeChecked();
+});
+
+test('packaged binary carries the release fuses (asar integrity on, ELECTRON_RUN_AS_NODE and NODE_OPTIONS ignored) @packaged', async () => {
+  const wire = await getCurrentFuseWire(packagedExe);
+  // The wire stores each fuse as an ASCII digit: '0' disabled, '1' enabled.
+  const state = (fuse: FuseV1Options) => (wire[fuse] === 0x31 ? 'enabled' : wire[fuse] === 0x30 ? 'disabled' : `other ${String(wire[fuse])}`);
+  expect(state(FuseV1Options.RunAsNode)).toBe('disabled');
+  expect(state(FuseV1Options.EnableNodeOptionsEnvironmentVariable)).toBe('disabled');
+  expect(state(FuseV1Options.OnlyLoadAppFromAsar)).toBe('enabled');
+  expect(state(FuseV1Options.EnableEmbeddedAsarIntegrityValidation)).toBe('enabled');
+  expect(state(FuseV1Options.GrantFileProtocolExtraPrivileges)).toBe('disabled');
+  // Kept on: Playwright attaches to the main process with --inspect=0 (this test runs through it).
+  expect(state(FuseV1Options.EnableNodeCliInspectArguments)).toBe('enabled');
 });
 
 test('packaged override honored and test hooks absent @packaged', async () => {

@@ -163,6 +163,18 @@ describe('restore (INF-PORT-02)', () => {
     expect(own.b.rows('SELECT title FROM notes')).toEqual([{ title: 'Mine' }]);
   });
 
+  it('a restore prepared but never confirmed: the next start removes the staging copy and opens the data unchanged (A08-F2)', async () => {
+    const { file } = await backedUpNotebook();
+    const own = await profileWithOwnData();
+    own.b.pathQueue.push(file);
+    await own.b.portability.prepareRestore(CTX);
+    expect(fs.existsSync(own.b.paths.restoreStagingDir)).toBe(true);
+    expect(fs.existsSync(own.b.paths.restorePendingFile)).toBe(false);
+    const { restore, services } = await restartWithRestore(own.b);
+    expect(restore).toBeNull();
+    expectOriginalIntact(services, own);
+  });
+
   it('a backup from an older schema is restored and migrated forward', async () => {
     const { a, file } = await backedUpNotebook();
     // The same notebook as schema 6 had it: without the Phase 07 tables.

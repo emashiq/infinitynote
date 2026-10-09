@@ -136,7 +136,9 @@ test('keyboard help: Ctrl+/ lists the shortcuts by area and gives focus back (IN
 });
 
 test('global quick-sticky shortcut: off by default, registered when switched on, a held shortcut is reported (INF-KEY-05)', async () => {
-  const { app, page } = await h.start();
+  // The subject is the registration through the fake registry; WSLg and Wayland report the capability unsupported
+  // (D-099), which the next test covers, so this one states the desktop it needs.
+  const { app, page } = await h.start({ INFINITY_NOTES_TEST_CAPS: JSON.stringify({ globalShortcut: 'supported' }) });
   await createNote(page, COMMON, 'Existing');
   await railGo(page, 'Settings');
   const keyboard = settingsSection(page, 'Keyboard');

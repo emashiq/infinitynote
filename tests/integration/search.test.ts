@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SearchQueryRequestType, SearchResultType } from '../../src/shared/contracts/search';
 import { SearchQueryRequest } from '../../src/shared/contracts/search';
 import { toFtsQuery } from '../../src/main/services/search-service';
-import { prng } from './hierarchy-helpers';
+import { FIXTURE_QUERIES, median, p95 as percentile95, seedLargeNotebook } from '../support/perf-fixture';
 import { doc, para, setupReminders } from './reminder-helpers';
 
 const text = (segments: SearchResultType['title']) => segments.map((s) => s.text).join('');
@@ -101,26 +101,11 @@ describe('full-text search (INF-SRCH-01..05, D-098)', () => {
 
   it('p95: 10,000-note fixture returns at most 50 results per query within a generous bound', async () => {
     const { s, search } = await setup();
-    const words = ['alpha', 'budget', 'meeting', 'report', 'design', 'travel', 'project', 'review', 'বাংলা', 'ভাষা', 'garden', 'invoice', 'schedule', 'team', 'launch'];
-    const rand = prng(7);
-    const pick = () => words[Math.floor(rand() * words.length)]!;
-    const insertProject = s.t.db.prepare<[string, string]>('INSERT INTO projects(id, name, created_at, updated_at) VALUES (?, ?, 1, 1)');
-    const insertNote = s.t.db.prepare<[string, string | null, string, string, string, number]>(
-      "INSERT INTO notes(id, project_id, title, format, content_text, plain_text, created_at, updated_at) VALUES (?, ?, ?, 'plain', ?, ?, 1, ?)",
-    );
-    const projects = Array.from({ length: 100 }, (_, i) => ({ id: randomUUID(), name: `Project ${i}` }));
-    s.t.db.transaction(() => {
-      for (const p of projects) insertProject.run(p.id, p.name);
-      for (let i = 0; i < 10_000; i += 1) {
-        const body = Array.from({ length: 40 }, pick).join(' ');
-        insertNote.run(randomUUID(), i % 3 === 0 ? null : projects[i % 100]!.id, `${pick()} ${pick()} ${i}`, body, body, i);
-      }
-    });
+    const { projects } = seedLargeNotebook(s.t.db, { projects: 100, notes: 10_000 });
 
-    const queries = ['budget', 'meet', 'design review', 'বাংলা', 'trav', 'launch team', 'inv', 'sched', 'garden alpha', 'report'];
     const times: number[] = [];
     for (let round = 0; round < 4; round += 1) {
-      for (const q of queries) {
+      for (const q of FIXTURE_QUERIES) {
         const scope = round % 2 === 0 ? undefined : { kind: 'project' as const, projectId: projects[round]!.id };
         const started = performance.now();
         const results = search(q, scope ? { scope } : {});
@@ -129,9 +114,8 @@ describe('full-text search (INF-SRCH-01..05, D-098)', () => {
         if (!scope) expect(results).toHaveLength(50);
       }
     }
-    times.sort((x, y) => x - y);
-    const p95 = times[Math.ceil(times.length * 0.95) - 1]!;
-    console.log(`search p95 over ${times.length} queries at 10,000 notes: ${p95.toFixed(1)} ms (median ${times[times.length >> 1]!.toFixed(1)} ms)`);
+    const p95 = percentile95(times);
+    console.log(`search p95 over ${times.length} queries at 10,000 notes: ${p95.toFixed(1)} ms (median ${median(times).toFixed(1)} ms)`);
     // The product target is 300 ms (measured on the release machine in Phase 09); this bound only catches regressions.
     expect(p95).toBeLessThan(1000);
   }, 60_000);

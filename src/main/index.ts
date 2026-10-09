@@ -3,7 +3,7 @@ import { Menu, Notification, app, globalShortcut, ipcMain, nativeTheme, protocol
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { APP_ID, APP_VERSION, ATTACHMENT_SCHEME, PRODUCT_NAME, RENDERER_SCHEME } from '../shared/app-identity';
+import { APP_VERSION, ATTACHMENT_SCHEME, PRODUCT_NAME, RENDERER_SCHEME, windowsNotificationIdentity } from '../shared/app-identity';
 import type { AppInfoType, CapabilitiesType, FlushReasonType, StartupStateType } from '../shared/contracts/app';
 import type { TreeChangedEventType } from '../shared/contracts/hierarchy';
 import type { NoteRevisionEventType } from '../shared/contracts/notes';
@@ -60,7 +60,11 @@ let desktop: Desktop | null = null;
 function bootstrap(): void {
   // Sandbox for every renderer and a stable Windows notification identity.
   app.enableSandbox();
-  if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+  if (process.platform === 'win32') {
+    const identity = windowsNotificationIdentity(app.isPackaged);
+    app.setAppUserModelId(identity.appUserModelId);
+    app.setToastActivatorCLSID(identity.toastActivatorClsid);
+  }
 
   // Test and portable isolation of user data (D-037); honored in packaged builds too.
   const override = resolveUserDataOverride(process.env.INFINITY_NOTES_USER_DATA_DIR);

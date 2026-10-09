@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { linuxSandboxMode } from '../support/linux-sandbox';
 
 export const repoRoot = path.resolve(__dirname, '..', '..');
 export const packagedExe = process.env.INFINITY_NOTES_PACKAGED_EXE ?? '';
@@ -116,7 +117,8 @@ export interface RendererSandbox {
  * `urlSuffix`) really runs in the Chromium sandbox. webPreferences.sandbox
  * and the --enable-sandbox renderer switch stay set under --no-sandbox, so neither can tell.
  * - Linux: --no-sandbox drops the namespace sandbox while seccomp-bpf stays (measured under WSLg), so the
- *   renderer must have its own user and PID namespaces and a seccomp filter ("Seccomp: 2").
+ *   renderer must have a seccomp filter ("Seccomp: 2") and its own PID namespace, plus either its own user namespace
+ *   or, where user namespaces are restricted, the setuid chrome-sandbox helper (see linuxSandboxMode).
  * - Windows: Electron's process metrics report whether the renderer process is sandboxed.
  */
 export async function rendererSandbox(app: ElectronApplication, urlSuffix = '#/'): Promise<RendererSandbox> {
@@ -125,17 +127,22 @@ export async function rendererSandbox(app: ElectronApplication, urlSuffix = '#/'
       .find((w) => w.webContents.getURL().endsWith(suffix))!
       .webContents.getOSProcessId();
     const metric = electronApp.getAppMetrics().find((m) => m.pid === pid);
-    return { pid, sandboxed: metric?.sandboxed ?? null, integrityLevel: metric?.integrityLevel ?? null };
+    return { pid, execPath: process.execPath, sandboxed: metric?.sandboxed ?? null, integrityLevel: metric?.integrityLevel ?? null };
   }, urlSuffix);
   if (process.platform === 'linux') {
     const mainPid = app.process().pid;
     const ns = (pid: number | undefined, kind: string) => fs.readlinkSync(`/proc/${pid}/ns/${kind}`);
-    const ownUserNs = ns(info.pid, 'user') !== ns(mainPid, 'user');
-    const ownPidNs = ns(info.pid, 'pid') !== ns(mainPid, 'pid');
-    const seccomp = /^Seccomp:\s*(\d+)/m.exec(fs.readFileSync(`/proc/${info.pid}/status`, 'utf8'))?.[1] ?? 'missing';
+    const helper = fs.statSync(path.join(path.dirname(info.execPath), 'chrome-sandbox'), { throwIfNoEntry: false });
+    const probe = {
+      ownUserNamespace: ns(info.pid, 'user') !== ns(mainPid, 'user'),
+      ownPidNamespace: ns(info.pid, 'pid') !== ns(mainPid, 'pid'),
+      seccomp: /^Seccomp:\s*(\d+)/m.exec(fs.readFileSync(`/proc/${info.pid}/status`, 'utf8'))?.[1] ?? 'missing',
+      suidHelper: helper !== undefined && helper.uid === 0 && (helper.mode & 0o4000) !== 0,
+    };
+    const mode = linuxSandboxMode(probe);
     return {
-      osSandboxed: ownUserNs && ownPidNs && seccomp === '2',
-      evidence: `pid=${info.pid} ownUserNamespace=${ownUserNs} ownPidNamespace=${ownPidNs} Seccomp=${seccomp}`,
+      osSandboxed: mode !== 'none',
+      evidence: `pid=${info.pid} mode=${mode} ownUserNamespace=${probe.ownUserNamespace} ownPidNamespace=${probe.ownPidNamespace} Seccomp=${probe.seccomp} suidHelper=${probe.suidHelper}`,
     };
   }
   return {

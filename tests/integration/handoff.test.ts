@@ -59,12 +59,15 @@ describe('attached document hand-off (INF-REF-08, D-098)', () => {
     fs.rmSync(fileOf(pdf.id));
     expect(await rejection(s.handoff.open(note.note.id, pdf.id))).toMatchObject({ code: 'NOT_FOUND', message: HANDOFF_MESSAGES.missing });
 
-    // A directory junction (Windows, no admin needed) or symlink (Linux) under attachments/ pointing outside.
+    // A directory junction (Windows, no admin needed) or symlink (Linux) under attachments/ pointing outside, in a
+    // shard (the first two hex characters of an attachment ID) that no stored attachment uses.
     const outside = path.join(s.t.dir, 'outside');
     fs.mkdirSync(outside);
     fs.writeFileSync(path.join(outside, 'leak.pdf'), 'secret');
-    fs.symlinkSync(outside, path.join(s.dataDir, 'attachments', 'cd'), process.platform === 'win32' ? 'junction' : 'dir');
-    s.t.db.prepare<[string]>("UPDATE attachments SET managed_relative_path = 'attachments/cd/leak.pdf' WHERE id = ?").run(pdf.id);
+    const used = new Set(fs.readdirSync(path.join(s.dataDir, 'attachments')));
+    const shard = Array.from({ length: 256 }, (_, n) => n.toString(16).padStart(2, '0')).find((h) => !used.has(h))!;
+    fs.symlinkSync(outside, path.join(s.dataDir, 'attachments', shard), process.platform === 'win32' ? 'junction' : 'dir');
+    s.t.db.prepare<[string, string]>('UPDATE attachments SET managed_relative_path = ? WHERE id = ?').run(`attachments/${shard}/leak.pdf`, pdf.id);
     expect(await rejection(s.handoff.open(note.note.id, pdf.id))).toMatchObject({ code: 'FORBIDDEN' });
     expect(await rejection(s.handoff.showInFolder(note.note.id, pdf.id))).toMatchObject({ code: 'FORBIDDEN' });
     expect(s.shellCalls.filter((c) => c.target.includes('leak'))).toEqual([]);

@@ -10,6 +10,7 @@ import { createDocLimits } from './doc-limits';
 import type { ReferenceHost } from './editor-services';
 import { FileAttachment, type FileActions } from './file-attachment';
 import { FindExtension } from './find';
+import { LongRuns } from './long-runs';
 import { ManagedImage } from './managed-image';
 import { NoteRef } from './note-ref';
 import { ReminderChips } from './reminder-chips';
@@ -24,8 +25,9 @@ const newBlockId = () => crypto.randomUUID();
 
 /**
  * The rich-note schema (D-053): StarterKit, checklists, app image and file nodes, block IDs, find, size limits, the
- * reminder chips (D-080) and the reminder suggestion underlines (D-091); both are decorations only. Note references
- * and file hand-off (D-098) act only where the window provides them.
+ * reminder chips (D-080), the reminder suggestion underlines (D-091) and the wrapping of very long unbroken runs
+ * (F-03-1); the last three are decorations only. Note references and file hand-off (D-098) act only where the window
+ * provides them.
  */
 export function richExtensions(deps: {
   uploader: AttachmentUploader;
@@ -60,6 +62,7 @@ export function richExtensions(deps: {
     createDocLimits(deps.notify),
     Placeholder.configure({ placeholder: PLACEHOLDER }),
     FindExtension,
+    LongRuns,
     ReminderChips,
     SuggestionDecorations,
   ];
@@ -91,6 +94,7 @@ export function plainExtensions(): Extensions {
     }),
     Placeholder.configure({ placeholder: PLACEHOLDER }),
     FindExtension,
+    LongRuns,
     SuggestionDecorations,
   ];
 }

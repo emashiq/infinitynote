@@ -14,7 +14,7 @@ Pinned dependency table (installed in Phase 01; exact versions, all re-confirmed
 | @vitejs/plugin-react | 5.2.0 | MIT | Peer range includes vite 7; 6.x needs vite 8 and is rejected |
 | react, react-dom | 19.3.0 | MIT | Latest; Tiptap React peer accepts 19 |
 | typescript | 6.0.3 | Apache-2.0 | typescript-eslint 8.71.1 peer is `<6.1.0`; TypeScript 7 is not yet supported by it |
-| @tiptap/core, react, pm, starter-kit, extension-list, extension-unique-id, extension-image, extensions | 3.31.4 | MIT | One exact version for all Tiptap packages; no Pro or cloud packages |
+| @tiptap/core, react, pm, starter-kit, extension-list, extension-unique-id, extensions | 3.31.4 | MIT | One exact version for all Tiptap packages; no Pro or cloud packages |
 | better-sqlite3 | 13.0.3 | MIT | N-API prebuilds for win32-x64 and linux-x64; SQLite 3.53.4 with FTS5 and JSON1; needs GLIBC_2.34 |
 | @types/better-sqlite3 | 9.6.0 | MIT | Typings only |
 | zod | 4.6.5 | MIT | IPC and settings validation |
@@ -31,6 +31,7 @@ Pinned dependency table (installed in Phase 01; exact versions, all re-confirmed
 | @types/react, @types/react-dom | 19.3.0 | MIT | Match React |
 | @types/node | 24.19.1 | MIT | Match the Node 24 line |
 | electron-builder | 26.15.3 | MIT | NSIS, AppImage, deb; `npmRebuild: false`; `asarUnpack` for `**/*.node` |
+| @electron/fuses | 1.8.0 | MIT | Phase 09: the packaged E2E reads the fuse wire of the built binary; the same version electron-builder uses to flip the fuses |
 | yazl, yauzl | 3.3.1, 3.4.0 | MIT | Phase 08 backup and export archives; installed in Phase 08 |
 
 Explicitly not used: `@electron/rebuild` and any source rebuild of native modules (node-gyp needs Python), an ORM, a UI component framework, Prettier, electron-log, any Tiptap Pro or cloud package, any network or AI SDK, any telemetry, `@electron/remote`.
@@ -760,6 +761,25 @@ Recorded by the Phase 06 implementer on 2026-10-09. Each item is a deviation fro
 - Decision (accessibility): new tokens `--border-strong` (#80869A / #70758A) for input, button and switch outlines and `--on-accent` (#FFFFFF / #17181D); light `--accent-soft` is #F5F4FE. `tests/unit/contrast.test.ts` checks every text pair at 4.5:1 and control boundaries at 3:1 in both themes. One global reduced-motion rule (`*, *::before, *::after`) also disables smooth scrolling, and scripted tab scrolling follows it.
 - IPC (appended, 90 invoke channels, main window only): `backup:create|prepareRestore|restore|status|setAuto|chooseAutoFolder|deleteRollback`, `export:markdown|portable`, `import:portable`, `shortcut:getGlobal|setGlobal`. No migration (008 stays unused).
 - Status: accepted by the implementer for Phase 08 acceptance. Evidence: `docs/progress/phase-08.md`.
+
+### D-100 Phase 09 release hardening and defect closure (implementer, fast mode)
+- Decision (fuses, F-01-6, INF-SEC-02): `electron-builder.json` `electronFuses`: `runAsNode` off, `enableNodeOptionsEnvironmentVariable` off, `onlyLoadAppFromAsar` on, `enableEmbeddedAsarIntegrityValidation` on (validated on Windows; Electron does not validate on Linux), `grantFileProtocolExtraPrivileges` off. `enableNodeCliInspectArguments` stays on because Playwright drives the packaged app through `--inspect=0`; turning it off would make `test:e2e:packaged` and the installed-build checks impossible. A distribution build may turn it off after those checks (docs/RELEASE_CHECKLIST.md). Cookie encryption stays off: the app stores no cookies, and on Linux it would ask the keyring.
+- Decision (Linux identity, F-01-6, F04-A3): `package.json` `desktopName` is `infinity-notes.desktop` and `linux.syncDesktopName` is true, so the installed `.desktop` file, `StartupWMClass`, the Wayland `app_id` and the launch-at-login entry share one name.
+- Decision (renderer bundle, F-01-5): the renderer is minified with esbuild (2.60 MB to 1.16 MB); no code splitting.
+- Decision (A08-F1): an `EditorHandle` per note view replaces the editor ref. Enter in the title focuses the editor synchronously (Tiptap's `focus` command waits for an animation frame, so keys typed right after Enter reached the title); a request made before the editor exists or is editable is applied once it is, unless the focus has meanwhile left the title.
+- Decision (A08-F2): without a restore marker, startup removes `data/restore-staging/` before the database opens.
+- Decision (F-03-1): blocks with a run of more than 4,096 characters without whitespace get `word-break: break-all` through a node decoration (`long-runs.ts`); only changed blocks are re-checked. The text is never changed. Measured: a 256K Bangla run becomes responsive about 0.2 s after the paste (was 3,370 ms) and reopens in under 50 ms (docs/FINAL_REPORT.md).
+- Decision (F-03-2): `doc-limits` measures each transaction's change once (a WeakMap shared by the filter and the state update) and walks only up to the changed range (`nodesBetween`); the limits are injectable for tests. Typing latency at 20,000 paragraphs did not change measurably (p95 27.0 ms before, 26.9 ms after): this cost was not the dominant one.
+- Decision (A05-F2): the Electron notification adapter keeps a notification referenced until it is clicked (bounded at 50, oldest dropped); a `close` (Windows raises it when a toast times out into Action Center) no longer drops it. Clicks after an app restart remain out of scope (no COM activator).
+- Decision (CL-F1): the E2E sandbox verdict accepts the SUID sandbox (own PID namespace, `Seccomp: 2`, root-owned setuid `chrome-sandbox` beside the executable) in addition to the user-namespace sandbox, and records the mode; `--no-sandbox` (shared namespaces) still fails.
+- Decision (F-03-3): `@tiptap/extension-image` removed (the app's own `ManagedImage` node is used).
+- Status: accepted by the implementer for Phase 09 acceptance. Evidence: `docs/progress/phase-09.md`, `docs/FINAL_REPORT.md`.
+
+### D-101 Phase 09 Repair 1: native Windows findings (implementer, fast mode)
+- Decision (N-D1, N-D3): `windowsNotificationIdentity(isPackaged)` in `src/shared/app-identity.ts`. Packaged builds use AppUserModelID `com.infinitynotes.desktop` and the pinned toast activator CLSID `{16B1084D-58B0-47CA-BB9E-C33FDAB9B30C}` (the one the installed build already used). Unpackaged runs use `com.infinitynotes.desktop.dev` and `{998F6E0F-58F6-4AC2-950E-A82981DA57C4}`. Main sets both with `app.setAppUserModelId` and `app.setToastActivatorCLSID` before any window. Without a pinned CLSID, Electron registered a new random activator on every run.
+- Decision (N-D3): `resources/installer.nsh` (electron-builder `nsis.include`) defines `customUnInstall`. It deletes only `HKCU\Software\Classes\CLSID\{16B1084D-58B0-47CA-BB9E-C33FDAB9B30C}`, and not during an update. Stale `Electron.lnk` and activator keys from earlier development runs are documented for manual removal (RELEASE_CHECKLIST section 6); no tool deletes them.
+- Decision (N-D2): reminder chip decorations follow block IDs through edits. On a document change, the chips and the reveal highlight of every block the change touches are rebuilt from the block IDs, and the rest are mapped. Before, mapping alone carried a chip into the paragraph created by Enter at its position, and a block inserted there could delete it.
+- Status: accepted by the implementer for Phase 09 Repair 1. Evidence: `docs/progress/phase-09.md` (Repair 1).
 
 ## Risks carried forward
 

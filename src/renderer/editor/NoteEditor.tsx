@@ -1,12 +1,13 @@
-import type { Editor, JSONContent } from '@tiptap/core';
+import type { JSONContent } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ATTACHMENT_MESSAGES } from '../../shared/attachments/limits';
 import type { AttachmentKindType } from '../../shared/contracts/attachments';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
 import { docToText, textToDoc } from '../../shared/text/textarea-doc';
 import type { RichDocLike } from '../../shared/editor/doc-schema';
 import { isUserEdit, toSavable, type ContentSource, type EditorHost } from './content';
+import type { EditorHandle } from './editor-handle';
 import { registerEditor } from './editor-registry';
 import { plainExtensions, richExtensions } from './extensions';
 import type { FileActions } from './file-attachment';
@@ -60,8 +61,8 @@ export interface NoteEditorProps {
   onReferenceRequestHandled?: () => void;
   onConvert: (target: 'rich' | 'plain') => void;
   onOpenVersions: () => void;
-  /** Receives the editor instance (for example to move focus into it from the title). */
-  editorRef?: MutableRefObject<Editor | null>;
+  /** Receives the editor instance, so the title or the sticky can move the focus into it. */
+  handle?: EditorHandle;
   /** Reminder chips of a rich note (D-080); a click calls onChipClick. */
   chips?: readonly ChipInfo[];
   onChipClick?: (reminderId: string) => void;
@@ -136,7 +137,7 @@ export function NoteEditor(props: NoteEditorProps) {
   );
 
   // Content source for the controller, the live-editor count and the uploader binding follow the instance.
-  const { editorRef } = props;
+  const { handle } = props;
   useEffect(() => {
     if (!editor) return undefined;
     uploader.bind(editor);
@@ -154,20 +155,21 @@ export function NoteEditor(props: NoteEditorProps) {
     };
     host.attachSource(source);
     const unregister = registerEditor(editor);
-    if (editorRef) editorRef.current = editor;
+    handle?.attach(editor);
     return () => {
-      if (editorRef?.current === editor) editorRef.current = null;
+      handle?.detach(editor);
       host.detachSource(source);
       unregister();
       uploader.dispose();
     };
-  }, [editor, host, uploader, format, editorRef]);
+  }, [editor, host, uploader, format, handle]);
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     editor.setEditable(editable);
     editor.view.dom.setAttribute('aria-readonly', String(!editable));
-  }, [editor, editable]);
+    handle?.editableChanged();
+  }, [editor, editable, handle]);
 
   // Reminder chips are decorations set by a meta-only transaction: no save, no undo step (D-080). Only a real change is
   // dispatched, so a reminder list that loads while the user types never interrupts the typing.

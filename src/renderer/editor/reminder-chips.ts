@@ -1,4 +1,4 @@
-import { Extension } from '@tiptap/core';
+import { Extension, getChangedRanges } from '@tiptap/core';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type Selection, type Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
@@ -30,6 +30,8 @@ export function chipLook(chip: Pick<ChipInfo, 'state' | 'ariaLabel' | 'sourceCha
 
 interface ChipsState {
   chips: readonly ChipInfo[];
+  /** The chips grouped by their anchored block. */
+  byBlock: ReadonlyMap<string, readonly ChipInfo[]>;
   /** The block briefly highlighted after a reminder opened it. */
   reveal: string | null;
   decorations: DecorationSet;
@@ -117,33 +119,74 @@ export function selectionAtBlockStart(doc: PmNode, target: { node: PmNode; pos: 
   return target.node.isAtom ? NodeSelection.create(doc, target.pos) : TextSelection.near(doc.resolve(target.pos + 1));
 }
 
-/** Chips for the blocks that have reminders (chips for unknown blocks are dropped) and the reveal highlight. */
-function buildDecorations(doc: PmNode, chips: readonly ChipInfo[], reveal: string | null): DecorationSet {
-  if (chips.length === 0 && reveal === null) return DecorationSet.empty;
+function groupByBlock(chips: readonly ChipInfo[]): Map<string, ChipInfo[]> {
   const byBlock = new Map<string, ChipInfo[]>();
   for (const chip of chips) byBlock.set(chip.blockId, [...(byBlock.get(chip.blockId) ?? []), chip]);
+  return byBlock;
+}
+
+function blockIdOf(node: PmNode): string | null {
+  return ID_TYPES.has(node.type.name) ? ((node.attrs.id as string | null) ?? null) : null;
+}
+
+/** The chips and the reveal highlight of one block; each decoration names its block in its spec. */
+function blockDecorations(node: PmNode, pos: number, blockId: string, state: Pick<ChipsState, 'byBlock' | 'reveal'>): Decoration[] {
+  const decorations: Decoration[] = [];
+  if (blockId === state.reveal) decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'reveal-block' }, { blockId }));
+  const list = state.byBlock.get(blockId);
+  const at = list ? chipPosition(node, pos) : -1;
+  if (list && at >= 0) {
+    list.forEach((chip, i) =>
+      decorations.push(
+        Decoration.widget(at, () => chipDom(chip), {
+          side: node.isAtom ? -1 : 1 + i,
+          key: `${chip.reminderId}:${chip.label}:${chip.state}:${chip.ariaLabel}:${chip.sourceChanged}`,
+          ignoreSelection: true,
+          stopEvent: () => true,
+          blockId,
+        }),
+      ),
+    );
+  }
+  return decorations;
+}
+
+/** Chips for the blocks that have reminders (chips for unknown blocks are dropped) and the reveal highlight. */
+function buildDecorations(doc: PmNode, state: Pick<ChipsState, 'byBlock' | 'reveal'>): DecorationSet {
+  if (state.byBlock.size === 0 && state.reveal === null) return DecorationSet.empty;
   const decorations: Decoration[] = [];
   doc.descendants((node, pos) => {
-    const id = ID_TYPES.has(node.type.name) ? (node.attrs.id as string | null) : null;
-    if (!id) return true;
-    if (id === reveal) decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'reveal-block' }));
-    const list = byBlock.get(id);
-    const at = list ? chipPosition(node, pos) : -1;
-    if (list && at >= 0) {
-      list.forEach((chip, i) =>
-        decorations.push(
-          Decoration.widget(at, () => chipDom(chip), {
-            side: node.isAtom ? -1 : 1 + i,
-            key: `${chip.reminderId}:${chip.label}:${chip.state}:${chip.ariaLabel}:${chip.sourceChanged}`,
-            ignoreSelection: true,
-            stopEvent: () => true,
-          }),
-        ),
-      );
-    }
+    const id = blockIdOf(node);
+    if (id) decorations.push(...blockDecorations(node, pos, id, state));
     return true;
   });
   return DecorationSet.create(doc, decorations);
+}
+
+/**
+ * Follows an edit (N-D2). Mapping alone moves a chip with the text at its position, so Enter at the end of an anchored
+ * paragraph carried the chip into the new one, and a block inserted there could delete it. The decorations of every
+ * block the change touches are therefore rebuilt from the block IDs; the rest are mapped.
+ */
+function followEdit(tr: Transaction, value: ChipsState): DecorationSet {
+  const mapped = value.decorations.map(tr.mapping, tr.doc);
+  if (value.byBlock.size === 0 && value.reveal === null) return mapped;
+  const touched = new Set<string>();
+  const fresh: Decoration[] = [];
+  const size = tr.doc.content.size;
+  for (const { newRange } of getChangedRanges(tr)) {
+    tr.doc.nodesBetween(Math.max(0, newRange.from - 1), Math.min(size, newRange.to + 1), (node, pos) => {
+      const id = blockIdOf(node);
+      if (id && !touched.has(id)) {
+        touched.add(id);
+        fresh.push(...blockDecorations(node, pos, id, value));
+      }
+      return true;
+    });
+  }
+  if (touched.size === 0) return mapped;
+  const stale = mapped.find(undefined, undefined, (spec: { blockId?: string }) => spec.blockId !== undefined && touched.has(spec.blockId));
+  return mapped.remove(stale).add(tr.doc, fresh);
 }
 
 /** A transaction that only replaces chips or the highlight: no document change and not in undo history (D-080). */
@@ -165,15 +208,15 @@ function createReminderChips() {
         new Plugin<ChipsState>({
           key: reminderChipsKey,
           state: {
-            init: () => ({ chips: [], reveal: null, decorations: DecorationSet.empty }),
+            init: () => ({ chips: [], byBlock: new Map(), reveal: null, decorations: DecorationSet.empty }),
             apply(tr, value, _old, newState) {
               const meta = tr.getMeta(reminderChipsKey) as ChipsMeta | undefined;
               if (meta) {
                 const chips = meta.chips ?? value.chips;
-                const reveal = meta.reveal === undefined ? value.reveal : meta.reveal;
-                return { chips, reveal, decorations: buildDecorations(newState.doc, chips, reveal) };
+                const next = { chips, byBlock: meta.chips ? groupByBlock(chips) : value.byBlock, reveal: meta.reveal === undefined ? value.reveal : meta.reveal };
+                return { ...next, decorations: buildDecorations(newState.doc, next) };
               }
-              return tr.docChanged ? { ...value, decorations: value.decorations.map(tr.mapping, tr.doc) } : value;
+              return tr.docChanged ? { ...value, decorations: followEdit(tr, value) } : value;
             },
           },
           props: {

@@ -103,6 +103,34 @@ describe('Electron notification adapter (D-076, INF-REM-16)', () => {
     expect(closed).toEqual(['delivery-1']);
     expect(MAX_KEPT_NOTIFICATIONS).toBe(50);
   });
+
+  it('a toast that timed out into Action Center (close) stays referenced and its later click still opens the note (A05-F2)', async () => {
+    const { adapter, created } = setup('show');
+    const clicked: string[] = [];
+    adapter.onClick((ref) => clicked.push(ref));
+    await adapter.show(payload);
+    created[0]!.emit('close');
+    expect(adapter.retained()).toEqual(['delivery-1']);
+    created[0]!.emit('click');
+    expect(clicked).toEqual(['delivery-1']);
+    // Clicked: no longer needed.
+    expect(adapter.retained()).toEqual([]);
+  });
+
+  it('references stay bounded: closed but unclicked notifications are dropped oldest first; failed ones are not kept', async () => {
+    const { adapter, behavior, created } = setup('show');
+    for (let i = 0; i < MAX_KEPT_NOTIFICATIONS + 5; i += 1) {
+      await adapter.show({ ...payload, ref: `delivery-${i}` });
+      created[i]!.emit('close');
+    }
+    const retained = adapter.retained();
+    expect(retained).toHaveLength(MAX_KEPT_NOTIFICATIONS);
+    expect(retained[0]).toBe('delivery-5');
+    expect(retained.at(-1)).toBe(`delivery-${MAX_KEPT_NOTIFICATIONS + 4}`);
+    behavior.current = 'failed-sync';
+    await adapter.show({ ...payload, ref: 'never-shown' });
+    expect(adapter.retained()).not.toContain('never-shown');
+  });
 });
 
 describe('capability gate and fake adapter', () => {
