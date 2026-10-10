@@ -2,3 +2,5 @@
 *.png binary
 *.ico binary
 *.webp binary
+# Sample documents are compared byte for byte (D-118).
+tests/fixtures/documents/** binary

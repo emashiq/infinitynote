@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { REMINDER_MESSAGES } from '../../shared/contracts/reminders';
+import { createNoteCommentHost } from '../comments/note-comment-host';
 import { NoteEditor } from '../editor/NoteEditor';
 import { newReminderDialog, useNoteReminders } from '../reminders/note-reminders';
 import { ReminderChipBar } from '../reminders/ReminderChipBar';
@@ -9,6 +10,7 @@ import { LockScreen } from './LockScreen';
 import { NoteBanners } from './NoteBanners';
 import type { ActionResult, NoteController } from './note-controller';
 import { NoteDialogs, type NoteDialog } from './NoteDialogs';
+import { NoteStats } from './NoteStats';
 
 const SAVE_LABEL = { saved: 'Saved', pending: 'Editing…', saving: 'Saving…', retrying: 'Not saved - retrying', error: 'Not saved' } as const;
 
@@ -39,6 +41,11 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
   const savedScroll = tab?.kind === 'note' ? (tab.scrollTop ?? 0) : 0;
   const reopen = useCallback(() => void controller.reopen(), [controller]);
   const locked = live?.locked ?? false;
+
+  // The note's comments are in the Details panel while it is open here (D-165).
+  const open = state.status === 'ready';
+  const { comments, noteEditor } = services;
+  useEffect(() => (open ? comments.register(createNoteCommentHost(controller.noteId, noteEditor)) : undefined), [open, controller.noteId, comments, noteEditor]);
 
   // The tab is the note's title (D-102): a title request renames the tab once the note is open. Ctrl+F requests are
   // handed to the editor below.
@@ -185,8 +192,8 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
           controller.revealDone();
         }}
         onAddReminder={() => ui.openDialog(newReminderDialog(controller, liveTitle))}
-        // A locked note never floats and keeps no reminder source text (D-111, D-112).
-        onFloat={locked ? undefined : () => void commands.float(controller.noteId)}
+        // A locked note floats blurred (D-172) and keeps no reminder source text (D-112).
+        onFloat={() => void commands.float(controller.noteId)}
         lock={{ locked, open: () => commands.openLock(controller.noteId), lockNow: () => void commands.lockNow(controller.noteId) }}
         suggestions={
           locked
@@ -199,6 +206,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
               }
         }
       />
+      <NoteStats handle={services.noteEditor} />
       <NoteDialogs
         controller={controller}
         dialog={dialog}

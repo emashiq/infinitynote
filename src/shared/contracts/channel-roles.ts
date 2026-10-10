@@ -10,7 +10,9 @@ import type { WindowRoleType } from './windows';
  * `reminder:updateFromSource`, `reminder:delete`) stays in the main window. The router allows a `noteId` only for the
  * sticky's own note. From Phase 07 (D-098) it may open or show its note's attached files, and from
  * v0.2.0 (D-108) add files by copying or linking them and use its note's linked files. Everything else (tabs, the
- * tree, trash, creation, moves, settings writes, references, search and tags) is main-window only.
+ * tree, trash, creation, moves, settings writes, references, search and tags) is main-window only. From v0.3.0
+ * (D-172) a sticky of a locked note asks for its lock state, reveals and blurs itself, reports activity and sets its
+ * PIN; the `lock:*` channels stay main-window only.
  */
 export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<InvokeChannel>([
   'app:getInfo',
@@ -59,6 +61,44 @@ export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<Invok
   'fileLink:open',
   'fileLink:showInFolder',
   'fileLink:copyIn',
+  'sticky:lockStatus',
+  'sticky:reveal',
+  'sticky:activity',
+  'sticky:blur',
+  'sticky:setPin',
+]);
+
+/**
+ * The sticky channels that read or change its note's content or what belongs to it (D-172). While the sticky of a
+ * locked note is blurred, main refuses them for that window, whether or not the note's key is in memory.
+ */
+export const STICKY_CONTENT_CHANNELS: ReadonlySet<InvokeChannel> = new Set<InvokeChannel>([
+  'note:open',
+  'note:save',
+  'note:convertFormat',
+  'collab:join',
+  'collab:push',
+  'collab:pull',
+  'collab:flush',
+  'versions:list',
+  'versions:restore',
+  'drafts:list',
+  'drafts:resolve',
+  'attachment:importBytes',
+  'attachment:pickFiles',
+  'attachment:addPicked',
+  'attachment:open',
+  'attachment:showInFolder',
+  'fileLink:create',
+  'fileLink:status',
+  'fileLink:open',
+  'fileLink:showInFolder',
+  'fileLink:copyIn',
+  'reminder:listForNote',
+  'reminder:create',
+  'reminder:createFromSuggestion',
+  'suggestion:dismiss',
+  'suggestion:listDismissed',
 ]);
 
 /**

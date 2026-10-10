@@ -4,12 +4,23 @@ import type { NoteRevisionEventType } from '../shared/contracts/notes';
 import type { ReminderChangedEventType } from '../shared/contracts/reminders';
 import type { RestoreOutcomeType } from '../shared/contracts/portability';
 import type { SettingsChangedPayload } from '../shared/contracts/settings';
+import { CommentService } from './comments/comment-service';
 import type { Db } from './db/driver';
 import { SettingsRepo } from './db/repositories/settings-repo';
+import { DocumentFiles } from './documents/document-files';
+import { DocumentService } from './documents/document-service';
+import { DocumentStore } from './documents/document-store';
+import { SpreadsheetService } from './documents/spreadsheet/spreadsheet-service';
+import type { WorkbookConverter } from './documents/spreadsheet/workbook-runner';
+import { DocumentText, documentTextExtractors } from './documents/text/document-text';
+import { GraphService } from './graph/graph-service';
+import { createPdfTextExtractor, type PdfTextWorkerOptions } from './documents/text/pdf-text-runner';
 import { LockService } from './locks/lock-service';
 import type { KdfParams } from './locks/note-crypto';
 import { NoteVault } from './locks/note-vault';
 import { OS_KEY_MESSAGES, unsupportedVerifier, type KeyProtector, type OsKeyVerifier } from './locks/os-key';
+import type { PinKdf } from './locks/pin-verifier';
+import { StickyLockService } from './locks/sticky-locks';
 import { PortabilityService } from './portability/portability-service';
 import type { RestorePaths } from './portability/restore';
 import { AttachmentHandoff } from './services/attachment-handoff';
@@ -47,6 +58,7 @@ import type { SystemZoneProvider } from './services/system-zone';
 import { WidgetStateStore } from './services/widget-state';
 import { TrashService } from './services/trash-service';
 import { VersionService } from './services/version-service';
+import type { HtmlPrinter } from './portability/note-document';
 
 /** Every main-process service that needs the database. Absent when the database failed to open. */
 export interface MainServices {
@@ -82,6 +94,18 @@ export interface MainServices {
   content: NoteContent;
   /** Locked notes (D-111..D-113). */
   locks: LockService;
+  /** Locked stickies: blur, reveal and PIN (D-172, D-173). */
+  stickyLocks: StickyLockService;
+  /** Documents (D-118): the service, the store of managed copies and the file lookup the protocols share. */
+  documents: DocumentService;
+  documentStore: DocumentStore;
+  documentFiles: DocumentFiles;
+  /** Spreadsheet documents in the grid editor (D-134). */
+  spreadsheets: SpreadsheetService;
+  /** Comment threads on notes and documents (D-165). */
+  comments: CommentService;
+  /** The relation graph of notes and documents (D-170). */
+  graph: GraphService;
 }
 
 export interface MainServicesDeps {
@@ -100,6 +124,8 @@ export interface MainServicesDeps {
   restart: () => void;
   /** What a restore at this start did, if one was pending. */
   restoreOutcome: RestoreOutcomeType | null;
+  /** Makes PDFs of and prints exported note pages, never in a visible window (D-163). */
+  printer: HtmlPrinter;
   /** Opens attached files and shows them in the file manager (a recording fake under test hooks). */
   shell: ShellAdapter;
   onSettingsChanged: (payload: SettingsChangedPayload) => void;
@@ -107,6 +133,8 @@ export interface MainServicesDeps {
   onNoteRevision: (event: NoteRevisionEventType) => void;
   /** Sends a live-sync event to one window (the windows of a note's views). */
   sendCollab: <C extends 'collab:steps' | 'collab:reset' | 'collab:status'>(webContentsId: number, channel: C, payload: EventPayload<C>) => void;
+  /** Sends the lock state of a locked sticky to its window (D-172). */
+  sendStickyLock: (webContentsId: number, state: EventPayload<'sticky:lockState'>) => void;
   /** The reminder subsystem's clock (a frozen test clock under the E2E hooks, D-084); defaults to `clock`. */
   reminderClock?: Clock;
   /** The computer's time zone as reminders see it. */
@@ -123,7 +151,12 @@ export interface MainServicesDeps {
     windowHandle?: () => Buffer | null;
     /** Cheaper scrypt parameters (tests only). */
     kdf?: KdfParams;
+    pinKdf?: PinKdf;
   };
+  /** Where the PDF text worker and the pdf.js character maps are (D-129). */
+  pdfText: PdfTextWorkerOptions;
+  /** Reads and writes workbooks: the workbook worker in the app (D-134). */
+  workbooks: WorkbookConverter;
   /** Test-only hooks (E2E): save fault injection and an import delay. */
   testFaults?: { save?: SaveFaults; beforeImport?: () => Promise<void> };
 }
@@ -131,6 +164,8 @@ export interface MainServicesDeps {
 export function createMainServices(deps: MainServicesDeps): MainServices {
   const { db, clock, ids, logger } = deps;
   const settings = new SettingsService({ repo: new SettingsRepo(db), clock, logger, emit: deps.onSettingsChanged });
+  // Notes and documents keep their versions by the same retention settings (D-118).
+  const autoVersionPolicy = () => ({ maxAgeDays: settings.getInternal('retention.autoVersionDays'), maxCount: settings.getInternal('retention.autoVersionMax') });
   const reminderClock = deps.reminderClock ?? clock;
   const anchors = new ReminderAnchors(db, { clock: reminderClock, logger });
   const vault = new NoteVault(db, clock);
@@ -148,7 +183,7 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     db,
     ids,
     ops,
-    autoPolicy: () => ({ maxAgeDays: settings.getInternal('retention.autoVersionDays'), maxCount: settings.getInternal('retention.autoVersionMax') }),
+    autoPolicy: autoVersionPolicy,
   });
   collab = new CollabHub({ db, clock, ids, logger, content, versions, vault, emitRevision: onNoteRevision, send: deps.sendCollab, faults: deps.testFaults?.save });
   const reminders = new ReminderService({
@@ -173,6 +208,27 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     beforeImport: deps.testFaults?.beforeImport,
   });
   const links = new LinkedFileService({ db, clock, ids, logger, shell: deps.shell, attachments });
+  const picker = new FilePicker({ dialog: deps.dialog, ids, attachments, links });
+  const documentStore = new DocumentStore({ db, clock, ids, logger, dataDir: deps.dataDir });
+  const documentFiles = new DocumentFiles(db, deps.dataDir);
+  const documentText = new DocumentText(documentTextExtractors(createPdfTextExtractor(deps.pdfText)), logger);
+  const documents = new DocumentService({
+    db,
+    clock,
+    ids,
+    logger,
+    dataDir: deps.dataDir,
+    settings,
+    store: documentStore,
+    files: documentFiles,
+    text: documentText,
+    links,
+    picker,
+    dialog: deps.dialog,
+    shell: deps.shell,
+    versionPolicy: autoVersionPolicy,
+    onChange: deps.onTreeChanged,
+  });
   const portability = new PortabilityService({
     db,
     paths: deps.restorePaths,
@@ -184,13 +240,17 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     settings,
     dialog: deps.dialog,
     attachments,
+    documents: documentStore,
+    documentText,
     content,
     vault,
     reminders,
     onTreeChanged: deps.onTreeChanged,
     restart: deps.restart,
     restoreOutcome: deps.restoreOutcome,
+    printer: deps.printer,
   });
+  const hierarchy = new HierarchyService({ db, clock, ids, logger, onChange: deps.onTreeChanged });
   const locks = new LockService({
     db,
     clock,
@@ -198,6 +258,7 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     vault,
     collab,
     settings,
+    hierarchy,
     verifier: deps.locks?.verifier ?? unsupportedVerifier(OS_KEY_MESSAGES.otherOs),
     protector: deps.locks?.protector ?? null,
     windowHandle: deps.locks?.windowHandle ?? (() => null),
@@ -205,12 +266,16 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     onReminderChanged: deps.onReminderChanged,
     power: deps.locks?.power,
     kdf: deps.locks?.kdf,
+    pinKdf: deps.locks?.pinKdf,
   });
+  // The blur timer runs on the reminder clock, so the E2E fake clock moves it (D-172).
+  const stickyLocks = new StickyLockService({ db, clock: reminderClock, logger, vault, locks, collab, settings, send: deps.sendStickyLock });
   return {
     content,
     locks,
+    stickyLocks,
     settings,
-    hierarchy: new HierarchyService({ db, clock, ids, logger, onChange: deps.onTreeChanged }),
+    hierarchy,
     trash,
     stickies: new StickyService({ db, clock, logger, onChange: deps.onTreeChanged }),
     home: new HomeService(db),
@@ -224,7 +289,13 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     tags: new TagService(db, logger),
     handoff: new AttachmentHandoff(db, { dataDir: deps.dataDir, shell: deps.shell, logger }),
     links,
-    picker: new FilePicker({ dialog: deps.dialog, ids, attachments, links }),
+    picker,
+    documents,
+    spreadsheets: new SpreadsheetService({ documents, convert: deps.workbooks, logger }),
+    comments: new CommentService({ db, clock, ids, logger, vault }),
+    graph: new GraphService(db),
+    documentStore,
+    documentFiles,
     reader: new NoteReader(db, vault),
     writer: new NoteWriter({ db, clock, ids, logger, content, versions, vault, emit: onNoteRevision, faults: deps.testFaults?.save }),
     collab,
@@ -233,6 +304,6 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     formats: new FormatService({ ids, ops, versions }),
     attachments,
     portability,
-    maintenance: new MaintenanceService({ db, clock, logger, dataDir: deps.dataDir, settings, trash, versions, isBusy: () => portability.isBusy() }),
+    maintenance: new MaintenanceService({ db, clock, logger, dataDir: deps.dataDir, settings, trash, versions, documents, documentStore, isBusy: () => portability.isBusy() }),
   };
 }

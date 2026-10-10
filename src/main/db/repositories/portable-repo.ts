@@ -1,4 +1,5 @@
 import type { Db } from '../driver';
+import type { DocumentKind } from '../../../shared/documents/kinds';
 import type { ReminderRow } from './reminders-repo';
 
 export interface PortableNoteRow {
@@ -23,6 +24,20 @@ export interface PortableAttachmentRow {
   size_bytes: number;
   kind: 'image' | 'document';
   original_name: string | null;
+}
+
+export interface PortableDocumentRow {
+  id: string;
+  project_id: string | null;
+  folder_id: string | null;
+  title: string;
+  kind: DocumentKind;
+  favorite: number;
+  linked_file_id: string | null;
+  /** Managed documents: the stored blob. */
+  relative_path: string | null;
+  sha256: string | null;
+  blob_size: number | null;
 }
 
 /** Reads for the portable export: live items only, and no locked note or anything only a locked note uses (D-111). */
@@ -67,6 +82,17 @@ export class PortableRepo {
   /** Live locked notes, which the export leaves out. */
   countLockedNotes(): number {
     return this.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM notes WHERE deleted_at IS NULL AND locked = 1').get()!.n;
+  }
+
+  /** Live documents with the blob of each managed one (D-118). */
+  liveDocuments(): PortableDocumentRow[] {
+    return this.db
+      .prepare<[], PortableDocumentRow>(
+        `SELECT d.id, d.project_id, d.folder_id, d.title, d.kind, d.favorite, d.linked_file_id, b.relative_path, b.sha256, b.size_bytes AS blob_size
+           FROM documents d LEFT JOIN document_blobs b ON b.id = d.blob_id
+          WHERE d.deleted_at IS NULL ORDER BY d.doc_key`,
+      )
+      .all();
   }
 
   /** Attachments linked from exported notes. */

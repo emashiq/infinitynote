@@ -8,6 +8,10 @@ import referencesTagsSql from './007_references_tags.sql?raw';
 import stickyTextColorSql from './008_sticky_text_color.sql?raw';
 import linkedFilesSql from './009_linked_files.sql?raw';
 import noteLocksSql from './010_note_locks.sql?raw';
+import documentsSql from './011_documents.sql?raw';
+import documentReferencesSql from './012_document_references.sql?raw';
+import commentsSql from './013_comments.sql?raw';
+import stickyPinsSql from './014_sticky_pins.sql?raw';
 
 export interface Migration {
   version: number;
@@ -26,6 +30,10 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 8, name: 'sticky_text_color', sql: stickyTextColorSql },
   { version: 9, name: 'linked_files', sql: linkedFilesSql },
   { version: 10, name: 'note_locks', sql: noteLocksSql },
+  { version: 11, name: 'documents', sql: documentsSql },
+  { version: 12, name: 'document_references', sql: documentReferencesSql },
+  { version: 13, name: 'comments', sql: commentsSql },
+  { version: 14, name: 'sticky_pins', sql: stickyPinsSql },
 ];
 
 export const LATEST = MIGRATIONS[MIGRATIONS.length - 1]!.version;

@@ -21,7 +21,7 @@ const note: NoteDtoType = {
   createdAt: 1,
   updatedAt: 1,
 };
-const model = buildTreeModel({ projects: [project], folders: [l2, l3], notes: [note] }, []);
+const model = buildTreeModel({ projects: [project], folders: [l2, l3], notes: [note], documents: [] }, []);
 
 const base = (over: Partial<LocationInput> = {}): LocationInput => ({
   treeHasFocus: false,

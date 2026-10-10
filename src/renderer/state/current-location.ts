@@ -8,7 +8,7 @@ export interface LocationInput {
   selectedKey: NodeKey | null;
   model: TreeModel;
   activeTab: TabType;
-  /** Location of the note shown in the active note tab, if any. */
+  /** Location of the note or document shown in the active tab, if any. */
   activeNote: LocationType | null;
   homeScope: HomeScopeType;
 }
@@ -19,7 +19,7 @@ export function resolveNewItemLocation(input: LocationInput): LocationType {
     const loc = locationOfNode(input.model, input.selectedKey);
     if (loc) return loc;
   }
-  if (input.activeTab.kind === 'note' && input.activeNote) return input.activeNote;
+  if ((input.activeTab.kind === 'note' || input.activeTab.kind === 'document') && input.activeNote) return input.activeNote;
   if (input.activeTab.kind === 'home' && input.homeScope.kind === 'project') {
     return { projectId: input.homeScope.projectId, folderId: null };
   }

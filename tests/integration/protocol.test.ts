@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { memoryLogger } from '../../src/main/services/logger';
 import { createAttachmentHandler } from '../../src/main/windows/attachment-protocol';
 import { createRendererHandler } from '../../src/main/windows/renderer-protocol';
+import { PDF_WORKER_CSP } from '../../src/shared/csp';
 import { PROD_CSP } from '../../src/shared/csp';
 import { makePng } from '../support/png';
 import { mkTmp, openFresh } from './helpers';
@@ -163,6 +164,26 @@ describe('renderer protocol (D-035)', () => {
     const js = await get(h, 'infinity-app://renderer/assets/x.js');
     expect(js.status).toBe(200);
     expect(js.headers.get('content-type')).toBe('text/javascript');
+  });
+
+  it('serves the pdf.js files with their types, and the worker policy only under pdfjs/ (D-128)', async () => {
+    const root = rendererRoot();
+    fs.mkdirSync(path.join(root, 'pdfjs', 'wasm'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'pdfjs', 'cmaps'));
+    fs.writeFileSync(path.join(root, 'pdfjs', 'pdf.worker.min.mjs'), 'export {};');
+    fs.writeFileSync(path.join(root, 'pdfjs', 'wasm', 'openjpeg.wasm'), 'wasm bytes');
+    fs.writeFileSync(path.join(root, 'pdfjs', 'cmaps', 'UniJIS-UCS2-H.bcmap'), 'x');
+    fs.writeFileSync(path.join(root, 'pdfjs', 'wasm', 'LICENSE_OPENJPEG'), 'license');
+    const h = createRendererHandler({ root });
+    const worker = await get(h, 'infinity-app://renderer/pdfjs/pdf.worker.min.mjs');
+    expect(worker.status).toBe(200);
+    expect(worker.headers.get('content-type')).toBe('text/javascript');
+    expect(worker.headers.get('content-security-policy')).toBe(PDF_WORKER_CSP);
+    const wasm = await get(h, 'infinity-app://renderer/pdfjs/wasm/openjpeg.wasm');
+    expect(wasm.headers.get('content-type')).toBe('application/wasm');
+    expect((await get(h, 'infinity-app://renderer/pdfjs/cmaps/UniJIS-UCS2-H.bcmap')).status).toBe(200);
+    expect((await get(h, 'infinity-app://renderer/pdfjs/wasm/LICENSE_OPENJPEG')).status).toBe(404);
+    expect((await get(h, 'infinity-app://renderer/assets/x.js')).headers.get('content-security-policy')).toBeNull();
   });
 
   it('rejects traversal, unknown extensions, missing files and a wrong host', async () => {

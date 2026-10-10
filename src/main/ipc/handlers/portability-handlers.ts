@@ -11,6 +11,8 @@ export function registerPortabilityHandlers(router: IpcRouter, portability: () =
   router.register('backup:chooseAutoFolder', (_req, ctx) => portability().chooseAutoFolder(ctx));
   router.register('backup:deleteRollback', () => portability().deleteRollback());
   router.register('export:markdown', (req, ctx) => portability().exportNote(req, ctx));
+  router.register('export:noteDocument', (req, ctx) => portability().exportNoteDocument(req, ctx));
+  router.register('note:print', (req) => portability().printNote(req));
   router.register('export:portable', (_req, ctx) => portability().exportPortable(ctx));
   router.register('import:portable', (_req, ctx) => portability().importPortable(ctx));
 }

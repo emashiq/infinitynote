@@ -1,14 +1,14 @@
-import { collectAttachmentRefs, collectLinkIds, collectNoteRefs, type AttachmentRef } from '../../shared/editor/doc-schema';
+import { collectAttachmentRefs, collectDocRefs, collectLinkIds, collectNoteRefs, type AttachmentRef } from '../../shared/editor/doc-schema';
 import { extractPlainText } from '../../shared/text/plain-text';
 import type { Db } from '../db/driver';
 import { AttachmentsRepo } from '../db/repositories/attachments-repo';
 import { LinkedFilesRepo } from '../db/repositories/linked-files-repo';
-import { ReferencesRepo, type ReferenceInput } from '../db/repositories/references-repo';
+import { ReferencesRepo, type DocumentReferenceInput, type ReferenceInput } from '../db/repositories/references-repo';
 import type { Logger } from './logger';
 import type { ReminderAnchors } from './reminder-anchors';
 
 /**
- * Derives the searchable text, the attachment links, the linked files and the note references of note content. Runs inside the
+ * Derives the searchable text, the attachment links, the linked files and the note and document references of note content. Runs inside the
  * caller's transaction, so the text, the links, the references, the reminder anchors and the note row commit together
  * or not at all (INF-SAVE-02, D-080, D-098).
  */
@@ -72,6 +72,17 @@ export class ContentIndexer {
       titleSnapshot: titles.get(l.targetNoteId) ?? l.label,
     }));
     this.references.replaceForSource(noteId, refs);
+
+    // Document links (D-156): the same rules, with the place inside the document as part of the target.
+    const docLinks = format === 'rich' ? collectDocRefs(content) : [];
+    const docTitles = this.references.documentTitles([...new Set(docLinks.map((l) => l.targetDocumentId))]);
+    const docRefs: DocumentReferenceInput[] = docLinks.map((l) => ({
+      sourceBlockId: l.sourceBlockId,
+      targetDocumentId: l.targetDocumentId,
+      targetJson: l.target ? JSON.stringify(l.target) : '',
+      titleSnapshot: docTitles.get(l.targetDocumentId) ?? l.label,
+    }));
+    this.references.replaceDocumentRefsForSource(noteId, docRefs);
   }
 }
 

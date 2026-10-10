@@ -1,9 +1,11 @@
 import type { Db } from '../driver';
+import { DocumentBlobsRepo } from './document-blobs-repo';
+import { DOCUMENT_COLS, type DocumentRow } from './documents-repo';
 import { NOTE_META_COLS, type NoteMetaRow } from './hierarchy-repo';
 
-type TrashTable = 'projects' | 'folders' | 'notes';
+type TrashTable = 'projects' | 'folders' | 'notes' | 'documents';
 
-const TRASH_TABLES: readonly TrashTable[] = ['projects', 'folders', 'notes'];
+const TRASH_TABLES: readonly TrashTable[] = ['projects', 'folders', 'notes', 'documents'];
 const json = (ids: readonly string[]): string => JSON.stringify(ids);
 /** Folder deletion runs leaf-first in rounds; the depth limit keeps the number of rounds small. */
 const MAX_DELETE_ROUNDS = 40;
@@ -16,6 +18,12 @@ export class TrashRepo {
   markNotes(ids: readonly string[], batch: string, now: number): void {
     this.db
       .prepare<[number, string, string]>('UPDATE notes SET deleted_at = ?, trash_batch_id = ? WHERE id IN (SELECT value FROM json_each(?))')
+      .run(now, batch, json(ids));
+  }
+
+  markDocuments(ids: readonly string[], batch: string, now: number): void {
+    this.db
+      .prepare<[number, string, string]>('UPDATE documents SET deleted_at = ?, trash_batch_id = ? WHERE id IN (SELECT value FROM json_each(?))')
       .run(now, batch, json(ids));
   }
 
@@ -48,6 +56,14 @@ export class TrashRepo {
     return this.ids('SELECT id FROM notes WHERE project_id = ? AND deleted_at IS NULL', projectId);
   }
 
+  liveDocumentIdsInFolders(folderIds: readonly string[]): string[] {
+    return this.ids('SELECT id FROM documents WHERE folder_id IN (SELECT value FROM json_each(?)) AND deleted_at IS NULL', json(folderIds));
+  }
+
+  liveDocumentIdsInProject(projectId: string): string[] {
+    return this.ids('SELECT id FROM documents WHERE project_id = ? AND deleted_at IS NULL', projectId);
+  }
+
   // Restore --------------------------------------------------------------------
   isReanchored(batch: string): boolean {
     return this.db.prepare<[string], { batch_id: string }>('SELECT batch_id FROM trash_reanchored WHERE batch_id = ?').get(batch) !== undefined;
@@ -55,6 +71,10 @@ export class TrashRepo {
 
   noteIdsInBatch(batch: string): string[] {
     return this.ids('SELECT id FROM notes WHERE trash_batch_id = ?', batch);
+  }
+
+  documentIdsInBatch(batch: string): string[] {
+    return this.ids('SELECT id FROM documents WHERE trash_batch_id = ?', batch);
   }
 
   /** Makes every row of the batch live again and forgets its re-anchored flag. */
@@ -93,6 +113,19 @@ export class TrashRepo {
       .all(json(folderIds), json(projectIds));
   }
 
+  /** Documents (live or trashed) located in one of the folders or projects. */
+  documentsIn(folderIds: readonly string[], projectIds: readonly string[]): DocumentRow[] {
+    return this.db
+      .prepare<[string, string], DocumentRow>(
+        `SELECT ${DOCUMENT_COLS} FROM documents WHERE folder_id IN (SELECT value FROM json_each(?)) OR project_id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(json(folderIds), json(projectIds));
+  }
+
+  setDocumentLocation(documentId: string, projectId: string | null, folderId: string | null): void {
+    this.db.prepare<[string | null, string | null, string]>('UPDATE documents SET folder_id = ?, project_id = ? WHERE id = ?').run(folderId, projectId, documentId);
+  }
+
   setFolderLocation(folderId: string, projectId: string | null, parentId: string | null): void {
     this.db.prepare<[string | null, string | null, string]>('UPDATE folders SET parent_id = ?, project_id = ? WHERE id = ?').run(parentId, projectId, folderId);
   }
@@ -107,9 +140,13 @@ export class TrashRepo {
   }
 
   /** Deletes the purged rows (folders leaf-first) and the batches' re-anchored flags. */
-  deletePurged(batches: readonly string[], ids: { projects: readonly string[]; folders: readonly string[]; notes: readonly string[] }): void {
+  deletePurged(
+    batches: readonly string[],
+    ids: { projects: readonly string[]; folders: readonly string[]; notes: readonly string[]; documents: readonly string[] },
+  ): void {
     this.db.prepare<[string]>('DELETE FROM trash_reanchored WHERE batch_id IN (SELECT value FROM json_each(?))').run(json(batches));
     this.db.prepare<[string]>('DELETE FROM notes WHERE id IN (SELECT value FROM json_each(?))').run(json(ids.notes));
+    this.db.prepare<[string]>('DELETE FROM documents WHERE id IN (SELECT value FROM json_each(?))').run(json(ids.documents));
     const deleteLeafFolders = this.db.prepare<[string]>(
       'DELETE FROM folders WHERE id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM folders c WHERE c.parent_id = folders.id)',
     );
@@ -119,13 +156,14 @@ export class TrashRepo {
     this.db.prepare<[string]>('DELETE FROM projects WHERE id IN (SELECT value FROM json_each(?))').run(json(ids.projects));
   }
 
-  /** Starts the GC grace period for attachments that no note references any more. */
-  markUnreferencedAttachments(now: number): void {
+  /** Starts the GC grace period for attachments that no note references, and document blobs no document uses, any more. */
+  markUnreferencedFiles(now: number): void {
     this.db
       .prepare<[number]>(
         'UPDATE attachments SET unreferenced_since = ? WHERE unreferenced_since IS NULL AND id NOT IN (SELECT attachment_id FROM note_attachments)',
       )
       .run(now);
+    new DocumentBlobsRepo(this.db).reconcileReferences(now);
   }
 
   private ids(sql: string, param: string): string[] {

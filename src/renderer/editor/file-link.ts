@@ -12,6 +12,8 @@ export interface LinkActions {
   showInFolder(linkId: string): Promise<boolean>;
   /** Copies the file into Infinity Notes; null after showing why it failed. */
   copyIn(linkId: string): Promise<AttachmentDtoType | null>;
+  /** Opens a linked file of a document kind as a linked document in a tab (main window only, D-118). */
+  openInApp?(linkId: string): void;
   /** The copy limit in bytes: larger linked files are not offered for copying. */
   copyLimitBytes(): number;
 }

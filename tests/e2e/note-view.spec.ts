@@ -101,9 +101,9 @@ test('the note view is only the text, its tab is the title, with formatting, ins
   await expect.poll(() => editorText(page)).toBe('make this bold\nand/or\n/');
   await page.keyboard.press('Backspace');
 
-  // Insert menu → "Link to note…": the typed command is replaced by the picker.
+  // Insert menu → "Link to note or document…": the typed command is replaced by the picker.
   await page.keyboard.type('/link');
-  await expect(insertMenu(page).getByRole('option')).toHaveText(['Link to note…']);
+  await expect(insertMenu(page).getByRole('option')).toHaveText(['Link to note or document…']);
   await page.keyboard.press('Enter');
   const picker = dialogByName(page, 'Link to note');
   await expect(picker).toBeVisible();
@@ -130,7 +130,7 @@ test('the note view is only the text, its tab is the title, with formatting, ins
     'Insert image',
     'Attach file',
     'Insert table…',
-    'Link to note…',
+    'Link to note or document…',
     'Add reminder…',
     'Create reminder from text',
     'Find in note',

@@ -67,7 +67,7 @@ test('pinned and recent reflect data', async () => {
   await reloadUi(page);
 
   const tiles = page.locator('.tiles').getByRole('button');
-  await expect(tiles).toHaveText(['New note', 'New sticky', 'New project']);
+  await expect(tiles).toHaveText(['New note', 'New sticky', 'New locked note', 'New locked sticky', 'New project', 'Import file']);
   const pinned = page.getByRole('region', { name: 'Pinned' });
   await expect(pinned.locator('.card')).toHaveCount(1);
   await expect(pinned.locator('.card-title')).toHaveText('Note C');

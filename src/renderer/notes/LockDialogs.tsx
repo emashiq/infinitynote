@@ -1,12 +1,13 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import type { Result } from '../../shared/contracts/envelope';
-import { LOCK_MESSAGES, type LockStatusType, type OsKeyAvailabilityType } from '../../shared/contracts/locks';
+import type { LocationType, NoteDtoType } from '../../shared/contracts/hierarchy';
+import { LOCK_MESSAGES, MAX_PIN_DIGITS, type LockStatusType, type OsKeyAvailabilityType } from '../../shared/contracts/locks';
 import { displayTitle } from '../../shared/names';
 import { Dialog } from '../ui/Dialog';
-import { LOCK_DIALOG_POINTS, newPasswordProblem, NO_RECOVERY } from './lock-form';
+import { CREATE_LOCKED_POINTS, LOCK_DIALOG_POINTS, newPasswordProblem, newPinProblem, NO_RECOVERY, PIN_EXPLANATION } from './lock-form';
 
-type LockBridge = Pick<InfinityBridge, 'lock' | 'sticky'>;
+type LockBridge = Pick<InfinityBridge, 'lock'>;
 
 interface LockDialogProps {
   noteId: string;
@@ -18,7 +19,7 @@ interface LockDialogProps {
   onClose: () => void;
 }
 
-function PasswordField({ label, value, onChange, autoComplete, autoFocus }: { label: string; value: string; onChange: (v: string) => void; autoComplete: string; autoFocus?: boolean }) {
+export function PasswordField({ label, value, onChange, autoComplete, autoFocus }: { label: string; value: string; onChange: (v: string) => void; autoComplete: string; autoFocus?: boolean }) {
   const id = useId();
   return (
     <span className="form-field">
@@ -39,7 +40,7 @@ function PasswordField({ label, value, onChange, autoComplete, autoFocus }: { la
   );
 }
 
-function ErrorLine({ error }: { error: string | null }) {
+export function ErrorLine({ error }: { error: string | null }) {
   return error ? (
     <p role="alert" className="field-error">
       {error}
@@ -68,78 +69,234 @@ function useOsKey(bridge: LockBridge): OsKeyAvailabilityType | null {
   return availability;
 }
 
+/** A PIN typed twice (digits only, at most 8). */
+function PinFields({ pin, confirm, onPin, onConfirm }: { pin: string; confirm: string; onPin: (v: string) => void; onConfirm: (v: string) => void }) {
+  return (
+    <>
+      <PinInput label="PIN (4 to 8 digits)" value={pin} onChange={onPin} />
+      <PinInput label="Repeat PIN" value={confirm} onChange={onConfirm} />
+    </>
+  );
+}
+
+function PinInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const id = useId();
+  return (
+    <span className="form-field">
+      <label htmlFor={id} className="field-label">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="password"
+        inputMode="numeric"
+        maxLength={MAX_PIN_DIGITS}
+        className="text-input"
+        value={value}
+        autoComplete="off"
+        spellCheck={false}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, ''))}
+      />
+    </span>
+  );
+}
+
+/** What a new lock is made of, as the form collected it. */
+export interface NewLockChoice {
+  password: string;
+  hello: boolean;
+  pin: string | null;
+}
+
 /**
- * "Lock note…" (D-111): the password twice, Windows Hello where available, what locking keeps and destroys, and the
- * no-recovery acknowledgement. A sticky is removed from stickies first (a locked note never floats).
+ * The fields of a new lock (D-111, D-113, D-173): the password twice, Windows Hello where it can be verified, an optional
+ * sticky PIN, and the no-recovery acknowledgement. `submit` resolves with the message to show when it failed.
  */
-export function LockNoteDialog({ noteId, title, sticky, bridge, flush, notify, onClose }: LockDialogProps & { sticky: boolean }) {
+function NewLockForm({
+  points,
+  offerPin,
+  submitLabel,
+  busyLabel,
+  bridge,
+  submit,
+  onClose,
+}: {
+  points: readonly string[];
+  offerPin: boolean;
+  submitLabel: string;
+  busyLabel: string;
+  bridge: LockBridge;
+  submit: (choice: NewLockChoice) => Promise<string | null>;
+  onClose: () => void;
+}) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [pin, setPin] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
   const [hello, setHello] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const osKey = useOsKey(bridge);
-  const submit = async (e: FormEvent) => {
+  const wantsPin = offerPin && (pin !== '' || pinConfirm !== '');
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const problem = newPasswordProblem(password, confirm) ?? (acknowledged ? null : LOCK_MESSAGES.acknowledge);
+    const problem = newPasswordProblem(password, confirm) ?? (wantsPin ? newPinProblem(pin, pinConfirm) : null) ?? (acknowledged ? null : LOCK_MESSAGES.acknowledge);
     if (problem) {
       setError(problem);
       return;
     }
     setBusy(true);
-    await flush();
-    if (sticky) {
-      const removed = await bridge.sticky.remove({ noteId });
-      if (!removed.ok) {
-        setBusy(false);
-        setError(removed.error.message);
-        return;
-      }
-    }
-    const failed = await attempt(() => bridge.lock.set({ noteId, password, hello: hello && osKey?.status === 'available', acknowledged: true }));
+    const failed = await submit({ password, hello: hello && osKey?.status === 'available', pin: wantsPin ? pin : null });
     setBusy(false);
-    if (failed) {
-      setError(failed);
-      return;
-    }
+    setError(failed);
+  };
+  return (
+    <form className="lock-form" onSubmit={(e) => void onSubmit(e)}>
+      <ul className="lock-points">
+        {points.map((point) => (
+          <li key={point}>{point}</li>
+        ))}
+      </ul>
+      <PasswordField label="Password" value={password} onChange={setPassword} autoComplete="new-password" autoFocus />
+      <PasswordField label="Repeat password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
+      {osKey?.status === 'available' ? (
+        <label className="checkbox">
+          <input type="checkbox" checked={hello} onChange={(e) => setHello(e.target.checked)} />
+          Also unlock with Windows Hello (the password stays required as a fallback)
+        </label>
+      ) : osKey ? (
+        <p className="muted lock-oskey-reason">{osKey.reason}</p>
+      ) : null}
+      {offerPin ? (
+        <fieldset className="lock-pin">
+          <legend className="field-label">Sticky PIN (optional)</legend>
+          <p className="muted">{PIN_EXPLANATION}</p>
+          <PinFields pin={pin} confirm={pinConfirm} onPin={setPin} onConfirm={setPinConfirm} />
+        </fieldset>
+      ) : null}
+      <label className="checkbox">
+        <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
+        {NO_RECOVERY}
+      </label>
+      <ErrorLine error={error} />
+      <div className="dialog-actions">
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? busyLabel : submitLabel}
+        </button>
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * "Lock note…" (D-111): what locking keeps and destroys, then the new lock. A floating sticky stays floating and blurs
+ * (D-172); a sticky may get a PIN.
+ */
+export function LockNoteDialog({ noteId, title, sticky, bridge, flush, notify, onClose }: LockDialogProps & { sticky: boolean }) {
+  const submit = async ({ password, hello, pin }: NewLockChoice) => {
+    await flush();
+    const failed = await attempt(() => bridge.lock.set({ noteId, password, hello, acknowledged: true, pin }));
+    if (failed) return failed;
     notify('Note locked');
     onClose();
+    return null;
   };
   return (
     <Dialog title={`Lock “${displayTitle(title)}”`} onClose={onClose}>
-      <form className="lock-form" onSubmit={(e) => void submit(e)}>
-        <ul className="lock-points">
-          {LOCK_DIALOG_POINTS.map((point) => (
-            <li key={point}>{point}</li>
-          ))}
-          {sticky ? <li>This sticky is removed from stickies first: locked notes do not float.</li> : null}
-        </ul>
-        <PasswordField label="Password" value={password} onChange={setPassword} autoComplete="new-password" autoFocus />
-        <PasswordField label="Repeat password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
-        {osKey?.status === 'available' ? (
-          <label className="checkbox">
-            <input type="checkbox" checked={hello} onChange={(e) => setHello(e.target.checked)} />
-            Also unlock with Windows Hello (the password stays required as a fallback)
-          </label>
-        ) : osKey ? (
-          <p className="muted lock-oskey-reason">{osKey.reason}</p>
-        ) : null}
-        <label className="checkbox">
-          <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
-          {NO_RECOVERY}
-        </label>
-        <ErrorLine error={error} />
-        <div className="dialog-actions">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Locking…' : 'Lock note'}
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-        </div>
-      </form>
+      <NewLockForm
+        points={sticky ? [...LOCK_DIALOG_POINTS, 'The sticky keeps floating. Its text is blurred until you show it with the PIN, the password or Windows Hello.'] : LOCK_DIALOG_POINTS}
+        offerPin={sticky}
+        submitLabel="Lock note"
+        busyLabel="Locking…"
+        bridge={bridge}
+        submit={submit}
+        onClose={onClose}
+      />
     </Dialog>
+  );
+}
+
+/**
+ * "New locked note" and "New locked sticky" (D-171): the password first; main then creates the note already locked.
+ * A note opens in a tab, a sticky floats (shown, since the password was just typed).
+ */
+export function CreateLockedDialog({
+  location,
+  sticky,
+  bridge,
+  onCreated,
+  onClose,
+}: {
+  location: LocationType;
+  sticky: boolean;
+  bridge: LockBridge;
+  onCreated: (note: NoteDtoType) => void;
+  onClose: () => void;
+}) {
+  const submit = async ({ password, hello, pin }: NewLockChoice) => {
+    const res = await bridge.lock.create({ location, sticky, password, hello, acknowledged: true, pin });
+    if (!res.ok) return res.error.message;
+    onClose();
+    onCreated(res.data.note);
+    return null;
+  };
+  return (
+    <Dialog title={sticky ? 'New locked sticky' : 'New locked note'} onClose={onClose}>
+      <NewLockForm points={CREATE_LOCKED_POINTS} offerPin={sticky} submitLabel={sticky ? 'Create locked sticky' : 'Create locked note'} busyLabel="Creating…" bridge={bridge} submit={submit} onClose={onClose} />
+    </Dialog>
+  );
+}
+
+/**
+ * Sets, changes or removes a sticky PIN (D-173); the password confirms it. Used in a sticky's menu and in the lock
+ * settings of a locked note. `save` resolves with the message to show when main refused.
+ */
+export function PinSection({ pinSet, save }: { pinSet: boolean; save: (password: string, pin: string | null) => Promise<string | null> }) {
+  const [password, setPassword] = useState('');
+  const [pin, setPin] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const run = async (next: string | null) => {
+    if (next !== null) {
+      const problem = newPinProblem(pin, confirm);
+      if (problem) return setError(problem);
+    }
+    const failed = await save(password, next);
+    setPassword('');
+    setError(failed);
+    if (!failed) {
+      setPin('');
+      setConfirm('');
+    }
+  };
+  return (
+    <Section title="Sticky PIN">
+      <p className="muted">{PIN_EXPLANATION}</p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(pin);
+        }}
+      >
+        <PasswordField label="Password" value={password} onChange={setPassword} autoComplete="current-password" />
+        <PinFields pin={pin} confirm={confirm} onPin={setPin} onConfirm={setConfirm} />
+        <ErrorLine error={error} />
+        <span className="lock-pin-actions">
+          <button type="submit" className="btn">
+            {pinSet ? 'Change PIN' : 'Set PIN'}
+          </button>
+          {pinSet ? (
+            <button type="button" className="btn" disabled={password === ''} onClick={() => void run(null)}>
+              Remove PIN
+            </button>
+          ) : null}
+        </span>
+      </form>
+    </Section>
   );
 }
 
@@ -152,8 +309,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** "Lock settings…" of a locked note: lock now, change the password, Windows Hello on or off, remove the lock. */
-export function LockSettingsDialog({ noteId, title, bridge, flush, notify, onClose }: LockDialogProps) {
+/** "Lock settings…" of a locked note: lock now, change the password, Windows Hello on or off, the sticky PIN, remove the lock. */
+export function LockSettingsDialog({ noteId, title, sticky, bridge, flush, notify, onClose }: LockDialogProps & { sticky: boolean }) {
   const [status, setStatus] = useState<LockStatusType | null>(null);
   const osKey = useOsKey(bridge);
   useEffect(() => {
@@ -190,6 +347,18 @@ export function LockSettingsDialog({ noteId, title, bridge, flush, notify, onClo
         ) : null}
         <ChangePassword noteId={noteId} bridge={bridge} onDone={() => done('Password changed')} />
         <HelloSetting noteId={noteId} bridge={bridge} enabled={status?.hello ?? false} osKey={osKey} onDone={(on) => done(on ? 'Windows Hello can unlock this note' : 'Windows Hello no longer unlocks this note')} />
+        {sticky ? (
+          <PinSection
+            pinSet={status?.pin ?? false}
+            save={async (password, pin) => {
+              const res = await bridge.lock.setPin({ noteId, password, pin });
+              if (!res.ok) return res.error.message;
+              setStatus(res.data);
+              notify(pin === null ? 'PIN removed' : 'PIN set');
+              return null;
+            }}
+          />
+        ) : null}
         <RemoveLock noteId={noteId} bridge={bridge} flush={flush} onDone={() => done('Lock removed')} />
         <div className="dialog-actions">
           <button type="button" className="btn" onClick={onClose}>

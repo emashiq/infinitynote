@@ -35,12 +35,12 @@ describe('Common and projects (INF-HIER-01, INF-HIER-02)', () => {
     s.note(p.id, null, 'b');
     s.tick();
     const trashed = s.trash.trashProject(p.id);
-    expect(trashed.counts).toEqual({ projects: 1, folders: 1, notes: 2 });
+    expect(trashed.counts).toEqual({ projects: 1, folders: 1, notes: 2, documents: 0 });
     expect(trashed.trashedNoteIds).toHaveLength(2);
     s.check();
     expect(thrown(() => s.hierarchy.renameProject(p.id, 'Again'))).toMatchObject({ code: 'NOT_FOUND' });
     expect(thrown(() => s.trash.trashProject(p.id))).toMatchObject({ code: 'NOT_FOUND' });
-    expect(s.hierarchy.list()).toEqual({ projects: [], folders: [], notes: [] });
+    expect(s.hierarchy.list()).toEqual({ projects: [], folders: [], notes: [], documents: [] });
   });
 
   it('rejects empty, too long and control-character names without writing', async () => {

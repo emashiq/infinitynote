@@ -21,6 +21,9 @@ export const LINUX_EXECUTABLE = 'infinity-notes';
 export const RENDERER_SCHEME = 'infinity-app';
 export const RENDERER_HOST = 'renderer';
 export const ATTACHMENT_SCHEME = 'infinity-attachment';
+/** Document bytes by document ID (D-118), and HTML documents for the sandboxed viewer frame. */
+export const DOCUMENT_SCHEME = 'infinity-document';
+export const HTML_DOCUMENT_SCHEME = 'infinity-html';
 export const APP_VERSION = '0.2.0';
 export const AUTHOR_NAME = 'Ashiqur Rahman Emran';
 export const DEVELOPER_CREDIT = `Developed by ${AUTHOR_NAME}`;
@@ -29,3 +32,9 @@ export const COPYRIGHT = `Copyright © 2026 ${AUTHOR_NAME}`;
 
 /** The only URL form under which the renderer loads a stored image (INF-FND-08). */
 export const attachmentUrl = (attachmentId: string): string => `${ATTACHMENT_SCHEME}://${attachmentId}`;
+
+/** The URLs viewers read a document from; the revision only keeps a cache from showing an older one. */
+export const documentUrl = (documentId: string, revision: number): string => `${DOCUMENT_SCHEME}://${documentId}/?r=${revision}`;
+/** One stored version of a document, read-only in its viewer (Versions panel). */
+export const documentVersionUrl = (documentId: string, versionId: string): string => `${DOCUMENT_SCHEME}://${documentId}/?version=${versionId}`;
+export const htmlDocumentUrl = (documentId: string, revision: number): string => `${HTML_DOCUMENT_SCHEME}://${documentId}/?r=${revision}`;

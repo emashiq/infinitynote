@@ -4,7 +4,7 @@ import { DEFAULT_DOCUMENT_MAX_MB, DEFAULT_IMAGE_MAX_MB, DOCUMENT_MAX_MB_RANGE, I
 import { isKnownZone } from '../time/zones';
 import { AUTO_VERSION_DAYS_RANGE, AUTO_VERSION_MAX_RANGE, DEFAULT_AUTO_VERSION_DAYS, DEFAULT_AUTO_VERSION_MAX } from '../versions/retention';
 import { HomeScope } from './home';
-import { AUTO_LOCK_MINUTES, DEFAULT_AUTO_LOCK_MINUTES } from './locks';
+import { AUTO_LOCK_MINUTES, BLUR_STICKY_SECONDS, DEFAULT_AUTO_LOCK_MINUTES, DEFAULT_BLUR_STICKY_SECONDS } from './locks';
 import { AutoBackupSetting, LastAutoBackup } from './portability';
 import { FollowupInterval, FollowupMax, LocalTime, REMINDER_MESSAGES, ZoneId } from './reminders';
 import { DEFAULT_SESSION, TabSession } from './session';
@@ -95,6 +95,8 @@ export const SETTINGS = {
   },
   // Unlocked notes lock again after this many minutes without use (D-111).
   'locks.autoLockMinutes': { version: 1, schema: z.literal(AUTO_LOCK_MINUTES), default: DEFAULT_AUTO_LOCK_MINUTES, public: true },
+  // A revealed locked sticky is blurred again after this many seconds without interaction in it (D-172).
+  'locks.blurStickySeconds': { version: 1, schema: z.literal(BLUR_STICKY_SECONDS), default: DEFAULT_BLUR_STICKY_SECONDS, public: true },
   // Main-only: the folder comes from main's folder dialog, never from a renderer (backup:* channels, D-099).
   'backup.auto': { version: 1, schema: AutoBackupSetting, default: { enabled: false, directory: null, intervalDays: 7, keep: 5 }, public: false },
   'backup.lastAuto': { version: 1, schema: LastAutoBackup, default: null, public: false },

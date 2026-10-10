@@ -1,12 +1,13 @@
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import { DEFAULT_SESSION, type TabSessionType, type TabType } from '../../shared/contracts/session';
-import { activateTab, closeTab, nextTab, noteTabId, openTab, prevTab, removeNoteTabs, setTabScroll } from '../../shared/tabs/tab-session';
+import { activateTab, closeTab, documentTabId, nextTab, noteTabId, openTab, prevTab, removeItemTabs, setTabScroll } from '../../shared/tabs/tab-session';
+import type { DocumentTargetType } from '../../shared/documents/targets';
 import { displayTitle } from '../../shared/names';
 import { NoteController, textIsSafe, type FlushResult } from '../notes/note-controller';
 import { closedTabsNotice, trashedDraftNotice, type NoticeStore } from './notice-store';
 import { createDebouncer, createStore, type Store, type Timers } from './store';
 
-export type PageKind = 'stickies' | 'reminders' | 'settings';
+export type PageKind = 'stickies' | 'reminders' | 'settings' | 'graph';
 
 export interface TabsState {
   session: TabSessionType;
@@ -18,6 +19,18 @@ export interface TabsState {
 export const SCROLL_DEBOUNCE_MS = 500;
 export const SAVE_FAILED_NOTICE = 'Could not save this note. The tab stays open.';
 export const TAB_LIMIT_NOTICE = 'You have 200 open tabs. Close some tabs to open more.';
+export const DOCUMENT_SAVE_FAILED_NOTICE = 'Could not save this document. The tab stays open.';
+
+/** Unsaved changes of the open document tab: a viewer that edits registers how to save them (D-118). */
+export interface DocumentTargetRequest {
+  target: DocumentTargetType;
+  seq: number;
+}
+
+export interface DocumentEdits {
+  documentId: string;
+  flush(): Promise<FlushResult>;
+}
 
 function isTrashedConflict(r: FlushResult): boolean {
   return !r.ok && r.code === 'CONFLICT' && (r.details as { reason?: unknown } | undefined)?.reason === 'trashed';
@@ -34,6 +47,9 @@ export interface TabsDeps {
 export class TabsStore {
   readonly store: Store<TabsState> = createStore<TabsState>({ session: DEFAULT_SESSION, ready: false, controllerNoteId: null });
   private controller: NoteController | null = null;
+  private documentEdits: DocumentEdits | null = null;
+  /** The latest place each document was asked to open at; `seq` tells a viewer that a request is new (D-132). */
+  readonly documentTargets: Store<Record<string, DocumentTargetRequest>> = createStore<Record<string, DocumentTargetRequest>>({});
   private lock: Promise<unknown> = Promise.resolve();
   private persistDirty = false;
   private persisting: Promise<void> | null = null;
@@ -56,6 +72,16 @@ export class TabsStore {
 
   activeController(): NoteController | null {
     return this.controller;
+  }
+
+  /** The active document tab's viewer registers its unsaved changes; null when it has none to keep. */
+  setDocumentEdits(edits: DocumentEdits | null): void {
+    this.documentEdits = edits;
+  }
+
+  private activeDocumentEdits(): DocumentEdits | null {
+    const tab = this.session.tabs.find((t) => t.id === this.session.activeTabId);
+    return tab?.kind === 'document' && this.documentEdits?.documentId === tab.documentId ? this.documentEdits : null;
   }
 
   // Persistence -----------------------------------------------------------------
@@ -130,6 +156,14 @@ export class TabsStore {
    * go (D-055).
    */
   private async leaveActive(): Promise<boolean> {
+    const edits = this.activeDocumentEdits();
+    if (edits) {
+      if (!(await edits.flush()).ok) {
+        this.deps.notices.push(DOCUMENT_SAVE_FAILED_NOTICE, 'error');
+        return false;
+      }
+      this.documentEdits = null;
+    }
     const c = this.controller;
     if (!c) return true;
     const r = await c.flush();
@@ -144,7 +178,8 @@ export class TabsStore {
 
   async flushActive(): Promise<FlushResult> {
     const c = this.controller;
-    return c ? c.flush() : { ok: true };
+    if (c) return c.flush();
+    return this.activeDocumentEdits()?.flush() ?? { ok: true };
   }
 
   // Lifecycle -----------------------------------------------------------------
@@ -177,6 +212,16 @@ export class TabsStore {
   async openNote(noteId: string, opts: { blockId?: string | null } = {}): Promise<boolean> {
     const opened = await this.openTabInternal({ id: noteTabId(noteId), kind: 'note', noteId });
     if (opened && opts.blockId && this.controller?.noteId === noteId) this.controller.requestReveal(opts.blockId);
+    return opened;
+  }
+
+  /** Opens or activates a document's tab (D-118), at `target` (a PDF page) when given (D-132). */
+  async openDocument(documentId: string, opts: { target?: DocumentTargetType } = {}): Promise<boolean> {
+    const opened = await this.openTabInternal({ id: documentTabId(documentId), kind: 'document', documentId });
+    if (opened && opts.target) {
+      const seq = (this.documentTargets.getState()[documentId]?.seq ?? 0) + 1;
+      this.documentTargets.setState({ [documentId]: { target: opts.target, seq } });
+    }
     return opened;
   }
 
@@ -225,11 +270,12 @@ export class TabsStore {
     return this.close(this.session.activeTabId);
   }
 
-  /** Closes tabs whose notes were trashed. Returns the number of tabs removed. */
-  closeNoteTabs(noteIds: readonly string[]): Promise<number> {
+  /** Closes tabs whose notes or documents were trashed. Returns the number of tabs removed. */
+  closeItemTabs(items: { noteIds: readonly string[]; documentIds: readonly string[] }): Promise<number> {
     return this.run(async () => {
-      const { session, removed } = removeNoteTabs(this.session, noteIds);
+      const { session, removed } = removeItemTabs(this.session, items);
       if (removed === 0) return 0;
+      if (session.activeTabId !== this.session.activeTabId) this.documentEdits = null;
       const activeGone = session.activeTabId !== this.session.activeTabId;
       if (activeGone && this.controller) {
         // Flush, not discard: main stores the pending edits of a trashed note as a recovered draft (F-02-1).

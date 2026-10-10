@@ -1,0 +1,166 @@
+/* Comments (D-165): highlighted anchors in note text and the Comments section of the Details panel. */
+.comment-anchor {
+  border-bottom: 2px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+
+.comment-anchor-active {
+  background: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+
+.comment-anchor-pending {
+  border-bottom-style: dashed;
+}
+
+.comment-anchor-flash {
+  animation: comment-flash 1.5s ease-out;
+}
+
+@keyframes comment-flash {
+  0%,
+  40% {
+    background: color-mix(in srgb, var(--warning) 55%, transparent);
+  }
+}
+
+.comments-section .segmented {
+  margin-bottom: 8px;
+}
+
+.comment-threads,
+.comment-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.comment-thread,
+.comment-draft {
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+}
+
+.comment-thread.is-active {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-border);
+}
+
+.comment-thread.is-resolved .comment-quote {
+  color: var(--text-muted);
+}
+
+.comment-anchor-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.comment-anchor-btn:hover {
+  background: var(--bg-subtle);
+}
+
+.comment-quote {
+  display: block;
+  padding-left: 6px;
+  border-left: 3px solid var(--warning);
+  color: var(--text-muted);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+.comment-place {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.comment-orphan {
+  color: var(--danger);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.comment {
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.comment-body {
+  margin: 0 0 2px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+}
+
+.comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.comment-field {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  font: inherit;
+}
+
+/* Comment markers drawn over document pages and slides. */
+.comment-marker {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--warning);
+  border-radius: 10px 10px 10px 2px;
+  background: var(--bg);
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.comment-marker.is-active {
+  background: var(--warning);
+  color: var(--bg);
+}
+
+.comment-area {
+  position: absolute;
+  z-index: 2;
+  border: 2px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  pointer-events: none;
+}

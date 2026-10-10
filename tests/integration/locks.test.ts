@@ -96,7 +96,7 @@ describe('locking destroys every plaintext copy (D-112)', () => {
     expect(Buffer.concat([fileBytes(s.t.dbFile), fileBytes(`${s.t.dbFile}-wal`)]).includes(Buffer.from(MARKER))).toBe(true);
 
     const status = await lock(s, note.id);
-    expect(status).toEqual({ noteId: note.id, locked: true, unlocked: false, hello: false, retryInSeconds: 0 });
+    expect(status).toEqual({ noteId: note.id, locked: true, unlocked: false, hello: false, pin: false, retryInSeconds: 0 });
     expect(counts(s, note.id)).toEqual({ note_versions: 0, note_drafts: 0, reminder_sources: 0, suggestion_dismissals: 0 });
     expect(s.row('SELECT content_json, content_text, plain_text, locked FROM notes WHERE id = ?', note.id)).toEqual({ content_json: null, content_text: null, plain_text: '', locked: 1 });
     const stored = s.row<{ content: Buffer; password_key: Buffer; kdf: string }>('SELECT content, password_key, kdf FROM note_locks WHERE note_id = ?', note.id)!;
@@ -123,18 +123,21 @@ describe('locking destroys every plaintext copy (D-112)', () => {
     expect(s.logger.lines.join('\n')).not.toContain(PASSWORD);
   });
 
-  it('refuses a short password, a sticky and a note that is already locked; Trash and purge take the lock with the note', async () => {
+  it('refuses a short password and a note that is already locked, locks a sticky in place; Trash and purge take the lock with the note', async () => {
     const { s } = await setup();
     const note = s.note(null, null, 'n');
     await expect(lock(s, note.id, 'short')).rejects.toMatchObject({ code: 'VALIDATION_FAILED', message: LOCK_MESSAGES.tooShort });
     const sticky = s.note(null, null, 'sticky', true);
-    await expect(lock(s, sticky.id)).rejects.toMatchObject({ message: LOCK_MESSAGES.sticky });
+    // A locked note may float and a locked sticky stays a sticky (D-172).
+    await lock(s, sticky.id);
+    expect(s.row('SELECT sticky_enabled, locked FROM notes WHERE id = ?', sticky.id)).toEqual({ sticky_enabled: 1, locked: 1 });
     await lock(s, note.id);
     await expect(lock(s, note.id)).rejects.toMatchObject({ message: LOCK_MESSAGES.alreadyLocked });
-    expect(() => s.stickies.enable(note.id)).toThrow(LOCK_MESSAGES.noFloat);
+    s.stickies.enable(note.id);
+    expect(s.stickies.meta(note.id)?.locked).toBe(true);
     const trashed = s.trash.trashNote(note.id);
     s.trash.purge({ target: { kind: 'batch', batchId: trashed.trashBatchId }, confirmed: true });
-    expect(s.row('SELECT count(*) AS n FROM note_locks')).toEqual({ n: 0 });
+    expect(s.row('SELECT count(*) AS n FROM note_locks')).toEqual({ n: 1 });
   });
 });
 
@@ -450,6 +453,19 @@ describe('exports and notifications of locked notes (D-111, D-112)', () => {
     expect(s.references.list(source.id).outgoing[0]).toMatchObject({ state: 'ok', blockText: null, title: 'Target' });
     await lock(s, source.id);
     expect(s.references.list(target.id).backlinks[0]).toMatchObject({ sourceNoteId: source.id, context: '' });
+  });
+
+  it('backlinks of a document from a locked note show no context (D-111, D-156)', async () => {
+    const { s } = await setup();
+    const { document } = await s.documents.createBlank('docx', { projectId: null, folderId: null }, 'Contract');
+    const source = s.note(null, null, 'Source');
+    save(s, source.id, {
+      type: 'doc',
+      content: [{ type: 'paragraph', attrs: { id: P2 }, content: [{ type: 'text', text: 'secret context ' }, { type: 'docRef', attrs: { documentId: document.id, target: null, label: 'Contract' } }] }],
+    });
+    expect(s.references.documentBacklinks(document.id).backlinks[0]).toMatchObject({ sourceNoteId: source.id, context: 'secret context Contract' });
+    await lock(s, source.id);
+    expect(s.references.documentBacklinks(document.id).backlinks[0]).toMatchObject({ sourceNoteId: source.id, context: '' });
   });
 });
 

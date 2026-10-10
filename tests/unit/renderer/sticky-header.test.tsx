@@ -8,7 +8,7 @@ import { createFakeBridge } from './support/fake-bridge';
 import { setupDom } from './support/dom';
 
 const NOTE = '0f8fad5b-d9cb-469f-a165-70867728950e';
-const state: StickyStateType = { noteId: NOTE, title: 'Groceries', color: 'blue', textColor: null, path: ['Alpha', 'Plans'], trashed: null, collapsed: false, alwaysOnTop: false, activation: 1 };
+const state: StickyStateType = { noteId: NOTE, title: 'Groceries', color: 'blue', textColor: null, path: ['Alpha', 'Plans'], trashed: null, locked: false, collapsed: false, alwaysOnTop: false, activation: 1 };
 
 const dom = setupDom();
 let root: Root | null = null;

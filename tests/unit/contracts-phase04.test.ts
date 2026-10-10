@@ -6,7 +6,7 @@ import { StickyState, StoredBounds } from '../../src/shared/contracts/stickies';
 import { AppOpenNoteEvent, WindowGetStateResponse } from '../../src/shared/contracts/windows';
 
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
-const state = { noteId: ID, title: 'Groceries', color: 'yellow', textColor: null, path: ['Common'], trashed: null, collapsed: false, alwaysOnTop: false, activation: 1 };
+const state = { noteId: ID, title: 'Groceries', color: 'yellow', textColor: null, path: ['Common'], trashed: null, locked: false, collapsed: false, alwaysOnTop: false, activation: 1 };
 
 describe('Phase 04 contracts (D-062, D-063)', () => {
   it('sticky requests take a canonical note id, strictly', () => {
@@ -73,7 +73,7 @@ describe('Phase 04 contracts (D-062, D-063)', () => {
 
   it('tree:changed gains the reason sticky', () => {
     expect(TreeChangedReasons).toContain('sticky');
-    expect(TreeChangedEvent.safeParse({ reason: 'sticky', trashedNoteIds: [] }).success).toBe(true);
+    expect(TreeChangedEvent.safeParse({ reason: 'sticky', trashedNoteIds: [], trashedDocumentIds: [] }).success).toBe(true);
   });
 
   it('settings: app.closeBehavior and stickies.restoreOnStartup are public with the planned defaults', () => {

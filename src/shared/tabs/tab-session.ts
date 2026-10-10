@@ -8,6 +8,10 @@ export function noteTabId(noteId: string): string {
   return `note:${noteId}`;
 }
 
+export function documentTabId(documentId: string): string {
+  return `document:${documentId}`;
+}
+
 export type OpenTabResult = { session: TabSessionType; existed: boolean } | { error: 'LIMIT' };
 
 export function openTab(s: TabSessionType, tab: TabType): OpenTabResult {
@@ -49,8 +53,9 @@ function step(s: TabSessionType, delta: 1 | -1): TabSessionType {
 export const nextTab = (s: TabSessionType) => step(s, 1);
 export const prevTab = (s: TabSessionType) => step(s, -1);
 
-export function removeNoteTabs(s: TabSessionType, noteIds: readonly string[]): { session: TabSessionType; removed: number } {
-  const ids = new Set(noteIds.map(noteTabId));
+/** Removes the tabs of the given notes and documents (trashed or gone). */
+export function removeItemTabs(s: TabSessionType, items: { noteIds?: readonly string[]; documentIds?: readonly string[] }): { session: TabSessionType; removed: number } {
+  const ids = new Set([...(items.noteIds ?? []).map(noteTabId), ...(items.documentIds ?? []).map(documentTabId)]);
   const tabs = s.tabs.filter((t) => !ids.has(t.id));
   const removed = s.tabs.length - tabs.length;
   if (removed === 0) return { session: s, removed: 0 };
@@ -81,7 +86,10 @@ export interface SanitizeResult {
   dropped: { trashed: number; missing: number; duplicates: number };
 }
 
-export function sanitizeSession(raw: unknown, noteState: (noteId: string) => NoteState): SanitizeResult {
+/** The state of the note or document a tab shows; other tabs are not asked about. */
+export type ItemState = (item: { kind: 'note' | 'document'; id: string }) => NoteState;
+
+export function sanitizeSession(raw: unknown, itemState: ItemState): SanitizeResult {
   const dropped = { trashed: 0, missing: 0, duplicates: 0 };
   const parsed = TabSession.safeParse(raw);
   if (!parsed.success) return { session: DEFAULT_SESSION, invalid: true, dropped };
@@ -99,8 +107,8 @@ export function sanitizeSession(raw: unknown, noteState: (noteId: string) => Not
       dropped.duplicates += 1;
       continue;
     }
-    if (tab.kind === 'note') {
-      const state = noteState(tab.noteId);
+    if (tab.kind === 'note' || tab.kind === 'document') {
+      const state = tab.kind === 'note' ? itemState({ kind: 'note', id: tab.noteId }) : itemState({ kind: 'document', id: tab.documentId });
       if (state === 'trashed') {
         dropped.trashed += 1;
         continue;

@@ -1,6 +1,7 @@
 import type { HomeScopeType } from '../../../shared/contracts/home';
 import { HIT_END, HIT_START } from '../../../shared/search/segments';
 import type { Db } from '../driver';
+import { DOCUMENT_COLS, type DocumentRow } from './documents-repo';
 import { NOTE_META_COLS, scopeFilter, type NoteMetaRow } from './hierarchy-repo';
 
 export interface SearchRow extends NoteMetaRow {
@@ -16,11 +17,22 @@ export interface SearchFilters {
   tags: readonly string[];
 }
 
-const META = NOTE_META_COLS.split(', ')
-  .map((c) => `n.${c}`)
-  .join(', ');
+export interface DocumentSearchRow extends DocumentRow {
+  title_marked: string | null;
+  body: string;
+}
+
+const prefixed = (cols: string, alias: string) =>
+  cols
+    .split(', ')
+    .map((c) => `${alias}.${c}`)
+    .join(', ');
+const META = prefixed(NOTE_META_COLS, 'n');
+const DOCUMENT_META = prefixed(DOCUMENT_COLS, 'd');
 /** Tokens of body context around the best hit (FTS5 snippet). */
 const SNIPPET_TOKENS = 16;
+/** Matching comments read per wanted search result (comment hits are one per item). */
+const COMMENT_ROWS_PER_ITEM = 4;
 /** Characters of body shown for title-only matches. */
 const BODY_PREVIEW_CHARS = 120;
 
@@ -69,6 +81,82 @@ export class SearchRepo {
           LIMIT ?`,
       )
       .all(text, ...args, text, limit);
+  }
+
+  /** FTS5 match over document titles and extracted text, like notes (D-118). */
+  documentsFullText(match: string, scope: HomeScopeType, limit: number): DocumentSearchRow[] {
+    const { where, args } = scopeFilter(scope, 'd.project_id');
+    return this.db
+      .prepare<unknown[], DocumentSearchRow>(
+        `SELECT ${DOCUMENT_META},
+                highlight(documents_fts, 0, ?, ?) AS title_marked,
+                snippet(documents_fts, 1, ?, ?, '…', ${SNIPPET_TOKENS}) AS body
+           FROM documents_fts JOIN documents d ON d.doc_key = documents_fts.rowid
+          WHERE documents_fts MATCH ? AND d.deleted_at IS NULL${where}
+          ORDER BY bm25(documents_fts, 10.0, 1.0), d.updated_at DESC
+          LIMIT ?`,
+      )
+      .all(HIT_START, HIT_END, HIT_START, HIT_END, match, ...args, limit);
+  }
+
+  documentsTitleContains(text: string, scope: HomeScopeType, limit: number): DocumentSearchRow[] {
+    const { where, args } = scopeFilter(scope, 'd.project_id');
+    return this.db
+      .prepare<unknown[], DocumentSearchRow>(
+        `SELECT ${DOCUMENT_META}, NULL AS title_marked, substr(d.body_text, 1, ${BODY_PREVIEW_CHARS}) AS body
+           FROM documents d
+          WHERE instr(lower(d.title), lower(?)) > 0 AND d.deleted_at IS NULL${where}
+          ORDER BY instr(lower(d.title), lower(?)) = 1 DESC, d.updated_at DESC
+          LIMIT ?`,
+      )
+      .all(text, ...args, text, limit);
+  }
+
+  /**
+   * Comments matching an FTS5 query (D-165), best first, one per item: the item and a snippet of its best comment.
+   * Only text in the clear is indexed, so a locked note's comments never match. A few rows per wanted item are read, so
+   * items with many matching comments do not crowd out the others.
+   */
+  commentHits(match: string, limit: number): Array<{ target_kind: 'note' | 'document'; target_id: string; body: string }> {
+    const rows = this.db
+      .prepare<unknown[], { target_kind: 'note' | 'document'; target_id: string; body: string }>(
+        `SELECT t.target_kind, t.target_id, snippet(comments_fts, 0, ?, ?, '…', ${SNIPPET_TOKENS}) AS body
+           FROM comments_fts
+           JOIN comments c ON c.key = comments_fts.rowid
+           JOIN comment_threads t ON t.id = c.thread_id
+          WHERE comments_fts MATCH ?
+          ORDER BY bm25(comments_fts)
+          LIMIT ?`,
+      )
+      .all(HIT_START, HIT_END, match, limit * COMMENT_ROWS_PER_ITEM);
+    const seen = new Set<string>();
+    return rows
+      .filter((r) => {
+        const key = `${r.target_kind}:${r.target_id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, limit);
+  }
+
+  /** Live notes by ID that pass the filters, without a body (comment hits fill it in). */
+  notesByIds(ids: readonly string[], f: SearchFilters): SearchRow[] {
+    if (ids.length === 0) return [];
+    const { where, args } = filterSql(f);
+    return this.db
+      .prepare<unknown[], SearchRow>(`SELECT ${META}, NULL AS title_marked, '' AS body FROM notes n WHERE n.id IN (SELECT value FROM json_each(?))${where}`)
+      .all(JSON.stringify(ids), ...args);
+  }
+
+  documentsByIds(ids: readonly string[], scope: HomeScopeType): DocumentSearchRow[] {
+    if (ids.length === 0) return [];
+    const { where, args } = scopeFilter(scope, 'd.project_id');
+    return this.db
+      .prepare<unknown[], DocumentSearchRow>(
+        `SELECT ${DOCUMENT_META}, NULL AS title_marked, '' AS body FROM documents d WHERE d.id IN (SELECT value FROM json_each(?)) AND d.deleted_at IS NULL${where}`,
+      )
+      .all(JSON.stringify(ids), ...args);
   }
 
   /** The most recently updated notes that pass the filters (a tag filter without a query). */

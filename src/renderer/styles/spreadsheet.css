@@ -1,0 +1,43 @@
+/* Spreadsheet viewer (F3, D-140): the app's toolbar and find bar around FortuneSheet. The grid keeps FortuneSheet's
+   light look in both themes, like a printed sheet; everything around it follows the theme. */
+.spreadsheet-viewer {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.spreadsheet-toolbar {
+  flex-wrap: wrap;
+}
+
+.spreadsheet-hint {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.spreadsheet-simplified {
+  flex: none;
+  margin: 8px 16px 0;
+}
+
+.spreadsheet-grid {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  color-scheme: light;
+  background: #ffffff;
+  color: #000000;
+}
+
+.spreadsheet-message {
+  margin: 16px;
+  color: var(--text);
+}
+
+.spreadsheet-feature-list {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}

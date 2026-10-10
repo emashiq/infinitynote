@@ -19,7 +19,7 @@ const nextId = () => `33333333-3333-4333-8333-${(seq += 1).toString(16).padStart
 describe('normalizeRichDoc (D-053)', () => {
   it('keeps every supported node, mark and attribute', () => {
     const p = (...content: unknown[]) => ({ type: 'paragraph', attrs: { id: nextId() }, content });
-    const ref = { type: 'noteRef', attrs: { noteId: ATT, blockId: ID2, label: 'Design', excerpt: 'Goals' } };
+    const ref = { type: 'noteRef', attrs: { noteId: ATT, blockId: ID2, label: 'Design', excerpt: 'Goals', alias: null } };
     const doc = {
       type: 'doc',
       content: [
@@ -143,7 +143,7 @@ describe('note references in documents (INF-REF-02, INF-REF-07, D-098)', () => {
       type: 'doc',
       content: [para(ref({ noteId: ATT, blockId: 'not-a-uuid', label: 'x'.repeat(201), excerpt: 'e'.repeat(81), extra: 1 }))],
     });
-    expect(out.content).toEqual([{ type: 'paragraph', attrs: { id: ID1 }, content: [{ type: 'noteRef', attrs: { noteId: ATT, blockId: null, label: '', excerpt: null } }] }]);
+    expect(out.content).toEqual([{ type: 'paragraph', attrs: { id: ID1 }, content: [{ type: 'noteRef', attrs: { noteId: ATT, blockId: null, label: '', excerpt: null, alias: null } }] }]);
     rejects({ type: 'doc', content: [para(ref({ noteId: 'nope' }))] }, /Reference without a note/);
     rejects({ type: 'doc', content: [ref({ noteId: ATT })] }, /not allowed here/);
     rejects({ type: 'doc', content: [{ type: 'codeBlock', content: [ref({ noteId: ATT })] }] }, /not allowed here/);

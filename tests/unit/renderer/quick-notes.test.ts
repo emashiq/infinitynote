@@ -29,7 +29,7 @@ describe('palette quick notes (pinned and favorites)', () => {
       note(5),
       ...Array.from({ length: QUICK_NOTES_LIMIT + 2 }, (_, i) => note(100 + i, { pinnedAt: i })),
     ];
-    const { pinned, favorites } = quickNotes({ projects: [{ id: P, name: 'Work', favorite: false, createdAt: 0, updatedAt: 0 }], folders: [], notes });
+    const { pinned, favorites } = quickNotes({ projects: [{ id: P, name: 'Work', favorite: false, createdAt: 0, updatedAt: 0 }], folders: [], notes, documents: [] });
     expect(pinned).toHaveLength(QUICK_NOTES_LIMIT);
     expect(pinned.slice(0, 2)).toEqual([
       { id: notes[1]!.id, title: 'Note 2', path: ['Work'] },

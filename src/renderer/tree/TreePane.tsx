@@ -4,7 +4,7 @@ import { normalizeName, validateName, validateTitle } from '../../shared/names';
 import { flattenVisible, treeKeyAction, type TreeNode } from '../../shared/tree/tree-model';
 import { useServices, useStore } from '../state/use-store';
 import { IconButton } from '../ui/IconButton';
-import { effectiveKey, openNoteFromTree, trashItemCount } from './actions';
+import { effectiveKey, openDocumentFromTree, openNoteFromTree, trashItemCount } from './actions';
 import { TreeContextMenu } from './TreeContextMenu';
 import { TreeRow } from './TreeRow';
 
@@ -72,6 +72,7 @@ export function TreePane() {
     if (node.kind === 'favorite') tree.reveal(node.key);
     else tree.select(node.key);
     if (real.kind === 'note' && real.id) void openNoteFromTree(services, real.id);
+    else if (real.kind === 'document' && real.id) void openDocumentFromTree(services, real.id);
     else if (node.kind !== 'favorite' && node.kind !== 'trashItem' && node.childKeys.length > 0) tree.toggle(node.key);
   };
 
@@ -115,14 +116,14 @@ export function TreePane() {
     if (e.key === 'F2') {
       e.preventDefault();
       if (node.kind === 'common') notices.push('Common cannot be renamed', 'info');
-      else if (node.kind === 'project' || node.kind === 'folder' || node.kind === 'note') setRenamingKey(key);
+      else if (node.kind === 'project' || node.kind === 'folder' || node.kind === 'note' || node.kind === 'document') setRenamingKey(key);
       return;
     }
     if (e.key === 'Delete') {
       e.preventDefault();
       if (node.kind === 'common') notices.push('Common cannot be moved to Trash', 'info');
       else if (node.kind === 'trashItem' && node.trash) ui.openDialog({ kind: 'confirmPurge', batchId: node.trash.batchId, count: trashItemCount(node) });
-      else if (node.kind === 'project' || node.kind === 'folder' || node.kind === 'note') ui.openDialog({ kind: 'confirmTrash', key });
+      else if (node.kind === 'project' || node.kind === 'folder' || node.kind === 'note' || node.kind === 'document') ui.openDialog({ kind: 'confirmTrash', key });
       return;
     }
     if (['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) {
@@ -155,7 +156,13 @@ export function TreePane() {
       return null;
     }
     const res =
-      real.kind === 'project' ? await tree.renameProject(id, next) : real.kind === 'folder' ? await tree.renameFolder(id, next) : await tree.renameNote(id, next);
+      real.kind === 'project'
+        ? await tree.renameProject(id, next)
+        : real.kind === 'folder'
+          ? await tree.renameFolder(id, next)
+          : real.kind === 'document'
+            ? await tree.renameDocument(id, next)
+            : await tree.renameNote(id, next);
     if (!res.ok) return res.message;
     setRenamingKey(null);
     focusKey(node.key);

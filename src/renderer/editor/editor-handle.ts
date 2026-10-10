@@ -11,14 +11,33 @@ export type EditorFocusTarget = 'start' | 'end';
 export class EditorHandle {
   private editor: Editor | null = null;
   private pending: { target: EditorFocusTarget; origin: Element | null } | null = null;
+  private readonly listeners = new Set<() => void>();
 
   attach(editor: Editor): void {
     this.editor = editor;
+    this.notify();
     this.applyPending();
   }
 
   detach(editor: Editor): void {
-    if (this.editor === editor) this.editor = null;
+    if (this.editor !== editor) return;
+    this.editor = null;
+    this.notify();
+  }
+
+  /** The attached editor (the outline and the word count read it, D-162). */
+  current(): Editor | null {
+    return this.editor;
+  }
+
+  /** Called when an editor is attached or detached. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) listener();
   }
 
   /** The attached editor became editable: a waiting focus request can now be applied. */

@@ -23,8 +23,9 @@ test('rail navigation', async () => {
   await setContentSize(app, page, 1100, 720);
   await expect(page.locator('h1')).toHaveText('Infinity Notes');
   const buttons = primaryNav(page).getByRole('button');
-  await expect(buttons).toHaveCount(5);
-  expect(await buttons.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual(['Home', 'Notes', 'Stickies', 'Reminders', 'Settings']);
+  // Graph joined the rail in v0.3.0 (D-170).
+  await expect(buttons).toHaveCount(6);
+  expect(await buttons.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual(['Home', 'Notes', 'Stickies', 'Reminders', 'Graph', 'Settings']);
   const search = page.getByRole('button', { name: 'Search notes and commands (Ctrl+K)' });
   await expect(search.locator('kbd')).toHaveText(['Ctrl', 'K']);
   await expect(page.getByRole('tablist', { name: 'Open tabs' }).getByRole('tab', { name: 'Home' })).toBeVisible();

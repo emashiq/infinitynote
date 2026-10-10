@@ -66,8 +66,8 @@ test('lock with a password: the body leaves the tab, search, Home and history; e
   expect(databaseBytes(h.userData).includes(Buffer.from(MARKER))).toBe(false);
 
   // Search finds the title only, never the body.
-  const search = (query: string) => p.evaluate(async (q) => (await window.infinity.search.query({ query: q })) as { ok: boolean; data?: { results: unknown[] } }, query);
-  expect(await search(MARKER)).toEqual({ ok: true, data: { results: [] } });
+  const search = (query: string) => p.evaluate(async (q) => (await window.infinity.search.query({ query: q })) as { ok: boolean; data?: { results: unknown[]; documents: unknown[] } }, query);
+  expect(await search(MARKER)).toEqual({ ok: true, data: { results: [], documents: [] } });
   await p.keyboard.press('Control+K');
   const palette = dialogByName(p, 'Command palette');
   const results = palette.getByRole('listbox', { name: 'Results' }).getByRole('option');

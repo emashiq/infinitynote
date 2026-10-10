@@ -1,10 +1,12 @@
 import type { RichNode } from '../../shared/editor/doc-schema';
+import { refText } from '../../shared/editor/inline-text';
 import { extractPlainText } from '../../shared/text/plain-text';
 
 /**
  * Markdown for one rich note (INF-PORT-05). Lossy by design and documented in Settings and the progress report: block
  * IDs, reminders, tags, sticky state and colors, fonts, font sizes, text and highlight colors, image size presets and
- * underline are dropped; note references become their label text; tables become GFM tables; images and files become
+ * underline are dropped; note and document links become the text they show; math becomes `$…$` and `$$…$$` and a
+ * Mermaid diagram stays its ```mermaid fence (D-158, D-161); tables become GFM tables; images and files become
  * links to copies saved next to the Markdown file; linked files become file:// links to their original location.
  */
 export interface MarkdownAssets {
@@ -23,7 +25,8 @@ function inline(nodes: readonly RichNode[] | undefined): string {
   return (nodes ?? [])
     .map((node) => {
       if (node.type === 'hardBreak') return '  \n';
-      if (node.type === 'noteRef') return escapeText(typeof node.attrs?.label === 'string' ? node.attrs.label : '');
+      if (node.type === 'noteRef' || node.type === 'docRef') return escapeText(refText(node.attrs));
+      if (node.type === 'mathInline') return `$${String(node.attrs?.latex ?? '')}$`;
       if (node.type !== 'text' || typeof node.text !== 'string') return '';
       const marks = new Set((node.marks ?? []).map((m) => m.type));
       if (marks.has('code')) return `\`${node.text.replace(/`/g, 'ˋ')}\``;
@@ -110,6 +113,8 @@ function block(node: RichNode, assets: MarkdownAssets): string {
       return listItems(node.content ?? [], (_i, item) => (item.attrs?.checked === true ? '- [x] ' : '- [ ] '), assets);
     case 'horizontalRule':
       return '---';
+    case 'mathBlock':
+      return `$$\n${String(attrs.latex ?? '')}\n$$`;
     case 'table':
       return table(node);
     case 'image': {

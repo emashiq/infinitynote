@@ -1,13 +1,14 @@
 import type { Editor } from '@tiptap/core';
 import type { AttachmentKindType } from '../../shared/contracts/attachments';
 import type { MenuItem } from '../ui/Menu';
+import { MERMAID } from './code/languages';
 
 /** The note actions the editor's menus offer (D-102); an absent one is not offered where it cannot run. */
 export interface NoteActions {
   insertAttachment(kind: AttachmentKindType): void;
   /** "Insert table…" (editable rich notes). */
   insertTable?: () => void;
-  /** "Link to note…" (editable rich notes in the main window; D-098). */
+  /** "Link to note or document…" (editable rich notes in the main window; D-098, D-157). */
   insertReference?: () => void;
   /** "Add reminder…" (main window). */
   addReminder?: () => void;
@@ -41,7 +42,7 @@ export function noteMenuItems(actions: NoteActions, opts: { format: 'rich' | 'pl
           { id: 'image', label: 'Insert image', disabled: off, onSelect: () => actions.insertAttachment('image') },
           { id: 'file', label: 'Attach file', disabled: off, onSelect: () => actions.insertAttachment('document') },
           ...(actions.insertTable ? [{ id: 'table', label: 'Insert table…', onSelect: actions.insertTable }] : []),
-          ...(actions.insertReference ? [{ id: 'reference', label: 'Link to note…', onSelect: actions.insertReference }] : []),
+          ...(actions.insertReference ? [{ id: 'reference', label: 'Link to note or document…', onSelect: actions.insertReference }] : []),
         ]
       : [];
   const reminders: MenuItem[] = [
@@ -69,6 +70,11 @@ function lockItems(lock: NoteActions['lock']): MenuItem[] {
   ];
 }
 
+/** A new Mermaid block with a small flowchart to start from (D-158). */
+export const DIAGRAM_STARTER = 'flowchart TD\n  A[Start] --> B{Decide}\n  B -->|Yes| C[Do it]\n  B -->|No| D[Skip]';
+
+const diagramBlock = () => ({ type: 'codeBlock', attrs: { language: MERMAID }, content: [{ type: 'text', text: DIAGRAM_STARTER }] });
+
 /** One entry of the insert menu that "/" opens in a rich note. */
 export interface InsertItem {
   id: string;
@@ -85,11 +91,14 @@ export function insertItems(editor: Editor, actions: NoteActions): InsertItem[] 
     { id: 'bullets', label: 'Bulleted list', keywords: 'ul', run: () => void chain().toggleBulletList().run() },
     { id: 'numbers', label: 'Numbered list', keywords: 'ol', run: () => void chain().toggleOrderedList().run() },
     { id: 'checklist', label: 'Checklist', keywords: 'todo task', run: () => void chain().toggleTaskList().run() },
-    { id: 'codeBlock', label: 'Code block', run: () => void chain().toggleCodeBlock().run() },
+    { id: 'codeBlock', label: 'Code block', keywords: 'code snippet', run: () => void chain().toggleCodeBlock().run() },
+    { id: 'diagram', label: 'Diagram', keywords: 'mermaid chart flowchart', run: () => void chain().insertContent(diagramBlock()).run() },
+    { id: 'mathBlock', label: 'Math block', keywords: 'formula equation latex tex katex', run: () => void chain().insertContent({ type: 'mathBlock', attrs: { latex: '' } }).run() },
+    { id: 'mathInline', label: 'Inline math', keywords: 'formula equation latex tex katex', run: () => void chain().insertContent({ type: 'mathInline', attrs: { latex: '' } }).run() },
     ...(actions.insertTable ? [{ id: 'table', label: 'Table', keywords: 'grid rows columns', run: actions.insertTable }] : []),
     { id: 'image', label: 'Insert image', keywords: 'picture photo', run: () => actions.insertAttachment('image') },
     { id: 'file', label: 'Attach file', keywords: 'document', run: () => actions.insertAttachment('document') },
-    ...(actions.insertReference ? [{ id: 'reference', label: 'Link to note…', keywords: 'reference', run: actions.insertReference }] : []),
+    ...(actions.insertReference ? [{ id: 'reference', label: 'Link to note or document…', keywords: 'reference document [[', run: actions.insertReference }] : []),
     ...(actions.addReminder ? [{ id: 'reminder', label: 'Add reminder…', run: actions.addReminder }] : []),
     ...(actions.createFromText ? [{ id: 'fromText', label: 'Create reminder from text', run: actions.createFromText }] : []),
   ];

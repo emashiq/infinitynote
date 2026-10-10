@@ -23,7 +23,7 @@ const input = { title: 'Have to submit this', zoneId: 'Asia/Dhaka', date: '2026-
 describe('Phase 06 catalogue (D-089)', () => {
   it('the four channels are appended after autostart:set in order, no new event', () => {
     expect(INVOKE_CHANNELS.slice(63, 68)).toEqual(['autostart:set', 'reminder:createFromSuggestion', 'reminder:updateFromSource', 'suggestion:dismiss', 'suggestion:listDismissed']);
-    expect(EVENT_CHANNELS).toHaveLength(13);
+    expect(EVENT_CHANNELS).toHaveLength(14);
   });
 
   it('stickies may add reminders and confirm or dismiss suggestions, never edit reminders; the widget gets nothing new', () => {
@@ -39,7 +39,8 @@ describe('Phase 06 catalogue (D-089)', () => {
     // The three lease channels gave way to the five live-sync channels (D-103); v0.2.0 adds sticky:setTextColor, and the
     // picker (attachment:pickFiles replacing attachment:importFromDialog, attachment:addPicked) and the five fileLink
     // channels (D-108).
-    expect(STICKY_ALLOWED_CHANNELS.size).toBe(46);
+    // Plus the five lock channels of locked stickies (D-172).
+    expect(STICKY_ALLOWED_CHANNELS.size).toBe(51);
     expect([...WIDGET_ALLOWED_CHANNELS]).toEqual([
       'app:getInfo',
       'app:quit',

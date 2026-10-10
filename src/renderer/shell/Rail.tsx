@@ -1,4 +1,4 @@
-import { Bell, House, NotebookText, Settings, StickyNote } from 'lucide-react';
+import { Bell, House, NotebookText, Settings, StickyNote, Waypoints } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useServices, useStore } from '../state/use-store';
 
@@ -11,7 +11,7 @@ export function Rail() {
   const active = session.activeTabId;
   const treeVisible = layout.treeVisible();
 
-  const page = (label: string, Icon: RailIcon, tabId: string, command: 'go.home' | 'go.stickies' | 'go.reminders' | 'go.settings', extra = '') => (
+  const page = (label: string, Icon: RailIcon, tabId: string, command: 'go.home' | 'go.stickies' | 'go.reminders' | 'go.graph' | 'go.settings', extra = '') => (
     <button
       type="button"
       className={`rail-btn ${active === tabId ? 'is-on' : ''} ${extra}`.trim()}
@@ -44,6 +44,7 @@ export function Rail() {
       </button>
       {page('Stickies', StickyNote, 'page:stickies', 'go.stickies')}
       {page('Reminders', Bell, 'page:reminders', 'go.reminders')}
+      {page('Graph', Waypoints, 'page:graph', 'go.graph')}
       {page('Settings', Settings, 'page:settings', 'go.settings', 'rail-bottom')}
     </nav>
   );

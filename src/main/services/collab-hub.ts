@@ -223,6 +223,26 @@ export class CollabHub {
     for (const webContentsId of members) this.deps.send(webContentsId, 'collab:reset', { noteId, conflict: null });
   }
 
+  /**
+   * One window stops showing a note (a locked sticky blurs, D-172): its views leave the session and start over (joining
+   * again, they find the note blurred). A session left without views closes and saves; one still open in another view
+   * saves its edits now (a failed save keeps retrying in the session).
+   */
+  release(noteId: string, webContentsId: number): void {
+    const session = this.sessions.get(noteId);
+    if (!session) return;
+    for (const [viewId, bound] of [...session.members]) if (bound === webContentsId) session.members.delete(viewId);
+    if (session.members.size === 0) this.close(session);
+    else if (session.unsaved === 'edits') {
+      try {
+        this.settle(noteId);
+      } catch (err) {
+        this.deps.logger.warn(`collab: saving note ${noteId} before a window left it failed ${this.logDetail(noteId, err)}`);
+      }
+    }
+    this.deps.send(webContentsId, 'collab:reset', { noteId, conflict: null });
+  }
+
   /** The renderer document of a window went away: its views leave, and sessions without views close. */
   webContentsReset(webContentsId: number): void {
     for (const [viewId, bound] of [...this.bindings]) if (bound === webContentsId) this.bindings.delete(viewId);

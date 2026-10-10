@@ -10,19 +10,23 @@ export const MAX_MANIFEST_BYTES = 64 * 1024 * 1024;
 
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 const Size = z.number().int().nonnegative();
-/** The managed relative path of an attachment (the same GLOB the attachments table enforces). */
+/** The managed relative paths of an attachment and a document blob (the GLOBs their tables enforce). */
 const AttachmentPath = z.string().regex(/^attachments\/[0-9a-f]{2}\/[0-9a-f-]{36}\.[a-z0-9]{1,10}$/);
+const DocumentPath = z.string().regex(/^documents\/[0-9a-f]{2}\/[0-9a-f-]{36}\.[a-z0-9]{1,10}$/);
+const StoredFile = (pathSchema: z.ZodString) => z.strictObject({ id: Uuid, path: pathSchema, sha256: Sha256, size: Size });
 
 export const BackupManifest = z.strictObject({
   format: z.literal(BACKUP_FORMAT),
-  formatVersion: z.literal(ARCHIVE_FORMAT_VERSION),
+  formatVersion: z.number().int().min(1).max(ARCHIVE_FORMAT_VERSION),
   appVersion: z.string().min(1).max(50),
   schemaVersion: z.number().int().min(1),
   createdAt: z.number().int(),
   notes: Size,
   db: z.strictObject({ path: z.literal(BACKUP_DB_ENTRY), sha256: Sha256, size: Size }),
-  attachments: z.array(z.strictObject({ id: Uuid, path: AttachmentPath, sha256: Sha256, size: Size })).max(200_000),
-  /** Attachment rows whose file was already missing when the backup was made. */
+  attachments: z.array(StoredFile(AttachmentPath)).max(200_000),
+  /** Stored document bytes (format 2, D-118); format 1 backups have none. */
+  documents: z.array(StoredFile(DocumentPath)).max(200_000).default([]),
+  /** Attachment and document blob rows whose file was already missing when the backup was made. */
   missing: z.array(Uuid).max(200_000),
 });
 export type BackupManifestType = z.infer<typeof BackupManifest>;
@@ -43,8 +47,14 @@ export function parseBackupManifest(bytes: Buffer): BackupManifestType {
   if (head.data.formatVersion > ARCHIVE_FORMAT_VERSION) throw new AppError('UNSUPPORTED', PORTABILITY_MESSAGES.newerFormat);
   const manifest = BackupManifest.safeParse(raw);
   if (!manifest.success) throw new AppError('VALIDATION_FAILED', PORTABILITY_MESSAGES.notArchive);
-  const paths = new Set(manifest.data.attachments.map((a) => a.path));
-  const named = manifest.data.attachments.every((a) => a.path.startsWith(`attachments/${a.id.slice(0, 2)}/${a.id}.`));
-  if (!named || paths.size !== manifest.data.attachments.length) throw new AppError('VALIDATION_FAILED', PORTABILITY_MESSAGES.unsafe);
+  const files = storedFiles(manifest.data);
+  const paths = new Set(files.map((a) => a.path));
+  const named = files.every((a) => a.path.startsWith(`${a.path.split('/')[0]}/${a.id.slice(0, 2)}/${a.id}.`));
+  if (!named || paths.size !== files.length) throw new AppError('VALIDATION_FAILED', PORTABILITY_MESSAGES.unsafe);
   return manifest.data;
+}
+
+/** Every stored file a backup carries: attachments, then document blobs. */
+export function storedFiles(manifest: Pick<BackupManifestType, 'attachments' | 'documents'>): BackupManifestType['attachments'] {
+  return [...manifest.attachments, ...manifest.documents];
 }

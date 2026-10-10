@@ -20,13 +20,13 @@ describe('trash batches', () => {
   it('reports counts and trashedNoteIds and creates one batch per call', async () => {
     const { s, l2, n3, p } = await sample();
     const r = s.trash.trashFolder(l2.id);
-    expect(r.counts).toEqual({ projects: 0, folders: 2, notes: 1 });
+    expect(r.counts).toEqual({ projects: 0, folders: 2, notes: 1, documents: 0 });
     expect(r.trashedNoteIds).toEqual([n3.id]);
-    expect(s.events.at(-1)).toEqual({ reason: 'trash', trashedNoteIds: [n3.id] });
+    expect(s.events.at(-1)).toEqual({ reason: 'trash', trashedNoteIds: [n3.id], trashedDocumentIds: [] });
     const batches = s.rows<{ b: string }>('SELECT DISTINCT trash_batch_id AS b FROM folders WHERE deleted_at IS NOT NULL');
     expect(batches).toEqual([{ b: r.trashBatchId }]);
     const pr = s.trash.trashProject(p.id);
-    expect(pr.counts).toEqual({ projects: 1, folders: 1, notes: 1 });
+    expect(pr.counts).toEqual({ projects: 1, folders: 1, notes: 1, documents: 0 });
     expect(pr.trashBatchId).not.toBe(r.trashBatchId);
     expect(thrown(() => s.trash.trashFolder(l2.id)).code).toBe('NOT_FOUND');
   });
@@ -237,8 +237,8 @@ describe('purge (INF-HIER-09)', () => {
       s.note(p.id, parent, `n${i}`);
     }
     const r = s.trash.trashFolder(first);
-    expect(r.counts).toEqual({ projects: 0, folders: 5, notes: 5 });
-    expect(s.trash.purge({ target: { kind: 'batch', batchId: r.trashBatchId }, confirmed: true })).toEqual({ purged: { projects: 0, folders: 5, notes: 5 } });
+    expect(r.counts).toEqual({ projects: 0, folders: 5, notes: 5, documents: 0 });
+    expect(s.trash.purge({ target: { kind: 'batch', batchId: r.trashBatchId }, confirmed: true })).toEqual({ purged: { projects: 0, folders: 5, notes: 5, documents: 0 } });
     expect(s.row<{ n: number }>('SELECT count(*) AS n FROM folders')?.n).toBe(0);
     expect(s.row<{ n: number }>('SELECT count(*) AS n FROM notes')?.n).toBe(0);
     s.check();
@@ -313,15 +313,15 @@ describe('purge (INF-HIER-09)', () => {
     s.hierarchy.setPinned(n1.id, true);
     s.trash.trashFolder(l1.id);
     s.trash.trashProject(p.id);
-    expect(s.hierarchy.list()).toEqual({ projects: [], folders: [], notes: [] });
+    expect(s.hierarchy.list()).toEqual({ projects: [], folders: [], notes: [], documents: [] });
     expect(s.home.summary({ kind: 'all' })).toMatchObject({ pinned: [], pinnedTotal: 0, recent: [] });
     expect(s.palette.searchTitles('findme').results).toEqual([]);
     expect(s.trash.list().items).toHaveLength(2);
-    expect(s.trash.purge({ target: { kind: 'all' }, confirmed: true })).toEqual({ purged: { projects: 1, folders: 3, notes: 2 } });
+    expect(s.trash.purge({ target: { kind: 'all' }, confirmed: true })).toEqual({ purged: { projects: 1, folders: 3, notes: 2, documents: 0 } });
     expect(s.trash.list().items).toEqual([]);
     expect(s.row<{ n: number }>('SELECT count(*) AS n FROM notes')?.n).toBe(0);
     expect(s.row<{ n: number }>('SELECT count(*) AS n FROM projects')?.n).toBe(0);
-    expect(s.trash.purge({ target: { kind: 'all' }, confirmed: true })).toEqual({ purged: { projects: 0, folders: 0, notes: 0 } });
+    expect(s.trash.purge({ target: { kind: 'all' }, confirmed: true })).toEqual({ purged: { projects: 0, folders: 0, notes: 0, documents: 0 } });
     s.check();
   });
 });

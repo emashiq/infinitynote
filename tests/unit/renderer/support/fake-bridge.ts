@@ -8,7 +8,12 @@ import { EVENT_CHANNELS, type EventChannel } from '../../../../src/shared/contra
 import type { ChannelResponse } from '../../../../src/shared/contracts/channels';
 import { fail, ok, type ErrorCode, type Result } from '../../../../src/shared/contracts/envelope';
 import { LINK_MESSAGES } from '../../../../src/shared/attachments/link-messages';
+import type { DocumentFileInfoType, DocumentReadWorkbookResponseType, DocumentVersionDtoType } from '../../../../src/shared/contracts/documents';
+import { DOCUMENT_KIND_INFO } from '../../../../src/shared/documents/kinds';
+import { DOCUMENT_MESSAGES } from '../../../../src/shared/documents/messages';
+import type { WorkbookType } from '../../../../src/shared/documents/workbook';
 import type {
+  DocumentDtoType,
   FolderDtoType,
   NoteDtoType,
   NoteSummaryType,
@@ -16,7 +21,8 @@ import type {
   TrashItemType,
 } from '../../../../src/shared/contracts/hierarchy';
 import type { HomeScopeType } from '../../../../src/shared/contracts/home';
-import { LOCK_MESSAGES, type LockStatusType, type OsKeyAvailabilityType } from '../../../../src/shared/contracts/locks';
+import { COMMENT_MESSAGES, type CommentThreadDtoType } from '../../../../src/shared/contracts/comments';
+import { LOCK_MESSAGES, PIN_RE, PIN_STRIKES, type LockStatusType, type OsKeyAvailabilityType, type StickyLockStateType } from '../../../../src/shared/contracts/locks';
 import { DEFAULT_SESSION, type TabSessionType } from '../../../../src/shared/contracts/session';
 import { SETTINGS, type SettingKey } from '../../../../src/shared/contracts/settings';
 import type { ContentOpBaseType, DraftsResolveResponseType, NoteContentResponseType } from '../../../../src/shared/contracts/notes';
@@ -35,7 +41,8 @@ import type { AutostartStateType, WidgetStateType } from '../../../../src/shared
 import { resolveLocal } from '../../../../src/shared/time/resolve';
 import type { WindowGetStateResponseType } from '../../../../src/shared/contracts/windows';
 import { extractPlainText } from '../../../../src/shared/text/plain-text';
-import { BLOCK_ID_TYPES, collectNoteRefs } from '../../../../src/shared/editor/doc-schema';
+import { BLOCK_ID_TYPES, collectDocRefs, collectNoteRefs } from '../../../../src/shared/editor/doc-schema';
+import { rankByTitle } from '../../../../src/shared/search/fuzzy';
 import type { NotesPickResponseType } from '../../../../src/shared/contracts/references';
 import { textBlocksOf } from '../../../../src/shared/editor/text-blocks';
 import { docToText, textToDoc } from '../../../../src/shared/text/textarea-doc';
@@ -75,11 +82,33 @@ export interface FakeVersion {
   createdAt: number;
 }
 
+/** A locked note in the fake: its password, whether its key is in memory, Windows Hello and its sticky PIN. */
+interface FakeLock {
+  password: string;
+  unlocked: boolean;
+  hello: boolean;
+  pin: string | null;
+}
+
 export interface FakeNote extends NoteDtoType {
   content: unknown;
   format: 'rich' | 'plain';
   deletedAt: number | null;
   batch: string | null;
+}
+
+/** A document as main holds it (D-118): the DTO, its trash state, a linked original's state and its saves. */
+export interface FakeDocument extends DocumentDtoType {
+  deletedAt: number | null;
+  batch: string | null;
+  file: DocumentFileInfoType | null;
+  /** The bytes of each save, oldest first. */
+  saves: Uint8Array[];
+  /** Earlier versions, newest first: each save keeps the revision it replaced (D-119). */
+  versions: DocumentVersionDtoType[];
+  /** What `document:readWorkbook` answers for a spreadsheet, and the workbooks saved, oldest first. */
+  workbook: DocumentReadWorkbookResponseType | null;
+  workbookSaves: WorkbookType[];
 }
 
 export interface FakeBridgeOptions {
@@ -114,6 +143,13 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const projects: Array<ProjectDtoType & { deletedAt: number | null; batch: string | null }> = [];
   const folders: Array<FolderDtoType & { deletedAt: number | null; batch: string | null }> = [];
   const notes: FakeNote[] = [];
+  const documents: FakeDocument[] = [];
+  /** Comment threads by ID (D-165). */
+  const threads = new Map<string, CommentThreadDtoType>();
+  /** Files the fake picker returns next: names and sizes. */
+  const documentPicks: Array<Array<{ name: string; sizeBytes: number }>> = [];
+  /** Document hand-offs to the OS, as "open:<id>" or "show:<id>". */
+  const documentHandoffs: string[] = [];
   const sessions = new Map<string, FakeSession>();
   const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const drafts: FakeDraft[] = [];
@@ -153,17 +189,36 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   };
   let capabilities: CapabilitiesType | null = null;
   let clock = 1_000;
-  /** Locked notes (D-111): each one's password, whether it is unlocked and whether Windows Hello is set up. */
+  /** Locked notes (D-111): each one's password, whether it is unlocked, Windows Hello and the sticky PIN (D-173). */
   const lockData = {
-    locks: new Map<string, { password: string; unlocked: boolean; hello: boolean }>(),
+    locks: new Map<string, FakeLock>(),
+    /** Notes whose sticky main has revealed (D-172), and wrong PINs in a row. */
+    revealed: new Set<string>(),
+    pinFailures: new Map<string, number>(),
     osKey: { status: 'unsupported', reason: 'Linux has no OS key that Infinity Notes can verify. Use a password.' } as OsKeyAvailabilityType,
   };
   const lockStatus = (noteId: string): LockStatusType => {
     const lock = lockData.locks.get(noteId);
-    return { noteId, locked: !!lock, unlocked: !!lock?.unlocked, hello: !!lock?.hello, retryInSeconds: 0 };
+    return { noteId, locked: !!lock, unlocked: !!lock?.unlocked, hello: !!lock?.hello, pin: !!lock?.pin, retryInSeconds: 0 };
+  };
+  const stickyLockState = (noteId: string): StickyLockStateType => {
+    const lock = lockData.locks.get(noteId);
+    return {
+      noteId,
+      locked: !!lock,
+      revealed: !!lock?.unlocked && lockData.revealed.has(noteId),
+      keyInMemory: !!lock?.unlocked,
+      pinSet: !!lock?.pin,
+      pinBlocked: (lockData.pinFailures.get(noteId) ?? 0) >= PIN_STRIKES,
+      hello: !!lock?.hello,
+      retryInSeconds: 0,
+    };
+  };
+  const blurSticky = (noteId: string) => {
+    if (lockData.revealed.delete(noteId)) emit('sticky:lockState', stickyLockState(noteId));
   };
   /** The note's lock after the password check, or the failure main would answer. */
-  const checkedLock = (noteId: string, password: string): { password: string; unlocked: boolean; hello: boolean } | Result<never> => {
+  const checkedLock = (noteId: string, password: string): FakeLock | Result<never> => {
     const lock = lockData.locks.get(noteId);
     if (!lock) return fail('VALIDATION_FAILED', LOCK_MESSAGES.notLocked);
     if (lock.password !== password) return fail('VALIDATION_FAILED', LOCK_MESSAGES.wrongPassword, { wrongPassword: true, retryInSeconds: 0 });
@@ -179,14 +234,47 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     if (!lock?.unlocked) return false;
     lock.unlocked = false;
     resetSession(noteId);
+    blurSticky(noteId);
     return true;
+  };
+
+  const setPin = (req: { noteId: string; password: string; pin: string | null }): Result<LockStatusType> => {
+    const lock = checkedLock(req.noteId, req.password);
+    if (isFailure(lock)) return lock;
+    if (req.pin !== null && !PIN_RE.test(req.pin)) return fail('VALIDATION_FAILED', LOCK_MESSAGES.pinFormat);
+    lock.pin = req.pin;
+    lockData.pinFailures.delete(req.noteId);
+    return ok(lockStatus(req.noteId));
+  };
+  const reveal = (noteId: string, how: { kind: 'pin'; pin: string } | { kind: 'password'; password: string } | { kind: 'hello' }): Result<StickyLockStateType> => {
+    const lock = lockData.locks.get(noteId);
+    if (!lock) return fail('VALIDATION_FAILED', LOCK_MESSAGES.notLocked);
+    if (how.kind === 'pin') {
+      if (!lock.pin) return fail('VALIDATION_FAILED', LOCK_MESSAGES.pinNotSet);
+      if (!lock.unlocked) return fail('FORBIDDEN', LOCK_MESSAGES.pinNeedsKey, { needsPassword: true });
+      const failures = lockData.pinFailures.get(noteId) ?? 0;
+      if (failures >= PIN_STRIKES) return fail('FORBIDDEN', LOCK_MESSAGES.pinStrikes, { needsPassword: true });
+      if (how.pin !== lock.pin) {
+        lockData.pinFailures.set(noteId, failures + 1);
+        return fail('VALIDATION_FAILED', failures + 1 >= PIN_STRIKES ? LOCK_MESSAGES.pinStrikes : LOCK_MESSAGES.wrongPin, { wrongPin: true });
+      }
+    } else if (how.kind === 'password') {
+      const checked = checkedLock(noteId, how.password);
+      if (isFailure(checked)) return checked;
+    } else if (!lock.hello) {
+      return fail('VALIDATION_FAILED', LOCK_MESSAGES.helloOff);
+    }
+    lock.unlocked = true;
+    lockData.pinFailures.delete(noteId);
+    lockData.revealed.add(noteId);
+    return ok(stickyLockState(noteId));
   };
 
   const emit = (channel: EventChannel, payload: unknown) => {
     for (const cb of subscribers.get(channel) ?? []) cb(payload);
   };
-  const treeChanged = (reason: string, trashedNoteIds: string[] = []) => {
-    if (autoEvents) emit('tree:changed', { reason, trashedNoteIds });
+  const treeChanged = (reason: string, trashedNoteIds: string[] = [], trashedDocumentIds: string[] = []) => {
+    if (autoEvents) emit('tree:changed', { reason, trashedNoteIds, trashedDocumentIds });
   };
 
   function handle<T>(channel: string, req: unknown, fn: () => Result<T>): Promise<Result<T>> {
@@ -211,6 +299,33 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     return rest;
   };
   const liveNotes = () => notes.filter((n) => n.deletedAt === null);
+  const liveDocuments = () => documents.filter((d) => d.deletedAt === null);
+  const documentDto = (d: FakeDocument): DocumentDtoType => {
+    const { deletedAt: _d, batch: _b, file: _f, saves: _s, versions: _v, workbook: _w, workbookSaves: _ws, ...dto } = d;
+    return dto;
+  };
+  const documentSummary = (d: FakeDocument) => ({ ...documentDto(d), path: pathOf(pathIndex(), { projectId: d.projectId, folderId: d.folderId }) });
+  const addDocument = (fields: Pick<DocumentDtoType, 'projectId' | 'folderId' | 'title' | 'kind' | 'storage' | 'sizeBytes'>, file: DocumentFileInfoType | null = null): FakeDocument => {
+    clock += 1;
+    const d: FakeDocument = { id: uid(), ...fields, revision: 0, favorite: false, createdAt: clock, updatedAt: clock, deletedAt: null, batch: null, file, saves: [], versions: [], workbook: null, workbookSaves: [] };
+    documents.push(d);
+    treeChanged('create');
+    return d;
+  };
+  /** A save or restore: the replaced revision becomes the newest version. */
+  const nextRevision = (d: FakeDocument, reason: DocumentVersionDtoType['reason'], sizeBytes: number) => {
+    clock += 1;
+    d.versions.unshift({ id: uid(), revision: d.revision, reason, sizeBytes: d.sizeBytes, createdAt: clock });
+    Object.assign(d, { revision: d.revision + 1, sizeBytes, updatedAt: clock });
+  };
+  const liveDocument = (documentId: string): FakeDocument | Result<never> => {
+    const d = documents.find((x) => x.id === documentId);
+    if (!d) return fail('NOT_FOUND', DOCUMENT_MESSAGES.missing);
+    return d.deletedAt === null ? d : fail('NOT_FOUND', DOCUMENT_MESSAGES.inTrash);
+  };
+  const trashDocumentIds = (ids: string[], batch: string) => {
+    for (const d of documents) if (ids.includes(d.id) && d.deletedAt === null) Object.assign(d, { deletedAt: clock, batch });
+  };
   const stickyState = (n: FakeNote): StickyStateType => {
     const w = floating.get(n.id) ?? { collapsed: false, alwaysOnTop: false, activation: 0 };
     return {
@@ -220,6 +335,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
       textColor: textColors.get(n.id) ?? null,
       path: pathOf(pathIndex(), { projectId: n.projectId, folderId: n.folderId }),
       trashed: n.deletedAt === null ? null : { batchId: n.batch },
+      locked: n.locked,
       ...w,
     };
   };
@@ -307,7 +423,75 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     };
   };
 
+  const threadOf = (threadId: string): Result<CommentThreadDtoType> => {
+    const thread = threads.get(threadId);
+    return thread ? ok(thread) : fail('NOT_FOUND', COMMENT_MESSAGES.missing);
+  };
+  const changeThread = (threadId: string, change: (t: CommentThreadDtoType) => CommentThreadDtoType) => {
+    const found = threadOf(threadId);
+    if (!found.ok) return found;
+    const thread = change(found.data);
+    threads.set(threadId, thread);
+    return ok({ thread });
+  };
+  const threadWithComment = (commentId: string) => [...threads.values()].find((t) => t.comments.some((c) => c.id === commentId));
+  const fakeGraph = () => {
+    const items = [
+      ...liveNotes().map((n) => ({ kind: 'note' as const, id: n.id, documentKind: null, title: n.title, locked: n.locked, projectId: n.projectId, folderId: n.folderId })),
+      ...liveDocuments().map((d) => ({ kind: 'document' as const, id: d.id, documentKind: d.kind, title: d.title, locked: false, projectId: d.projectId, folderId: d.folderId })),
+    ];
+    const index = new Map(items.map((item, i) => [item.id, i]));
+    const edges = liveNotes().flatMap((n) => [
+      ...collectNoteRefs(n.content).map((r) => ({ source: index.get(n.id)!, target: index.get(r.targetNoteId), kind: 'reference' as const })),
+      ...collectDocRefs(n.content).map((r) => ({ source: index.get(n.id)!, target: index.get(r.targetDocumentId), kind: 'documentLink' as const })),
+    ]).filter((e): e is { source: number; target: number; kind: 'reference' | 'documentLink' } => e.target !== undefined && e.target !== e.source);
+    const degree = (i: number) => edges.filter((e) => e.source === i || e.target === i).length;
+    return { nodes: items.map((item, i) => ({ ...item, degree: degree(i) })), edges, truncated: false };
+  };
+
   const bridge: InfinityBridge = {
+    comments: {
+      list: (req) => handle('comment:list', req, () => ok({ threads: [...threads.values()].filter((t) => t.target.kind === req.target.kind && t.target.id === req.target.id) })),
+      create: (req) =>
+        handle('comment:create', req, () => {
+          const thread: CommentThreadDtoType = {
+            id: uid(),
+            target: req.target,
+            anchor: req.anchor,
+            quote: req.quote,
+            resolvedAt: null,
+            createdAt: clock,
+            updatedAt: clock,
+            comments: [{ id: uid(), body: req.body.trim(), createdAt: clock, updatedAt: clock }],
+          };
+          threads.set(thread.id, thread);
+          return ok({ thread });
+        }),
+      reply: (req) =>
+        handle('comment:reply', req, () =>
+          changeThread(req.threadId, (t) => ({ ...t, comments: [...t.comments, { id: uid(), body: req.body.trim(), createdAt: clock, updatedAt: clock }] })),
+        ),
+      edit: (req) =>
+        handle('comment:edit', req, () => {
+          const thread = threadWithComment(req.commentId);
+          if (!thread) return fail('NOT_FOUND', COMMENT_MESSAGES.missing);
+          return changeThread(thread.id, (t) => ({ ...t, comments: t.comments.map((c) => (c.id === req.commentId ? { ...c, body: req.body.trim(), updatedAt: clock } : c)) }));
+        }),
+      delete: (req) =>
+        handle('comment:delete', req, () => {
+          const thread = threadWithComment(req.commentId);
+          if (!thread) return fail('NOT_FOUND', COMMENT_MESSAGES.missing);
+          if (thread.comments[0]!.id === req.commentId) return fail('VALIDATION_FAILED', COMMENT_MESSAGES.firstComment);
+          return changeThread(thread.id, (t) => ({ ...t, comments: t.comments.filter((c) => c.id !== req.commentId) }));
+        }),
+      deleteThread: (req) =>
+        handle('comment:deleteThread', req, () => (threads.delete(req.threadId) ? ok({ deleted: true as const }) : fail('NOT_FOUND', COMMENT_MESSAGES.missing))),
+      resolve: (req) => handle('comment:resolve', req, () => changeThread(req.threadId, (t) => ({ ...t, resolvedAt: req.resolved ? clock : null }))),
+    },
+    graph: {
+      build: (req) => handle('graph:build', req, () => ok(fakeGraph())),
+      local: (req) => handle('graph:local', req, () => ok(fakeGraph())),
+    },
     app: {
       getInfo: () =>
         handle('app:getInfo', {}, () =>
@@ -365,7 +549,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           const n = notes.find((x) => x.id === req.noteId);
           if (!n) return fail('NOT_FOUND', 'That item no longer exists.');
           if (lockData.locks.has(n.id)) return fail('VALIDATION_FAILED', LOCK_MESSAGES.alreadyLocked);
-          lockData.locks.set(n.id, { password: req.password, unlocked: false, hello: req.hello });
+          lockData.locks.set(n.id, { password: req.password, unlocked: false, hello: req.hello, pin: req.pin ?? null });
           n.locked = true;
           resetSession(n.id);
           treeChanged('lock');
@@ -416,6 +600,39 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           treeChanged('lock');
           return ok(lockStatus(req.noteId));
         }),
+      create: (req) =>
+        handle('lock:create', req, () => {
+          if (req.password.length < 8) return fail('VALIDATION_FAILED', LOCK_MESSAGES.tooShort);
+          if (req.pin && !PIN_RE.test(req.pin)) return fail('VALIDATION_FAILED', LOCK_MESSAGES.pinFormat);
+          clock += 1;
+          const n: FakeNote = {
+            id: uid(),
+            projectId: req.location.projectId,
+            folderId: req.location.folderId,
+            title: '',
+            sticky: req.sticky,
+            color: req.sticky ? 'yellow' : null,
+            pinnedAt: null,
+            favorite: false,
+            revision: 0,
+            locked: true,
+            createdAt: clock,
+            updatedAt: clock,
+            content: { type: 'doc', content: [{ type: 'paragraph' }] },
+            format: 'rich',
+            deletedAt: null,
+            batch: null,
+          };
+          notes.push(n);
+          lockData.locks.set(n.id, { password: req.password, unlocked: true, hello: req.hello, pin: req.pin ?? null });
+          if (req.sticky) {
+            floating.set(n.id, { collapsed: false, alwaysOnTop: false, activation: 1 });
+            lockData.revealed.add(n.id);
+          }
+          treeChanged('create');
+          return ok({ note: dto(n) });
+        }),
+      setPin: (req) => handle('lock:setPin', req, () => setPin(req)),
     },
     fileLink: {
       // jsdom files are never on disk, like a File made by page script (D-115).
@@ -450,7 +667,32 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
                 .filter((r) => r.targetNoteId === req.noteId)
                 .map((r) => ({ sourceNoteId: n.id, sourceBlockId: r.sourceBlockId, targetBlockId: r.targetBlockId, title: n.title, path: [], context: '' })),
             );
-          return ok({ outgoing, backlinks });
+          const documentRefs = collectDocRefs(byId.get(req.noteId)?.content).map((r) => {
+            const d = documents.find((x) => x.id === r.targetDocumentId);
+            const state = !d ? ('missing' as const) : d.deletedAt !== null ? ('trashed' as const) : ('ok' as const);
+            return { targetDocumentId: r.targetDocumentId, target: r.target, title: d?.title ?? r.label, kind: d?.kind ?? null, path: [], state, trashBatchId: d?.batch ?? null };
+          });
+          return ok({ outgoing, documents: documentRefs, backlinks });
+        }),
+      documentBacklinks: (req) =>
+        handle('refs:documentBacklinks', req, () =>
+          ok({
+            backlinks: liveNotes().flatMap((n) =>
+              collectDocRefs(n.content)
+                .filter((r) => r.targetDocumentId === req.documentId)
+                .map((r) => ({ sourceNoteId: n.id, sourceBlockId: r.sourceBlockId, target: r.target, title: n.title, path: [], context: '' })),
+            ),
+          }),
+        ),
+    },
+    links: {
+      search: (req) =>
+        handle('links:search', req, () => {
+          const items = [
+            ...liveNotes().map((n) => ({ kind: 'note' as const, id: n.id, title: n.title, path: summary(n).path, locked: n.locked, updatedAt: n.updatedAt })),
+            ...liveDocuments().map((d) => ({ kind: 'document' as const, id: d.id, title: d.title, path: documentSummary(d).path, documentKind: d.kind, updatedAt: d.updatedAt })),
+          ];
+          return ok({ items: rankByTitle(req.query, items, (i) => i.title || 'Untitled', (i) => i.updatedAt).map(({ updatedAt: _u, ...item }) => item) });
         }),
     },
     notes: {
@@ -470,13 +712,14 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
       query: (req) =>
         handle('search:query', req, () => {
           const q = req.query.trim().toLowerCase();
-          if (!q) return ok({ results: [] });
+          if (!q) return ok({ results: [], documents: [] });
+          const matchedDocuments = (req.tags ?? []).length > 0 ? [] : liveDocuments().filter((d) => d.title.toLowerCase().includes(q));
           const results = liveNotes()
             .filter((n) => `${n.title} ${extractPlainText(n.format, n.content)}`.toLowerCase().includes(q))
             .filter((n) => (req.tags ?? []).every((t) => (noteTags.get(n.id) ?? []).includes(t)))
             .slice(0, req.limit ?? 50)
             .map((n) => ({ note: summary(n), title: [{ text: n.title || 'Untitled', hit: false }], snippet: [{ text: extractPlainText(n.format, n.content).slice(0, 80), hit: false }] }));
-          return ok({ results });
+          return ok({ results, documents: matchedDocuments.map((d) => ({ document: documentSummary(d), title: [{ text: d.title, hit: false }], snippet: [] })) });
         }),
     },
     tags: {
@@ -570,6 +813,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
             projects: projects.filter((p) => p.deletedAt === null).map(({ deletedAt: _d, batch: _b, ...p }) => p),
             folders: folders.filter((f) => f.deletedAt === null).map(({ deletedAt: _d, batch: _b, ...f }) => f),
             notes: liveNotes().map(dto),
+            documents: liveDocuments().map(documentDto),
           }),
         ),
     },
@@ -603,8 +847,10 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           f.forEach((x) => Object.assign(x, { deletedAt: clock, batch }));
           const ids = liveNotes().filter((n) => n.projectId === p.id).map((n) => n.id);
           trashNoteIds(ids, batch);
-          treeChanged('trash', ids);
-          return ok({ trashBatchId: batch, counts: { projects: 1, folders: f.length, notes: ids.length }, trashedNoteIds: ids });
+          const documentIds = liveDocuments().filter((d) => d.projectId === p.id).map((d) => d.id);
+          trashDocumentIds(documentIds, batch);
+          treeChanged('trash', ids, documentIds);
+          return ok({ trashBatchId: batch, counts: { projects: 1, folders: f.length, notes: ids.length, documents: documentIds.length }, trashedNoteIds: ids, trashedDocumentIds: documentIds });
         }),
     },
     folder: {
@@ -643,19 +889,23 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           const batch = uid();
           clock += 1;
           const ids: string[] = [];
+          const documentIds: string[] = [];
           const walk = (id: string) => {
             const node = folders.find((x) => x.id === id)!;
             Object.assign(node, { deletedAt: clock, batch });
             for (const n of liveNotes().filter((x) => x.folderId === id)) ids.push(n.id);
+            for (const d of liveDocuments().filter((x) => x.folderId === id)) documentIds.push(d.id);
             for (const child of folders.filter((x) => x.parentId === id && x.deletedAt === null)) walk(child.id);
           };
           walk(f.id);
           trashNoteIds(ids, batch);
-          treeChanged('trash', ids);
-          return ok({ trashBatchId: batch, counts: { projects: 0, folders: 1, notes: ids.length }, trashedNoteIds: ids });
+          trashDocumentIds(documentIds, batch);
+          treeChanged('trash', ids, documentIds);
+          return ok({ trashBatchId: batch, counts: { projects: 0, folders: 1, notes: ids.length, documents: documentIds.length }, trashedNoteIds: ids, trashedDocumentIds: documentIds });
         }),
     },
     note: {
+      print: (req) => handle('note:print', req, () => ok({ printed: true })),
       create: (req) =>
         handle('note:create', req, () => {
           clock += 1;
@@ -708,7 +958,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           clock += 1;
           trashNoteIds([n.id], batch);
           treeChanged('trash', [n.id]);
-          return ok({ trashBatchId: batch, counts: { projects: 0, folders: 0, notes: 1 }, trashedNoteIds: [n.id] });
+          return ok({ trashBatchId: batch, counts: { projects: 0, folders: 0, notes: 1, documents: 0 }, trashedNoteIds: [n.id], trashedDocumentIds: [] });
         }),
       setPinned: (req) =>
         handle('note:setPinned', req, () => {
@@ -843,7 +1093,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
         handle('trash:list', {}, () => {
           const items: TrashItemType[] = [];
           for (const p of projects.filter((x) => x.deletedAt !== null)) {
-            items.push({ batchId: p.batch!, kind: 'project', id: p.id, label: p.name, sticky: false, deletedAt: p.deletedAt!, fromPath: [], contains: { folders: 0, notes: 0 } });
+            items.push({ batchId: p.batch!, kind: 'project', id: p.id, label: p.name, sticky: false, deletedAt: p.deletedAt!, fromPath: [], contains: { folders: 0, notes: 0, documents: 0 }, documentKind: null });
           }
           const batchesWithProject = new Set(projects.map((p) => p.batch));
           const seen = new Set<string>();
@@ -851,24 +1101,29 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
             if (seen.has(f.batch!)) continue;
             const root = folders.filter((x) => x.batch === f.batch).find((x) => x.parentId === null || folders.find((y) => y.id === x.parentId)?.batch !== f.batch)!;
             seen.add(f.batch!);
-            items.push({ batchId: f.batch!, kind: 'folder', id: root.id, label: root.name, sticky: false, deletedAt: root.deletedAt!, fromPath: [], contains: { folders: 0, notes: 0 } });
+            items.push({ batchId: f.batch!, kind: 'folder', id: root.id, label: root.name, sticky: false, deletedAt: root.deletedAt!, fromPath: [], contains: { folders: 0, notes: 0, documents: 0 }, documentKind: null });
           }
           const batchesWithFolder = new Set(folders.map((f) => f.batch));
           for (const n of notes.filter((x) => x.deletedAt !== null && !batchesWithFolder.has(x.batch) && !batchesWithProject.has(x.batch))) {
-            items.push({ batchId: n.batch!, kind: 'note', id: n.id, label: n.title, sticky: n.sticky, deletedAt: n.deletedAt!, fromPath: [], contains: { folders: 0, notes: 0 } });
+            items.push({ batchId: n.batch!, kind: 'note', id: n.id, label: n.title, sticky: n.sticky, deletedAt: n.deletedAt!, fromPath: [], contains: { folders: 0, notes: 0, documents: 0 }, documentKind: null });
+          }
+          const batchesWithNote = new Set(notes.map((n) => n.batch));
+          for (const d of documents.filter((x) => x.deletedAt !== null && !batchesWithFolder.has(x.batch) && !batchesWithProject.has(x.batch) && !batchesWithNote.has(x.batch))) {
+            items.push({ batchId: d.batch!, kind: 'document', id: d.id, label: d.title, sticky: false, deletedAt: d.deletedAt!, fromPath: [], contains: { folders: 0, notes: 0, documents: 0 }, documentKind: d.kind });
           }
           return ok({ items });
         }),
       restore: (req) =>
         handle('trash:restore', req, () => {
-          const touched = [...projects, ...folders, ...notes].filter((x) => x.batch === req.batchId);
+          const touched = [...projects, ...folders, ...notes, ...documents].filter((x) => x.batch === req.batchId);
           if (touched.length === 0) return fail('NOT_FOUND', 'That item is no longer in Trash.');
           const restoredNoteIds = notes.filter((n) => n.batch === req.batchId).map((n) => n.id);
+          const restoredDocumentIds = documents.filter((d) => d.batch === req.batchId).map((d) => d.id);
           for (const x of touched) Object.assign(x, { deletedAt: null, batch: null });
           const root = touched[0]!;
-          const kind = projects.includes(root as never) ? 'project' : folders.includes(root as never) ? 'folder' : 'note';
+          const kind = projects.includes(root as never) ? 'project' : folders.includes(root as never) ? 'folder' : notes.includes(root as never) ? 'note' : 'document';
           treeChanged('restore');
-          return ok({ kind, id: root.id, relocated: false, location: { projectId: null, folderId: null }, path: ['Common'], restoredNoteIds });
+          return ok({ kind, id: root.id, relocated: false, location: { projectId: null, folderId: null }, path: ['Common'], restoredNoteIds, restoredDocumentIds });
         }),
       purge: (req) =>
         handle('trash:purge', req, () => {
@@ -884,7 +1139,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
             }
             return n;
           };
-          const purged = { projects: count(projects), folders: count(folders), notes: count(notes) };
+          const purged = { projects: count(projects), folders: count(folders), notes: count(notes), documents: count(documents) };
           treeChanged('purge');
           return ok({ purged });
         }),
@@ -905,7 +1160,11 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           const pool = liveNotes().filter(inScope);
           const pinned = pool.filter((n) => n.pinnedAt !== null).sort((a, b) => b.pinnedAt! - a.pinnedAt!);
           const recent = [...pool].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 10);
-          return ok({ scope, scopeValid, pinned: pinned.map(summary), pinnedTotal: pinned.length, recent: recent.map(summary) });
+          const recentDocuments = liveDocuments()
+            .filter((d) => scope.kind === 'all' || (scope.kind === 'common' ? d.projectId === null : d.projectId === (scope as { projectId: string }).projectId))
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .slice(0, 10);
+          return ok({ scope, scopeValid, pinned: pinned.map(summary), pinnedTotal: pinned.length, recent: recent.map(summary), recentDocuments: recentDocuments.map(documentSummary) });
         }),
     },
     session: {
@@ -937,6 +1196,19 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           if (w) w.activation += 1;
           else floating.set(n.id, { collapsed: false, alwaysOnTop: false, activation: 1 });
           return ok({ noteId: n.id, created: !w });
+        }),
+      lockStatus: (req) => handle('sticky:lockStatus', req, () => ok(stickyLockState(req.noteId))),
+      reveal: (req) => handle('sticky:reveal', req, () => reveal(req.noteId, req.with)),
+      activity: (req) => handle('sticky:activity', req, () => ok({})),
+      blur: (req) =>
+        handle('sticky:blur', req, () => {
+          lockData.revealed.delete(req.noteId);
+          return ok(stickyLockState(req.noteId));
+        }),
+      setPin: (req) =>
+        handle('sticky:setPin', req, () => {
+          const res = setPin(req);
+          return res.ok ? ok(stickyLockState(req.noteId)) : res;
         }),
       dock: (req) => handle('sticky:dock', req, () => (floating.delete(req.noteId), ok({}))),
       hide: (req) => handle('sticky:hide', req, () => (floating.delete(req.noteId), ok({}))),
@@ -990,7 +1262,138 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           if (n.deletedAt === null) return fail('VALIDATION_FAILED', 'This note is not in Trash');
           Object.assign(n, { deletedAt: null, batch: null });
           treeChanged('restore');
-          return ok({ kind: 'note' as const, id: n.id, relocated: false, location: { projectId: null, folderId: null }, path: ['Common'], restoredNoteIds: [n.id] });
+          return ok({ kind: 'note' as const, id: n.id, relocated: false, location: { projectId: null, folderId: null }, path: ['Common'], restoredNoteIds: [n.id], restoredDocumentIds: [] });
+        }),
+    },
+    document: {
+      create: (req) =>
+        handle('document:create', req, () => {
+          const d = addDocument({ ...req.location, title: req.title ?? DOCUMENT_KIND_INFO[req.kind].blankTitle, kind: req.kind, storage: 'managed', sizeBytes: 1000 });
+          return ok({ document: documentDto(d) });
+        }),
+      pickFiles: () =>
+        handle('document:pickFiles', {}, () => {
+          const files = documentPicks.shift();
+          return ok(files ? { canceled: false, pickId: uid(), files, truncated: false, rejected: [] } : { canceled: true, pickId: null, files: [], truncated: false, rejected: [] });
+        }),
+      addPicked: (req) =>
+        handle('document:addPicked', req, () => {
+          const d = addDocument({ ...req.location, title: `Picked ${req.index}`, kind: 'pdf', storage: req.action === 'link' ? 'linked' : 'managed', sizeBytes: 100 });
+          return ok({ document: documentDto(d) });
+        }),
+      fromAttachment: (req) =>
+        handle('document:fromAttachment', req, () => ok({ document: documentDto(addDocument({ projectId: null, folderId: null, title: 'From attachment', kind: 'xlsx', storage: 'managed', sizeBytes: 10 })), created: true })),
+      fromLink: (req) =>
+        handle('document:fromLink', req, () => ok({ document: documentDto(addDocument({ projectId: null, folderId: null, title: 'From link', kind: 'pdf', storage: 'linked', sizeBytes: 10 })), created: true })),
+      open: (req) =>
+        handle('document:open', req, () => {
+          const d = liveDocument(req.documentId);
+          return 'ok' in d ? d : ok({ document: documentDto(d), file: d.file });
+        }),
+      save: (req) =>
+        handle('document:save', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          if (req.baseRevision !== d.revision) return fail('CONFLICT', DOCUMENT_MESSAGES.revisionChanged, { reason: 'revision', currentRevision: d.revision });
+          nextRevision(d, 'save', req.bytes.byteLength);
+          d.saves.push(req.bytes);
+          return ok({ document: documentDto(d), file: d.file });
+        }),
+      saveWorkbook: (req) =>
+        handle('document:saveWorkbook', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          if (req.baseRevision !== d.revision) return fail('CONFLICT', DOCUMENT_MESSAGES.revisionChanged, { reason: 'revision', currentRevision: d.revision });
+          nextRevision(d, 'save', d.sizeBytes);
+          d.workbookSaves.push(req.workbook);
+          return ok({ document: documentDto(d), file: d.file });
+        }),
+      readWorkbook: (req) =>
+        handle('document:readWorkbook', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          return d.workbook ? ok(d.workbook) : fail('VALIDATION_FAILED', DOCUMENT_MESSAGES.damaged(d.kind));
+        }),
+      saveCopy: (req) =>
+        handle('document:saveCopy', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          return ok({ canceled: false as const, document: documentDto(addDocument({ ...d, title: `${d.title} (copy)`, storage: 'linked' })) });
+        }),
+      rename: (req) =>
+        handle('document:rename', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          d.title = req.title;
+          treeChanged('rename');
+          return ok({ document: documentDto(d) });
+        }),
+      move: (req) =>
+        handle('document:move', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          Object.assign(d, req.target);
+          treeChanged('move');
+          return ok({ document: documentDto(d) });
+        }),
+      trash: (req) =>
+        handle('document:trash', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          const batch = uid();
+          clock += 1;
+          trashDocumentIds([d.id], batch);
+          treeChanged('trash', [], [d.id]);
+          return ok({ trashBatchId: batch, counts: { projects: 0, folders: 0, notes: 0, documents: 1 }, trashedNoteIds: [], trashedDocumentIds: [d.id] });
+        }),
+      versions: (req) =>
+        handle('document:versions', req, () => {
+          const d = liveDocument(req.documentId);
+          return 'ok' in d ? d : ok({ versions: d.versions });
+        }),
+      restoreVersion: (req) =>
+        handle('document:restoreVersion', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          const version = d.versions.find((v) => v.id === req.versionId);
+          if (!version) return fail('NOT_FOUND', DOCUMENT_MESSAGES.versionMissing);
+          if (req.baseRevision !== d.revision) return fail('CONFLICT', DOCUMENT_MESSAGES.revisionChanged, { reason: 'revision', currentRevision: d.revision });
+          nextRevision(d, 'restore', version.sizeBytes);
+          return ok({ document: documentDto(d), file: d.file });
+        }),
+      copyVersion: (req) =>
+        handle('document:copyVersion', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          const version = d.versions.find((v) => v.id === req.versionId);
+          if (!version) return fail('NOT_FOUND', DOCUMENT_MESSAGES.versionMissing);
+          const copy = addDocument({ projectId: d.projectId, folderId: d.folderId, title: `${d.title} (revision ${version.revision})`, kind: d.kind, storage: 'managed', sizeBytes: version.sizeBytes });
+          return ok({ document: documentDto(copy) });
+        }),
+      exportCopy: (req) =>
+        handle('document:export', req, () => {
+          const d = liveDocument(req.documentId);
+          if ('ok' in d) return d;
+          documentHandoffs.push(`export:${req.documentId}:${req.versionId ?? 'current'}`);
+          return ok({ canceled: false });
+        }),
+      openExternal: (req) =>
+        handle('document:openExternal', req, () => {
+          documentHandoffs.push(`open:${req.documentId}`);
+          return ok({ opened: true as const });
+        }),
+      showInFolder: (req) =>
+        handle('document:showInFolder', req, () => {
+          documentHandoffs.push(`show:${req.documentId}`);
+          return ok({ shown: true as const });
+        }),
+      pickPdf: () => handle('document:pickPdf', {}, () => ok({ canceled: true as const })),
+      createBeside: (req) =>
+        handle('document:createBeside', req, () => {
+          const source = liveDocument(req.documentId);
+          if ('ok' in source) return source;
+          const d = addDocument({ projectId: source.projectId, folderId: source.folderId, title: req.title, kind: source.kind, storage: 'managed', sizeBytes: req.bytes.byteLength });
+          return ok({ document: documentDto(d) });
         }),
     },
     window: {
@@ -1146,6 +1549,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     },
     export: {
       markdown: (req) => handle('export:markdown', req, () => ok({ canceled: true as const })),
+      noteDocument: (req) => handle('export:noteDocument', req, () => ok({ canceled: false as const, file: `/exports/note.${req.format}` })),
       portable: () => handle('export:portable', {}, () => ok({ canceled: true as const })),
     },
     import: { portable: () => handle('import:portable', {}, () => ok({ canceled: true as const })) },
@@ -1184,7 +1588,9 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     /** The sticky window state a note would have in main. */
     stickyState: (noteId: string) => stickyState(notes.find((n) => n.id === noteId)!),
     /** Direct access for arranging state in tests. */
-    data: { locks: lockData, reminders: reminderData, windows: windowData, portability: portabilityData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, settings, projects, folders, notes, sessions, drafts, versions, imports, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
+    /** Arranges a document directly (no tree:changed). */
+    addDocument,
+    data: { threads, documents, documentPicks, documentHandoffs, locks: lockData, reminders: reminderData, windows: windowData, portability: portabilityData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, settings, projects, folders, notes, sessions, drafts, versions, imports, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
   };
 }
 

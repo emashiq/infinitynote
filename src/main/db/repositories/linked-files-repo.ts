@@ -44,6 +44,11 @@ export class LinkedFilesRepo {
     return new Set(rows.map((r) => r.id));
   }
 
+  /** A linked document was saved back to the file (D-118). */
+  setSize(id: string, sizeBytes: number): void {
+    this.db.prepare<[number, string]>('UPDATE linked_files SET size_bytes = ? WHERE id = ?').run(sizeBytes, id);
+  }
+
   isUsedBy(noteId: string, linkId: string): boolean {
     return this.db.prepare<[string, string], { found: number }>('SELECT 1 AS found FROM note_linked_files WHERE note_id = ? AND link_id = ?').get(noteId, linkId) !== undefined;
   }
@@ -68,13 +73,13 @@ export class LinkedFilesRepo {
       .run(now, json(dropped));
   }
 
-  /** Links used by live notes, for the portable export. */
-  /** Links used by live notes that are not locked (the portable export's). */
-  usedByExportableNotes(): LinkedFileRow[] {
+  /** Links used by live notes that are not locked, or by live documents (the portable export's). */
+  usedByExportableItems(): LinkedFileRow[] {
     return this.db
       .prepare<[], LinkedFileRow>(
         `SELECT ${COLUMNS} FROM linked_files l
          WHERE EXISTS (SELECT 1 FROM note_linked_files nl JOIN notes n ON n.id = nl.note_id AND n.deleted_at IS NULL AND n.locked = 0 WHERE nl.link_id = l.id)
+            OR EXISTS (SELECT 1 FROM documents d WHERE d.linked_file_id = l.id AND d.deleted_at IS NULL)
          ORDER BY l.id`,
       )
       .all();
@@ -82,10 +87,12 @@ export class LinkedFilesRepo {
 
   /**
    * Garbage collection (INF-PORT-08): brings every unreferenced clock up to date and deletes the rows unreferenced since
-   * `cutoff`. A link is referenced while a note (live or trashed) uses it, or a version or an open draft names its ID.
+   * `cutoff`. A link is referenced while a note (live or trashed) uses it, a document (live or trashed) is its file, or a
+   * version or an open draft names its ID.
    */
   deleteUnreferencedSince(cutoff: number, now: number): number {
     const referenced = `id IN (SELECT link_id FROM note_linked_files)
+      OR id IN (SELECT linked_file_id FROM documents WHERE linked_file_id IS NOT NULL)
       OR EXISTS (SELECT 1 FROM note_versions v WHERE instr(v.content_snapshot, linked_files.id) > 0)
       OR EXISTS (SELECT 1 FROM note_drafts d WHERE d.resolved_at IS NULL AND instr(d.content, linked_files.id) > 0)`;
     this.db.prepare(`UPDATE linked_files SET unreferenced_since = NULL WHERE unreferenced_since IS NOT NULL AND (${referenced})`).run();

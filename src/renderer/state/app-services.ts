@@ -4,10 +4,14 @@ import type { ReminderViewType } from '../../shared/contracts/reminders';
 import type { WidgetStateType } from '../../shared/contracts/widget';
 import type { AppOpenNoteEventType } from '../../shared/contracts/windows';
 import { RemindersStore } from '../reminders/reminders-store';
+import { CommentsStore } from '../comments/comments-store';
+import { GraphStore } from '../graph/graph-store';
 import { EditorHandle } from '../editor/editor-handle';
-import type { EditorServices, ReferenceHost } from '../editor/editor-services';
+import { drawExportDiagrams } from '../editor/diagram/export-diagrams';
+import type { DocumentHost, EditorServices, ReferenceHost } from '../editor/editor-services';
 import type { AttachmentPrefs } from '../editor/uploader';
 import { createCommandRunner, type CommandRunner } from './commands';
+import { createDocumentCommands, type DocumentCommands } from './document-commands';
 import { createPortabilityCommands, type PortabilityCommands } from './portability-commands';
 import { browserHideEvents, createCoreServices } from './core-services';
 import { HomeStore } from './home-store';
@@ -56,6 +60,12 @@ export interface AppServices {
   commands: CommandRunner;
   /** Backup, restore, export and import (D-099). */
   portability: PortabilityCommands;
+  /** Creating, importing and opening documents (D-118). */
+  documents: DocumentCommands;
+  /** The comments of the item in the active tab (D-165). */
+  comments: CommentsStore;
+  /** The relation graph page (D-170). */
+  graph: GraphStore;
   windowSettings: WindowSettingsStore;
   reminders: RemindersStore;
   /** Attachment limits and "When adding files" from the public settings (followed live through settings:changed). */
@@ -96,8 +106,18 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
   const home = new HomeStore(bridge);
   const layout = new LayoutStore(bridge, viewport.width());
   const ui = new UiStore();
-  const portability = createPortabilityCommands({ bridge, notices, ui, flushActive: () => tabs.flushActive() });
-  const commands = createCommandRunner({ bridge, tree, tabs, home, layout, ui, notices, portability });
+  const noteEditor = new EditorHandle();
+  const portability = createPortabilityCommands({ bridge, notices, ui, flushActive: () => tabs.flushActive(), noteDiagrams: () => drawExportDiagrams(noteEditor.current()) });
+  const documents = createDocumentCommands({ bridge, tree, tabs, ui, notices, attachmentPrefs: core.attachmentPrefs });
+  const comments = new CommentsStore({
+    bridge,
+    notify: (message) => notices.push(message, 'info'),
+    showPanel: () => {
+      if (!layout.panelVisible()) layout.togglePanel();
+    },
+  });
+  const graph = new GraphStore({ bridge, tabs });
+  const commands = createCommandRunner({ bridge, tree, tabs, home, layout, ui, notices, portability, documents, comments, graph });
   const windowSettings = new WindowSettingsStore(bridge);
   const reminders = new RemindersStore(
     {
@@ -109,6 +129,11 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     },
     deps.initialWidget ?? { open: false, collapsed: false, alwaysOnTop: false },
   );
+  // Attached and linked files of a note open in the app as documents (main window only, D-118).
+  const documentHost: DocumentHost = {
+    openAttachment: (noteId, attachmentId) => void documents.openFromAttachment(noteId, attachmentId),
+    openLink: (noteId, linkId) => void documents.openFromLink(noteId, linkId),
+  };
   // Reference chips show live titles from the tree and open their target in a tab (D-098).
   const references: ReferenceHost = {
     titleOf: (noteId) => {
@@ -116,10 +141,26 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
       if (t.status !== 'ready') return undefined;
       return t.model.nodes.get(`note:${noteId}`)?.label ?? null;
     },
+    documentOf: (documentId) => {
+      const t = tree.store.getState();
+      if (t.status !== 'ready') return undefined;
+      return t.model.nodes.get(`document:${documentId}`) ?? null;
+    },
     subscribe: (listener) => tree.store.subscribe(listener),
     open: (noteId, blockId) => void tabs.openNote(noteId, { blockId }),
+    openDocument: (documentId, target) => void tabs.openDocument(documentId, target ? { target } : {}),
+    createNote: async (besideNoteId, title) => {
+      const t = tree.store.getState();
+      const beside = t.status === 'ready' ? t.snapshot.notes.find((n) => n.id === besideNoteId) : undefined;
+      const res = await tree.createNote({ projectId: beside?.projectId ?? null, folderId: beside?.folderId ?? null }, { sticky: false, title });
+      if (!res.ok) {
+        notices.push(res.message, 'error');
+        return null;
+      }
+      return { id: res.data.note.id, title: res.data.note.title };
+    },
   };
-  const editor: EditorServices = { ...core.editor, references };
+  const editor: EditorServices = { ...core.editor, references, documents: documentHost, comments };
   let lastScope = home.store.getState().scope;
   let lastActive = tabs.store.getState().session.activeTabId;
 
@@ -215,11 +256,14 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     notices,
     commands,
     portability,
+    documents,
+    comments,
+    graph,
     windowSettings,
     reminders,
     attachmentPrefs: core.attachmentPrefs,
     editor,
-    noteEditor: new EditorHandle(),
+    noteEditor,
     ready,
     init: () => ready,
     async dispose() {

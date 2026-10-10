@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NoteSummary } from './hierarchy';
+import { DocumentSummary, NoteSummary } from './hierarchy';
 import { HomeScope } from './home';
 import { TagName } from './tags';
 
@@ -28,5 +28,16 @@ export const SearchResult = z.strictObject({
 });
 export type SearchResultType = z.infer<typeof SearchResult>;
 
-export const SearchQueryResponse = z.strictObject({ results: z.array(SearchResult).max(MAX_SEARCH_RESULTS) });
+/** A document whose title or extracted text matches (D-118); documents carry no tags, so a tag filter finds none. */
+export const DocumentSearchResult = z.strictObject({
+  document: DocumentSummary,
+  title: z.array(Segment),
+  snippet: z.array(Segment),
+});
+export type DocumentSearchResultType = z.infer<typeof DocumentSearchResult>;
+
+export const SearchQueryResponse = z.strictObject({
+  results: z.array(SearchResult).max(MAX_SEARCH_RESULTS),
+  documents: z.array(DocumentSearchResult).max(MAX_SEARCH_RESULTS),
+});
 export type SearchQueryResponseType = z.infer<typeof SearchQueryResponse>;

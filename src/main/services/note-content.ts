@@ -1,4 +1,6 @@
 import { DocSchemaError, normalizeRichDoc, type RichDocLike } from '../../shared/editor/doc-schema';
+import { PLAIN_COMMENTS, sealedComments } from '../comments/comment-cipher';
+import { CommentQuotes } from '../comments/comment-quotes';
 import type { Db } from '../db/driver';
 import { NotesRepo } from '../db/repositories/notes-repo';
 import type { NoteVault } from '../locks/note-vault';
@@ -38,10 +40,11 @@ export function normalizeContent(format: 'rich' | 'plain', content: unknown): No
  * The single place that changes a note's content: indexes it (plain text, attachment links), then writes the
  * next revision. Must run inside the caller's transaction (save, conversion, version and draft restore). A locked
  * note's content is encrypted with its key and its row keeps no text (D-111); its links are still indexed, so its
- * attachments stay in use.
+ * attachments stay in use. The quotes of its comment threads follow the text (D-165).
  */
 export class NoteContent {
   private readonly notes: NotesRepo;
+  private readonly quotes: CommentQuotes;
 
   constructor(
     db: Db,
@@ -49,12 +52,14 @@ export class NoteContent {
     private readonly vault: NoteVault,
   ) {
     this.notes = new NotesRepo(db);
+    this.quotes = new CommentQuotes(db);
   }
 
   write(w: ContentWrite): { revision: number; updatedAt: number } {
     const locked = this.notes.isLocked(w.noteId);
     if (locked) this.vault.keyOf(w.noteId);
     const { plainText } = this.indexer.index(w.noteId, w.format, w.content, w.now);
+    this.quotes.sync(w.noteId, w.format, w.content, () => (locked ? sealedComments(this.vault.keyOf(w.noteId), w.noteId) : PLAIN_COMMENTS));
     const serialized = typeof w.content === 'string' ? w.content : JSON.stringify(w.content);
     const written = this.notes.writeContent({
       id: w.noteId,

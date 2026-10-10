@@ -86,6 +86,8 @@ export interface StickyManagerDeps {
   boundsDebounceMs?: number;
   maxOpen?: number;
   onLayout?(entry: StickyLayoutEntry): void;
+  /** Reveal state of locked stickies is per window (D-172): told when a note's window is created and when it is gone. */
+  lockWindows?: { windowOpened(noteId: string, webContentsId: number): void; windowClosed(noteId: string, webContentsId: number): void };
 }
 
 interface Entry {
@@ -222,6 +224,7 @@ export class StickyManager {
     );
     entry = { noteId, handle, activation, meta, boundsTimer: null, hiding: null };
     this.entries.set(noteId, entry);
+    this.deps.lockWindows?.windowOpened(noteId, handle.webContentsId);
     // The stored bounds are already the expanded ones, so collapsing here must not overwrite them.
     if (stored.collapsed) this.applyCollapsed(entry, true, { saveExpanded: false });
     this.deps.onLayout?.({ noteId, op: 'create', bounds: placement });
@@ -232,6 +235,7 @@ export class StickyManager {
     if (entry.boundsTimer !== null) this.timers.clearTimeout(entry.boundsTimer);
     entry.boundsTimer = null;
     if (this.entries.get(entry.noteId) === entry) this.entries.delete(entry.noteId);
+    this.deps.lockWindows?.windowClosed(entry.noteId, entry.handle.webContentsId);
   }
 
   // Hide, dock, remove ----------------------------------------------------------------------

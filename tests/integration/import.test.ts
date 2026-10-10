@@ -41,7 +41,7 @@ describe('portable export and import (INF-PORT-04)', () => {
     const a = await setupServices();
     const seeded = await seedNotebook(a);
     const { file, res } = await exportFrom(a);
-    expect(res.counts).toEqual({ projects: 1, folders: 1, notes: 3, reminders: 1, attachments: 1 });
+    expect(res.counts).toEqual({ projects: 1, folders: 1, notes: 3, reminders: 1, attachments: 1, documents: 0 });
     expect(a.pathDialogs.at(-1)?.defaultName).toMatch(/^Infinity Notes export \d{4}-\d{2}-\d{2}\.infinityexport$/);
 
     const b = await setupServices();
@@ -82,7 +82,7 @@ describe('portable export and import (INF-PORT-04)', () => {
     ]);
     expect(b.row<{ c: string }>('SELECT content_text AS c FROM notes WHERE id = ?', plain.id)!.c).toBe('plain body');
     expect(b.search.query({ query: 'friday' }).results.map((r) => r.note.id)).toEqual([design.id]);
-    expect(b.events.at(-1)).toEqual({ reason: 'create', trashedNoteIds: [] });
+    expect(b.events.at(-1)).toEqual({ reason: 'create', trashedNoteIds: [], trashedDocumentIds: [] });
   });
 
   it('importing into the same notebook never overwrites or aliases: links to notes outside the archive stay missing', async () => {

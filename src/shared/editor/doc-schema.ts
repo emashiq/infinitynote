@@ -1,4 +1,5 @@
 import { UUID_RE } from '../contracts/ids';
+import { DocumentTarget, type DocumentTargetType } from '../documents/targets';
 import { parseExternalUrl } from '../url-policy';
 import { normalizeTextStyle } from './formatting';
 import { MAX_CELL_SPAN, tableFits, type CellSpan } from './table-limits';
@@ -33,7 +34,7 @@ export interface RichMark {
  * Node types that carry a stable block `id` (UniqueID and BlockIdGuard). A table has one; its rows and cells do not,
  * while the paragraphs in its cells keep theirs, so a reminder or reference can target a cell's text.
  */
-export const BLOCK_ID_TYPES = ['paragraph', 'heading', 'codeBlock', 'blockquote', 'listItem', 'taskItem', 'image', 'fileAttachment', 'fileLink', 'table'] as const;
+export const BLOCK_ID_TYPES = ['paragraph', 'heading', 'codeBlock', 'blockquote', 'listItem', 'taskItem', 'image', 'fileAttachment', 'fileLink', 'table', 'mathBlock'] as const;
 
 export const IMAGE_SIZES = ['small', 'medium', 'full'] as const;
 export type ImageSize = (typeof IMAGE_SIZES)[number];
@@ -42,12 +43,15 @@ export const MAX_DOC_DEPTH = 64;
 /** Longest stored reference label (the target's title) and block excerpt of a noteRef node. */
 export const MAX_REF_LABEL = 200;
 export const MAX_REF_EXCERPT = 80;
+/** Longest TeX source of inline and block math (D-161). */
+export const MAX_MATH_INLINE = 2_000;
+export const MAX_MATH_BLOCK = 10_000;
 export const MAX_DOC_NODES = 100_000;
 /** Widest column (CSS pixels) a table cell may store; spans and the grid are bounded in table-limits (D-116). */
 export const MAX_COLUMN_WIDTH = 10_000;
 
-const BLOCK = ['paragraph', 'heading', 'codeBlock', 'blockquote', 'bulletList', 'orderedList', 'taskList', 'horizontalRule', 'image', 'fileAttachment', 'fileLink', 'table'];
-const INLINE = ['text', 'hardBreak', 'noteRef'];
+const BLOCK = ['paragraph', 'heading', 'codeBlock', 'blockquote', 'bulletList', 'orderedList', 'taskList', 'horizontalRule', 'image', 'fileAttachment', 'fileLink', 'table', 'mathBlock'];
+const INLINE = ['text', 'hardBreak', 'noteRef', 'docRef', 'mathInline'];
 
 /** Allowed child types per node type; an empty list is a leaf. */
 const CHILDREN: Record<string, readonly string[]> = {
@@ -64,6 +68,9 @@ const CHILDREN: Record<string, readonly string[]> = {
   horizontalRule: [],
   hardBreak: [],
   noteRef: [],
+  docRef: [],
+  mathInline: [],
+  mathBlock: [],
   image: [],
   fileAttachment: [],
   fileLink: [],
@@ -75,7 +82,9 @@ const CHILDREN: Record<string, readonly string[]> = {
 };
 
 export const RICH_NODE_TYPES = Object.keys(CHILDREN);
-export const RICH_MARK_TYPES = ['bold', 'italic', 'strike', 'underline', 'code', 'link', 'textStyle'] as const;
+export const RICH_MARK_TYPES = ['bold', 'italic', 'strike', 'underline', 'code', 'link', 'textStyle', 'comment'] as const;
+/** Most comment threads (D-165) one piece of text may carry. */
+export const MAX_COMMENT_MARKS = 16;
 export const CELL_ALIGNS = ['left', 'center', 'right'] as const;
 
 export class DocSchemaError extends Error {
@@ -91,6 +100,16 @@ const isObject = (v: unknown): v is Json => v !== null && typeof v === 'object' 
 const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
 const intIn = (v: unknown, min: number, max: number): v is number => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
 const shortString = (v: unknown, max: number): string | null => (typeof v === 'string' && v.length <= max ? v : null);
+
+/** A link's alias: a non-empty string within the label limit, else none. */
+const aliasOf = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.slice(0, MAX_REF_LABEL) : null);
+
+/** TeX source within its limit; a longer one is refused rather than cut, so math never changes meaning silently. */
+function mathSource(v: unknown, max: number): string {
+  if (typeof v !== 'string') return '';
+  if (v.length > max) throw new DocSchemaError('A formula is too long');
+  return v;
+}
 
 /** Attributes kept per node type (section 9.1 of the Phase 03 plan); `undefined` values are omitted. */
 function nodeAttrs(type: string, raw: Json): Json {
@@ -123,8 +142,23 @@ function nodeAttrs(type: string, raw: Json): Json {
         blockId: isUuid(raw.blockId) ? raw.blockId : null,
         label: shortString(raw.label, MAX_REF_LABEL) ?? '',
         excerpt: shortString(raw.excerpt, MAX_REF_EXCERPT),
+        alias: aliasOf(raw.alias),
       };
     }
+    case 'docRef': {
+      if (!isUuid(raw.documentId)) throw new DocSchemaError('Link without a document');
+      const target = DocumentTarget.safeParse(raw.target);
+      return {
+        documentId: raw.documentId,
+        target: target.success ? target.data : null,
+        label: shortString(raw.label, MAX_REF_LABEL) ?? '',
+        alias: aliasOf(raw.alias),
+      };
+    }
+    case 'mathInline':
+      return { latex: mathSource(raw.latex, MAX_MATH_INLINE) };
+    case 'mathBlock':
+      return { id, latex: mathSource(raw.latex, MAX_MATH_BLOCK) };
     case 'fileAttachment': {
       if (!isUuid(raw.attachmentId)) throw new DocSchemaError('File without an attachment');
       if (typeof raw.name !== 'string' || raw.name.length < 1 || raw.name.length > 255) throw new DocSchemaError('File name is invalid');
@@ -164,6 +198,34 @@ function cellAttrs(raw: Json): Json {
   return { colspan, rowspan, colwidth, align };
 }
 
+/**
+ * Keeps each comment thread to one run of text in document order (D-165): the thread's mark may span paragraphs, cells
+ * and inline nodes, but once text without it follows, the thread's run is over and later marks of it are dropped, so
+ * pasted or duplicated content never aliases a thread.
+ */
+class CommentRuns {
+  private readonly open = new Set<string>();
+  private readonly closed = new Set<string>();
+
+  keep(marks: RichMark[] | undefined): RichMark[] | undefined {
+    const here = new Set<string>();
+    const kept = marks?.filter((m) => {
+      if (m.type !== 'comment') return true;
+      const id = m.attrs!.threadId as string;
+      if (this.closed.has(id)) return false;
+      here.add(id);
+      return true;
+    });
+    for (const id of this.open) {
+      if (here.has(id)) continue;
+      this.open.delete(id);
+      this.closed.add(id);
+    }
+    for (const id of here) this.open.add(id);
+    return kept && kept.length > 0 ? kept : undefined;
+  }
+}
+
 function withoutUndefined(attrs: Json): Json | undefined {
   const out: Json = {};
   for (const [k, v] of Object.entries(attrs)) if (v !== undefined) out[k] = v;
@@ -171,8 +233,9 @@ function withoutUndefined(attrs: Json): Json | undefined {
 }
 
 /**
- * Keeps known marks; a link whose address is not http(s) is dropped (its text stays), and a text style keeps only
- * listed fonts and sizes and `#rrggbb` colors (it is dropped when nothing valid is left).
+ * Keeps known marks; a link whose address is not http(s) is dropped (its text stays), a text style keeps only
+ * listed fonts and sizes and `#rrggbb` colors (it is dropped when nothing valid is left), and a comment needs a thread
+ * ID (one mark per thread, at most MAX_COMMENT_MARKS).
  */
 function normalizeMarks(raw: unknown): RichMark[] | undefined {
   if (raw === undefined) return undefined;
@@ -181,6 +244,12 @@ function normalizeMarks(raw: unknown): RichMark[] | undefined {
   for (const m of raw) {
     if (!isObject(m) || typeof m.type !== 'string') throw new DocSchemaError('Mark without a type');
     if (!(RICH_MARK_TYPES as readonly string[]).includes(m.type)) throw new DocSchemaError(`Unknown mark type: ${m.type}`);
+    if (m.type === 'comment') {
+      const threadId = isObject(m.attrs) ? m.attrs.threadId : undefined;
+      const comments = out.filter((x) => x.type === 'comment');
+      if (isUuid(threadId) && comments.length < MAX_COMMENT_MARKS && !comments.some((x) => x.attrs?.threadId === threadId)) out.push({ type: 'comment', attrs: { threadId } });
+      continue;
+    }
     if (out.some((x) => x.type === m.type)) continue;
     if (m.type === 'link') {
       const href = isObject(m.attrs) ? m.attrs.href : undefined;
@@ -200,11 +269,13 @@ function normalizeMarks(raw: unknown): RichMark[] | undefined {
  * place the schema does not allow, a missing required attribute, depth over 64, more than 100,000 nodes or a table over
  * the table limits (D-116).
  * A block ID that already appeared earlier in the document is dropped, so copied content never aliases a block
- * (INF-REF-07); the editor gives the block a fresh ID when the note is next opened.
+ * (INF-REF-07); the editor gives the block a fresh ID when the note is next opened. Likewise a comment thread keeps
+ * only its first run of marked text (D-165): a copy of commented text elsewhere loses the thread's mark.
  */
 export function normalizeRichDoc(doc: unknown): RichDocLike {
   let count = 0;
   const seenIds = new Set<string>();
+  const commentRuns = new CommentRuns();
 
   const visit = (raw: unknown, depth: number, allowed: readonly string[]): RichNode | null => {
     if (!isObject(raw) || typeof raw.type !== 'string') throw new DocSchemaError('Node without a type');
@@ -219,7 +290,7 @@ export function normalizeRichDoc(doc: unknown): RichDocLike {
     if (type === 'text') {
       if (typeof raw.text !== 'string') throw new DocSchemaError('Text node without text');
       if (raw.text === '') return null;
-      const marks = normalizeMarks(raw.marks);
+      const marks = commentRuns.keep(normalizeMarks(raw.marks));
       return marks ? { type, text: raw.text, marks } : { type, text: raw.text };
     }
     const node: RichNode = { type };
@@ -307,22 +378,74 @@ export interface NoteRefLink {
   label: string;
 }
 
-/** Every note reference in a document, in document order, with the ID of the block that holds it. */
-export function collectNoteRefs(doc: unknown): NoteRefLink[] {
-  const refs: NoteRefLink[] = [];
+export interface DocRefLink {
+  sourceBlockId: string | null;
+  targetDocumentId: string;
+  target: DocumentTargetType | null;
+  label: string;
+}
+
+/** Visits every node with the ID of the nearest enclosing block that carries one (null outside any). */
+function eachNodeInBlock(doc: unknown, visit: (node: Json, attrs: Json, blockId: string | null) => void): void {
   const walk = (node: unknown, depth: number, blockId: string | null): void => {
     if (!isObject(node) || depth > MAX_DOC_DEPTH) return;
     const attrs = isObject(node.attrs) ? node.attrs : {};
-    if (node.type === 'noteRef') {
-      if (isUuid(attrs.noteId)) {
-        const label = typeof attrs.label === 'string' ? attrs.label.slice(0, MAX_REF_LABEL) : '';
-        refs.push({ sourceBlockId: blockId, targetNoteId: attrs.noteId, targetBlockId: isUuid(attrs.blockId) ? attrs.blockId : null, label });
-      }
-      return;
-    }
+    visit(node, attrs, blockId);
     const own = (BLOCK_ID_TYPES as readonly unknown[]).includes(node.type) && isUuid(attrs.id) ? attrs.id : blockId;
     if (Array.isArray(node.content)) for (const child of node.content) walk(child, depth + 1, own);
   };
   walk(doc, 0, null);
+}
+
+const labelOf = (attrs: Json): string => (typeof attrs.label === 'string' ? attrs.label.slice(0, MAX_REF_LABEL) : '');
+
+/** Every note reference in a document, in document order, with the ID of the block that holds it. */
+export function collectNoteRefs(doc: unknown): NoteRefLink[] {
+  const refs: NoteRefLink[] = [];
+  eachNodeInBlock(doc, (node, attrs, blockId) => {
+    if (node.type !== 'noteRef' || !isUuid(attrs.noteId)) return;
+    refs.push({ sourceBlockId: blockId, targetNoteId: attrs.noteId, targetBlockId: isUuid(attrs.blockId) ? attrs.blockId : null, label: labelOf(attrs) });
+  });
   return refs;
+}
+
+/** Every document link in a document (D-156), in document order, with the ID of the block that holds it. */
+export function collectDocRefs(doc: unknown): DocRefLink[] {
+  const refs: DocRefLink[] = [];
+  eachNodeInBlock(doc, (node, attrs, blockId) => {
+    if (node.type !== 'docRef' || !isUuid(attrs.documentId)) return;
+    const target = DocumentTarget.safeParse(attrs.target);
+    refs.push({ sourceBlockId: blockId, targetDocumentId: attrs.documentId, target: target.success ? target.data : null, label: labelOf(attrs) });
+  });
+  return refs;
+}
+
+export interface CommentAnchorText {
+  /** The commented text in document order (blocks joined by a space), cut at `maxChars`. */
+  quote: string;
+  /** The first block the text is in. */
+  blockId: string | null;
+}
+
+/** The text and first block of every comment thread marked in a document (D-165). */
+export function collectCommentAnchors(doc: unknown, maxChars: number): Map<string, CommentAnchorText> {
+  const anchors = new Map<string, { parts: string[]; length: number; blockId: string | null; lastBlock: string | null }>();
+  eachNodeInBlock(doc, (node, _attrs, blockId) => {
+    if (node.type !== 'text' || typeof node.text !== 'string' || !Array.isArray(node.marks)) return;
+    for (const mark of node.marks) {
+      if (!isObject(mark) || mark.type !== 'comment' || !isObject(mark.attrs) || !isUuid(mark.attrs.threadId)) continue;
+      const id = mark.attrs.threadId;
+      let anchor = anchors.get(id);
+      if (!anchor) {
+        anchor = { parts: [], length: 0, blockId, lastBlock: blockId };
+        anchors.set(id, anchor);
+      }
+      if (anchor.length >= maxChars) continue;
+      const text = (anchor.parts.length > 0 && anchor.lastBlock !== blockId ? ' ' : '') + node.text;
+      anchor.parts.push(text);
+      anchor.length += text.length;
+      anchor.lastBlock = blockId;
+    }
+  });
+  return new Map([...anchors].map(([id, a]) => [id, { quote: a.parts.join('').slice(0, maxChars), blockId: a.blockId }]));
 }

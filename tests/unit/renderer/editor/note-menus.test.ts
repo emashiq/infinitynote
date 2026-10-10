@@ -102,7 +102,7 @@ describe('note menus (D-102)', () => {
       ['Insert image', false],
       ['Attach file', false],
       ['Insert table…', false],
-      ['Link to note…', false],
+      ['Link to note or document…', false],
       ['Add reminder…', true],
       ['Create reminder from text', false],
       ['Find in note', true],
@@ -162,16 +162,21 @@ describe('note menus (D-102)', () => {
       'Numbered list',
       'Checklist',
       'Code block',
+      'Diagram',
+      'Math block',
+      'Inline math',
       'Table',
       'Insert image',
       'Attach file',
-      'Link to note…',
+      'Link to note or document…',
       'Add reminder…',
       'Create reminder from text',
     ]);
     expect(filterActions(items, 'link').map((i) => i.id)).toEqual(['reference']);
     expect(filterActions(items, 'rem').map((i) => i.id)).toEqual(['reminder', 'fromText']);
     expect(filterActions(items, 'todo').map((i) => i.id)).toEqual(['checklist']);
+    expect(filterActions(items, 'mermaid').map((i) => i.id)).toEqual(['diagram']);
+    expect(filterActions(items, 'latex').map((i) => i.id)).toEqual(['mathBlock', 'mathInline']);
     expect(filterActions(items, 'table').map((i) => i.id)).toEqual(['table']);
     items.find((i) => i.id === 'table')!.run();
     expect(a.insertTable).toHaveBeenCalled();

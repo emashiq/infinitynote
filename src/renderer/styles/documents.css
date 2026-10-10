@@ -1,0 +1,190 @@
+/* Document tabs (D-118): a header with the kind and the file actions, then the viewer filling the rest. */
+.document-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.document-header {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.document-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.document-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.document-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 8px 16px 0;
+}
+
+.document-message {
+  margin: 16px;
+}
+
+.document-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.document-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.document-toolbar .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.document-loading {
+  flex: 1;
+}
+
+/* HTML viewer (F6): the page keeps its own colors on a white sheet in both themes, like a printed page. */
+.html-viewer {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.html-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #ffffff;
+}
+
+.html-source-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.html-source {
+  margin: 0;
+  padding: 12px 16px;
+  font-family: var(--font-code);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.html-source .src-tag {
+  color: var(--accent);
+}
+
+.html-source .src-name {
+  color: var(--warning);
+}
+
+.html-source .src-value {
+  color: var(--success);
+}
+
+.html-source .src-comment,
+.html-source .src-declaration {
+  color: var(--text-muted);
+}
+
+/* A viewer's find bar (PDF, spreadsheet). */
+.document-find {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.document-find-input {
+  width: min(320px, 50vw);
+}
+
+.document-find-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The viewer and, beside it, the Versions panel (D-141). */
+.document-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.document-main > .document-body,
+.document-main > .note-empty,
+.document-main > .document-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.document-versions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  width: 300px;
+  min-height: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  border-left: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.document-versions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.document-versions-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.document-versions .version-row-current {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.document-version-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 8px 16px 0;
+}

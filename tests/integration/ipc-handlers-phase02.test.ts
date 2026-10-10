@@ -118,7 +118,7 @@ describe('Phase 02 IPC handlers', () => {
     const moved = await call('note:move', { noteId: note.id, target: { projectId: null, folderId: null } });
     expect(moved.data.note).toMatchObject({ projectId: null, folderId: null });
     const trashed = await call('note:trash', { noteId: note.id });
-    expect(trashed.data.counts).toEqual({ projects: 0, folders: 0, notes: 1 });
+    expect(trashed.data.counts).toEqual({ projects: 0, folders: 0, notes: 1, documents: 0 });
     expect(await call('note:open', { noteId: note.id })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND', details: { trashed: true } } });
     const list = (await call('trash:list', {})).data.items;
     expect(list).toHaveLength(1);
@@ -137,7 +137,7 @@ describe('Phase 02 IPC handlers', () => {
     const note = (await call('note:create', { location: { projectId: null, folderId: null }, sticky: false })).data.note;
     await call('note:trash', { noteId: note.id });
     expect(await call('trash:purge', { target: { kind: 'all' } })).toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED' } });
-    expect(await call('trash:purge', { target: { kind: 'all' }, confirmed: true })).toEqual({ ok: true, data: { purged: { projects: 0, folders: 0, notes: 1 } } });
+    expect(await call('trash:purge', { target: { kind: 'all' }, confirmed: true })).toEqual({ ok: true, data: { purged: { projects: 0, folders: 0, notes: 1, documents: 0 } } });
   });
 
   it('settings: new keys have defaults and validate; session.tabs is unreachable', async () => {

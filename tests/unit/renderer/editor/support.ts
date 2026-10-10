@@ -1,14 +1,20 @@
 import { Editor, type Content } from '@tiptap/core';
+import { EditorContent } from '@tiptap/react';
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { afterEach } from 'vitest';
 import { plainExtensions, richExtensions } from '../../../../src/renderer/editor/extensions';
+import type { LinkRequest } from '../../../../src/renderer/editor/link-trigger';
 import { createPasteProps } from '../../../../src/renderer/editor/paste';
 import { AttachmentUploader, type UploaderDeps } from '../../../../src/renderer/editor/uploader';
 import { LINK_MESSAGES } from '../../../../src/shared/attachments/link-messages';
 import { fail, ok } from '../../../../src/shared/contracts/envelope';
 
 const editors: Editor[] = [];
+const roots: Root[] = [];
 
 afterEach(() => {
+  for (const r of roots.splice(0)) act(() => r.unmount());
   for (const e of editors.splice(0)) e.destroy();
   document.body.innerHTML = '';
 });
@@ -26,7 +32,9 @@ export interface TestEditor {
 }
 
 /** A real Tiptap editor in jsdom with the production extensions and paste handling. */
-export function makeEditor(opts: { format?: 'rich' | 'plain'; content?: Content; uploader?: Partial<UploaderDeps>; flushPending?: () => Promise<unknown> } = {}): TestEditor {
+export function makeEditor(
+  opts: { format?: 'rich' | 'plain'; content?: Content; uploader?: Partial<UploaderDeps>; flushPending?: () => Promise<unknown>; requestLink?: (request: LinkRequest) => boolean; startComment?: () => boolean } = {},
+): TestEditor {
   const format = opts.format ?? 'rich';
   const notices: string[] = [];
   const updates: TestEditor['updates'] = [];
@@ -47,7 +55,7 @@ export function makeEditor(opts: { format?: 'rich' | 'plain'; content?: Content;
   document.body.appendChild(element);
   const editor = new Editor({
     element,
-    extensions: format === 'rich' ? richExtensions({ uploader, notify: (m) => notices.push(m), files: null, links: null, references: null }) : plainExtensions(),
+    extensions: format === 'rich' ? richExtensions({ uploader, notify: (m) => notices.push(m), files: null, links: null, references: null, requestLink: opts.requestLink ?? (() => false), startComment: opts.startComment ?? null }) : plainExtensions(),
     content: opts.content ?? null,
     enableContentCheck: true,
     editorProps: createPasteProps({ format, uploader, notify: (m) => notices.push(m), flushPending: opts.flushPending ?? (async () => {}) }),
@@ -90,3 +98,15 @@ export function pasteEvent(editor: Editor, data: { text?: string; html?: string;
 }
 
 export const tick = () => new Promise((r) => setTimeout(r, 0));
+
+/** makeEditor shown through React's EditorContent, so React node views (code blocks, diagrams, math, chips) render. */
+export async function mountEditor(opts: Parameters<typeof makeEditor>[0] = {}): Promise<TestEditor> {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const made = makeEditor(opts);
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  await act(async () => root.render(createElement(EditorContent, { editor: made.editor })));
+  roots.push(root);
+  return made;
+}

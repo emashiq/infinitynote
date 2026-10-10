@@ -9,6 +9,8 @@ export type CommandId =
   | 'note.insertReference'
   | 'note.float'
   | 'sticky.new'
+  | 'note.newLocked'
+  | 'sticky.newLocked'
   | 'project.new'
   | 'folder.new'
   | 'go.home'
@@ -26,11 +28,20 @@ export type CommandId =
   | 'backup.restore'
   | 'note.exportMarkdown'
   | 'note.exportText'
+  | 'note.exportHtml'
+  | 'note.exportPdf'
+  | 'note.print'
   | 'notes.exportAll'
   | 'notes.import'
   | 'note.lock'
   | 'note.lockNow'
-  | 'notes.lockAll';
+  | 'notes.lockAll'
+  | 'document.import'
+  | 'document.newDocx'
+  | 'document.newXlsx'
+  | 'document.newPptx'
+  | 'comment.add'
+  | 'go.graph';
 
 export interface CommandRunner {
   run(id: CommandId): Promise<void>;
@@ -40,6 +51,8 @@ export interface CommandRunner {
   float(noteId: string): Promise<void>;
   /** Creates a sticky at the location (the current one by default) and floats it; no tab opens (D-069). */
   newSticky(location?: LocationType): Promise<void>;
+  /** "New locked note" or "New locked sticky" at the location (the current one by default; D-171). */
+  newLocked(sticky: boolean, location?: LocationType): void;
   /** "Lock note…", or the lock settings of a locked note (D-111). */
   openLock(noteId: string): void;
   /** Locks an unlocked note again; its open tab is saved first. */
@@ -49,15 +62,16 @@ export interface CommandRunner {
 }
 
 export function createCommandRunner(
-  services: Pick<AppServices, 'bridge' | 'tree' | 'tabs' | 'home' | 'layout' | 'ui' | 'notices' | 'portability'>,
+  services: Pick<AppServices, 'bridge' | 'tree' | 'tabs' | 'home' | 'layout' | 'ui' | 'notices' | 'portability' | 'documents' | 'comments' | 'graph'>,
 ): CommandRunner {
-  const { bridge, tree, tabs, home, layout, ui, notices, portability } = services;
+  const { bridge, tree, tabs, home, layout, ui, notices, portability, documents, comments, graph } = services;
 
   const currentLocation = (): LocationType => {
     const t = tree.store.getState();
     const session = tabs.store.getState().session;
     const activeTab = session.tabs.find((x) => x.id === session.activeTabId) ?? { id: 'home' as const, kind: 'home' as const };
-    const activeNote = activeTab.kind === 'note' ? (t.model.nodes.get(`note:${activeTab.noteId}`)?.location ?? null) : null;
+    const activeKey = activeTab.kind === 'note' ? `note:${activeTab.noteId}` : activeTab.kind === 'document' ? `document:${activeTab.documentId}` : null;
+    const activeNote = activeKey ? (t.model.nodes.get(activeKey)?.location ?? null) : null;
     return resolveNewItemLocation({
       treeHasFocus: t.hasFocus,
       selectedKey: t.selectedKey,
@@ -79,9 +93,12 @@ export function createCommandRunner(
     ui.requestFocus({ target: 'noteTitle', noteId: res.data.note.id });
   };
 
-  const activeNoteId = (): string | null => {
+  const activeTab = () => {
     const session = tabs.store.getState().session;
-    const active = session.tabs.find((t) => t.id === session.activeTabId);
+    return session.tabs.find((t) => t.id === session.activeTabId);
+  };
+  const activeNoteId = (): string | null => {
+    const active = activeTab();
     return active?.kind === 'note' ? active.noteId : null;
   };
 
@@ -99,6 +116,8 @@ export function createCommandRunner(
     }
     await float(res.data.note.id);
   };
+
+  const newLocked = (sticky: boolean, location: LocationType = currentLocation()): void => ui.openDialog({ kind: 'createLocked', location, sticky });
 
   const openLock = (noteId: string): void => {
     const locked = tree.store.getState().snapshot.notes.find((n) => n.id === noteId)?.locked ?? false;
@@ -122,6 +141,7 @@ export function createCommandRunner(
     currentLocation,
     float,
     newSticky,
+    newLocked,
     openLock,
     lockNow,
     lockAll,
@@ -132,9 +152,10 @@ export function createCommandRunner(
         case 'note.newPlain':
           return newNote('plain');
         case 'note.find': {
-          // Only a note tab has a find bar (D-058).
-          const noteId = activeNoteId();
-          if (noteId) ui.requestFocus({ target: 'noteFind', noteId });
+          // Note tabs (D-058) and document viewers with a find bar (D-130).
+          const active = activeTab();
+          if (active?.kind === 'note') ui.requestFocus({ target: 'noteFind', noteId: active.noteId });
+          else if (active?.kind === 'document') ui.requestDocumentFind(active.documentId);
           return;
         }
         case 'note.insertReference': {
@@ -149,6 +170,10 @@ export function createCommandRunner(
         }
         case 'sticky.new':
           return newSticky();
+        case 'note.newLocked':
+          return newLocked(false);
+        case 'sticky.newLocked':
+          return newLocked(true);
         case 'project.new':
           ui.openDialog({ kind: 'newProject' });
           return;
@@ -168,6 +193,12 @@ export function createCommandRunner(
           return;
         case 'go.settings':
           await tabs.openPage('settings');
+          return;
+        case 'go.graph':
+          await graph.open({ kind: 'all' });
+          return;
+        case 'comment.add':
+          comments.start();
           return;
         case 'view.toggleTree':
           layout.toggleTree();
@@ -201,6 +232,17 @@ export function createCommandRunner(
           if (noteId) await portability.exportNote(noteId, id === 'note.exportMarkdown' ? 'markdown' : 'text');
           return;
         }
+        case 'note.exportHtml':
+        case 'note.exportPdf': {
+          const noteId = activeNoteId();
+          if (noteId) await portability.exportNoteDocument(noteId, id === 'note.exportHtml' ? 'html' : 'pdf');
+          return;
+        }
+        case 'note.print': {
+          const noteId = activeNoteId();
+          if (noteId) await portability.printNote(noteId);
+          return;
+        }
         case 'notes.exportAll':
           return portability.exportAll();
         case 'notes.import':
@@ -217,6 +259,14 @@ export function createCommandRunner(
         }
         case 'notes.lockAll':
           return lockAll();
+        case 'document.import':
+          return documents.importFiles(currentLocation());
+        case 'document.newDocx':
+          return documents.createBlank('docx', currentLocation());
+        case 'document.newXlsx':
+          return documents.createBlank('xlsx', currentLocation());
+        case 'document.newPptx':
+          return documents.createBlank('pptx', currentLocation());
       }
     },
   };

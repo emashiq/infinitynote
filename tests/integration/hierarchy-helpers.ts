@@ -13,10 +13,20 @@ import { memoryLogger } from '../../src/main/services/logger';
 import { createFixedZoneProvider } from '../../src/main/services/system-zone';
 import { LATEST } from '../../src/main/db/migrations';
 import type { KdfParams } from '../../src/main/locks/note-crypto';
+import type { PinKdf } from '../../src/main/locks/pin-verifier';
+import type { StickyLockStateType } from '../../src/shared/contracts/locks';
+import { runWorkbookTask } from '../../src/main/documents/spreadsheet/workbook-convert';
 import { fixedClock, openFresh, randomIds, type TestDb } from './helpers';
+
+/** The real PDF text worker, run from its source (Node strips the types), with the package's character maps. */
+export const TEST_PDF_TEXT = {
+  workerFile: path.resolve('src/main/documents/text/pdf-text.ts'),
+  cMapDir: path.resolve('node_modules/pdfjs-dist/cmaps'),
+};
 
 /** scrypt at its smallest accepted cost, so tests that lock notes stay fast (the app uses DEFAULT_KDF). */
 export const TEST_KDF: KdfParams = { name: 'scrypt', N: 1024, r: 8, p: 1 };
+export const TEST_PIN_KDF: PinKdf = { name: 'scrypt', N: 1024, r: 8, p: 1 };
 
 /**
  * The production service graph (createMainServices) over a fresh temp database with an injectable clock, a
@@ -52,6 +62,8 @@ export async function setupServices(
   const revisions: NoteRevisionEventType[] = [];
   /** Live-sync events main sent, per window (D-103). */
   const collabEvents: Array<{ webContentsId: number; channel: string; payload: unknown }> = [];
+  /** Lock states main sent to sticky windows (D-172). */
+  const stickyLockEvents: Array<{ webContentsId: number; state: StickyLockStateType }> = [];
   /** Each dialog call takes the next entry; null or an empty queue means the user canceled. */
   const dialogQueue: Array<string[] | null> = [];
   const dialogCalls: OpenFilesRequest[] = [];
@@ -66,9 +78,15 @@ export async function setupServices(
   /** What the services handed to the OS shell; openPath answers with `shellError` (empty means success). */
   const shellCalls: Array<{ op: string; target: string }> = [];
   const shellResult = { error: '' };
+  /** Pages handed to the printer: "pdf" makes a small fake PDF, "print" answers `printResult` (D-163). */
+  const printed: Array<{ op: 'pdf' | 'print'; html: string }> = [];
+  const printResult = { printed: true };
   const paths = resolveDataPaths(t.dir);
   const dataDir = path.join(t.dir, 'data');
   const services = createMainServices({
+    pdfText: TEST_PDF_TEXT,
+    // The workbook worker's body, run in the test process (the built worker is checked after the build, D-134).
+    workbooks: runWorkbookTask,
     db: t.db,
     clock,
     ids,
@@ -90,6 +108,16 @@ export async function setupServices(
       restarts.count += 1;
     },
     restoreOutcome: opts.restoreOutcome ?? null,
+    printer: {
+      toPdf: async (html) => {
+        printed.push({ op: 'pdf', html });
+        return new TextEncoder().encode('%PDF-1.7 fake');
+      },
+      print: async (html) => {
+        printed.push({ op: 'print', html });
+        return printResult.printed;
+      },
+    },
     shell: {
       openPath: async (p) => {
         shellCalls.push({ op: 'openPath', target: p });
@@ -109,6 +137,7 @@ export async function setupServices(
     },
     onNoteRevision: (e) => revisions.push(e),
     sendCollab: (webContentsId, channel, payload) => collabEvents.push({ webContentsId, channel, payload }),
+    sendStickyLock: (webContentsId, state) => stickyLockEvents.push({ webContentsId, state }),
     zones,
     onReminderChanged: (e) => reminderEvents.push(e),
     onRemindersWritten: () => {
@@ -116,7 +145,7 @@ export async function setupServices(
       reminderWrites.onWrite?.();
     },
     testFaults: opts.testFaults,
-    locks: { kdf: TEST_KDF, ...opts.locks },
+    locks: { kdf: TEST_KDF, pinKdf: TEST_PIN_KDF, ...opts.locks },
   });
   const { hierarchy } = services;
   const repo = new HierarchyRepo(t.db);
@@ -156,6 +185,7 @@ export async function setupServices(
     settingsEvents,
     revisions,
     collabEvents,
+    stickyLockEvents,
     zones,
     reminderEvents,
     reminderWrites,
@@ -166,6 +196,8 @@ export async function setupServices(
     restarts,
     paths,
     shellCalls,
+    printed,
+    printResult,
     shellResult,
     dataDir,
     repo,

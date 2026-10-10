@@ -1,6 +1,7 @@
 import { DEFAULT_SESSION, type SessionGetResponseType, type TabSessionType } from '../../shared/contracts/session';
 import { sanitizeSession } from '../../shared/tabs/tab-session';
 import type { Db } from '../db/driver';
+import { DocumentsRepo } from '../db/repositories/documents-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
 import type { Clock } from './clock';
 import type { SettingsService } from './settings-service';
@@ -8,6 +9,7 @@ import type { SettingsService } from './settings-service';
 /** Stores the tab session in the internal `session.tabs` setting (D-045, D-047). */
 export class SessionService {
   private readonly notes: NotesRepo;
+  private readonly documents: DocumentsRepo;
 
   constructor(
     db: Db,
@@ -15,14 +17,17 @@ export class SessionService {
     private readonly clock: Clock,
   ) {
     this.notes = new NotesRepo(db);
+    this.documents = new DocumentsRepo(db);
   }
 
   /** Reads and sanitizes the stored tab session. Never writes. */
   get(): SessionGetResponseType {
     const stored = this.settings.getInternal('session.tabs');
     const noteIds = stored.tabs.flatMap((t) => (t.kind === 'note' ? [t.noteId] : []));
-    const states = noteIds.length > 0 ? this.notes.states(noteIds) : new Map<string, 'live' | 'trashed'>();
-    const result = sanitizeSession(stored, (id) => states.get(id) ?? 'missing');
+    const documentIds = stored.tabs.flatMap((t) => (t.kind === 'document' ? [t.documentId] : []));
+    const notes = noteIds.length > 0 ? this.notes.states(noteIds) : new Map<string, 'live' | 'trashed'>();
+    const documents = documentIds.length > 0 ? this.documents.states(documentIds) : new Map<string, 'live' | 'trashed'>();
+    const result = sanitizeSession(stored, (item) => (item.kind === 'note' ? notes : documents).get(item.id) ?? 'missing');
     return { session: result.invalid ? DEFAULT_SESSION : result.session, dropped: result.dropped };
   }
 

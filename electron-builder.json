@@ -16,7 +16,7 @@
     { "from": "LICENSE", "to": "LICENSE.txt" },
     { "from": "THIRD_PARTY_NOTICES.md", "to": "THIRD_PARTY_NOTICES.md" }
   ],
-  "asarUnpack": ["**/*.node"],
+  "asarUnpack": ["**/*.node", "out/main/pdf-text.js", "out/main/workbook.js", "out/renderer/pdfjs/cmaps/**"],
   "npmRebuild": false,
   "nodeGypRebuild": false,
   "buildDependenciesFromSource": false,

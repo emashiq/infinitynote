@@ -31,7 +31,7 @@ export function purgePlaintext(db: Db, noteId: string): PurgeCounts {
 
 /**
  * After a purge committed: makes sure the deleted text does not stay readable in the database files. With
- * `secure_delete` on, the search index merges its segments (`optimize`, dropping the deleted entries), `VACUUM`
+ * `secure_delete` on, the search indexes of notes and comments merge their segments (`optimize`, dropping the deleted entries), `VACUUM`
  * rewrites the database so no free page or free space inside a page keeps old content, and a TRUNCATE checkpoint
  * copies the WAL into the database and empties it. What SQLite cannot reach (blocks the file system or an SSD keeps,
  * copies made earlier) is outside this guarantee and documented.
@@ -46,6 +46,7 @@ export function scrubDatabase(db: Db, logger: Logger): boolean {
   db.pragma('secure_delete = ON');
   try {
     db.exec("INSERT INTO notes_fts(notes_fts) VALUES ('optimize')");
+    db.exec("INSERT INTO comments_fts(comments_fts) VALUES ('optimize')");
     db.exec('VACUUM');
     const [result] = db.pragma('wal_checkpoint(TRUNCATE)') as Array<{ busy: number }>;
     if (result?.busy) {

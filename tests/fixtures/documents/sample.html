@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sample page title</title>
+<link rel="stylesheet" href="https://example.com/remote.css">
+<style>body { font-family: sans-serif; } .note { color: #1f4e79; }</style>
+<script>document.title = 'script ran'; fetch('https://example.com/beacon');</script>
+</head>
+<body>
+<h1>Sample web page</h1>
+<p class="note">A paragraph with an <a href="https://example.com/docs">external link</a> and <a href="#local">a local anchor</a>.</p>
+<p>Caf&eacute; &amp; cr&egrave;me &mdash; entities decode.</p>
+<img alt="remote" src="https://example.com/remote.png">
+<img alt="embedded" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=">
+<form action="https://example.com/submit"><input name="q"><button>Send</button></form>
+<p id="local">The end.</p>
+</body>
+</html>

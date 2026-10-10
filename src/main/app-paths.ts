@@ -20,6 +20,9 @@ export interface DataPaths {
   dbFile: string;
   attachmentsDir: string;
   attachmentsTmp: string;
+  /** Stored document bytes (D-118). */
+  documentsDir: string;
+  documentsTmp: string;
   preMigrationDir: string;
   /** A verified backup waiting to replace the live data at the next start (D-099). */
   restoreStagingDir: string;
@@ -34,6 +37,8 @@ export function resolveDataPaths(userData: string): DataPaths {
     dbFile: path.join(dataDir, 'infinity-notes.sqlite3'),
     attachmentsDir: path.join(dataDir, 'attachments'),
     attachmentsTmp: path.join(dataDir, 'attachments', 'tmp'),
+    documentsDir: path.join(dataDir, 'documents'),
+    documentsTmp: path.join(dataDir, 'documents', 'tmp'),
     preMigrationDir: path.join(dataDir, 'pre-migration'),
     restoreStagingDir: path.join(dataDir, 'restore-staging'),
     restorePendingFile: path.join(dataDir, 'restore-pending.json'),
@@ -42,7 +47,7 @@ export function resolveDataPaths(userData: string): DataPaths {
 }
 
 export function ensureDataDirs(paths: DataPaths): void {
-  for (const dir of [paths.dataDir, paths.attachmentsDir, paths.attachmentsTmp, paths.preMigrationDir, paths.logsDir]) {
+  for (const dir of [paths.dataDir, paths.attachmentsDir, paths.attachmentsTmp, paths.documentsDir, paths.documentsTmp, paths.preMigrationDir, paths.logsDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }

@@ -20,7 +20,7 @@ describe('StickyService (plan section 8.4)', () => {
     s.stickies.enable(note.id);
     expect(noteRow(s, note.id)).toEqual({ ...before, sticky_enabled: 1, color: 'yellow' });
     expect(s.stickies.state(note.id)).toMatchObject({ open: true, collapsed: false, alwaysOnTop: false, bounds: null });
-    expect(s.events).toEqual([{ reason: 'sticky', trashedNoteIds: [] }]);
+    expect(s.events).toEqual([{ reason: 'sticky', trashedNoteIds: [], trashedDocumentIds: [] }]);
 
     // Idempotent: a second enable changes nothing visible and announces nothing.
     s.events.length = 0;
@@ -61,7 +61,7 @@ describe('StickyService (plan section 8.4)', () => {
     s.tick(1000);
     s.stickies.setColor(sticky.id, 'blue');
     expect(noteRow(s, sticky.id)).toEqual({ ...before, color: 'blue' });
-    expect(s.events).toEqual([{ reason: 'sticky', trashedNoteIds: [] }]);
+    expect(s.events).toEqual([{ reason: 'sticky', trashedNoteIds: [], trashedDocumentIds: [] }]);
   });
 
   it('disable clears the flag and deletes the window state', async () => {
@@ -73,7 +73,7 @@ describe('StickyService (plan section 8.4)', () => {
     s.stickies.disable(note.id);
     expect(noteRow(s, note.id).sticky_enabled).toBe(0);
     expect(s.rows('SELECT key FROM window_state')).toEqual([]);
-    expect(s.events).toEqual([{ reason: 'sticky', trashedNoteIds: [] }]);
+    expect(s.events).toEqual([{ reason: 'sticky', trashedNoteIds: [], trashedDocumentIds: [] }]);
   });
 
   it('meta gives title, color and path; a trashed note keeps its original path and batch', async () => {
@@ -82,11 +82,11 @@ describe('StickyService (plan section 8.4)', () => {
     const plans = s.folder(alpha.id, null, 'Plans');
     const inFolder = s.note(alpha.id, plans.id, 'In folder', true);
     const common = s.note(null, null, '', true);
-    expect(s.stickies.meta(common.id)).toEqual({ title: '', color: 'yellow', textColor: null, path: ['Common'], trashed: null });
-    expect(s.stickies.meta(inFolder.id)).toEqual({ title: 'In folder', color: 'yellow', textColor: null, path: ['Alpha', 'Plans'], trashed: null });
+    expect(s.stickies.meta(common.id)).toEqual({ title: '', color: 'yellow', textColor: null, path: ['Common'], trashed: null, locked: false });
+    expect(s.stickies.meta(inFolder.id)).toEqual({ title: 'In folder', color: 'yellow', textColor: null, path: ['Alpha', 'Plans'], trashed: null, locked: false });
 
     const { trashBatchId } = s.trash.trashFolder(plans.id);
-    expect(s.stickies.meta(inFolder.id)).toEqual({ title: 'In folder', color: 'yellow', textColor: null, path: ['Alpha', 'Plans'], trashed: { batchId: trashBatchId } });
+    expect(s.stickies.meta(inFolder.id)).toEqual({ title: 'In folder', color: 'yellow', textColor: null, path: ['Alpha', 'Plans'], trashed: { batchId: trashBatchId }, locked: false });
     s.trash.purge({ target: { kind: 'batch', batchId: trashBatchId }, confirmed: true });
     expect(s.stickies.meta(inFolder.id)).toBeNull();
   });

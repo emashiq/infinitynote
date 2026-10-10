@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Uuid } from './ids';
 
-export const TabKinds = ['home', 'note', 'stickies', 'reminders', 'settings'] as const;
+export const TabKinds = ['home', 'note', 'document', 'stickies', 'reminders', 'settings', 'graph'] as const;
 export type TabKind = (typeof TabKinds)[number];
 
 export const MAX_TABS = 200;
@@ -15,12 +15,20 @@ export const NoteTab = z
   })
   .refine((t) => t.id === `note:${t.noteId}`, { message: 'Tab id must be note:<noteId>', path: ['id'] });
 
+/** A document's tab (D-118): id `document:<documentId>`. */
+export const DocumentTab = z
+  .strictObject({ id: z.string().max(64), kind: z.literal('document'), documentId: Uuid })
+  .refine((t) => t.id === `document:${t.documentId}`, { message: 'Tab id must be document:<documentId>', path: ['id'] });
+
 export const Tab = z.union([
   z.strictObject({ id: z.literal('home'), kind: z.literal('home') }),
   NoteTab,
+  DocumentTab,
   z.strictObject({ id: z.literal('page:stickies'), kind: z.literal('stickies') }),
   z.strictObject({ id: z.literal('page:reminders'), kind: z.literal('reminders') }),
   z.strictObject({ id: z.literal('page:settings'), kind: z.literal('settings') }),
+  /** The relation graph (D-170); its scope and filters live in the window, not in the session. */
+  z.strictObject({ id: z.literal('page:graph'), kind: z.literal('graph') }),
 ]);
 export type TabType = z.infer<typeof Tab>;
 

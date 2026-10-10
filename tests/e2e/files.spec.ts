@@ -128,7 +128,8 @@ test('a linked file opens through the validated hand-off; a program only shows i
   await expect(linkedChips(page)).toHaveCount(2);
   await waitSaved(page);
 
-  await editor(page).getByRole('button', { name: 'Open report.pdf' }).click();
+  // "Open" hands the file to the system app; a PDF also offers "Open report.pdf in Infinity Notes" (D-118).
+  await editor(page).getByRole('button', { name: 'Open report.pdf', exact: true }).click();
   await expect.poll(async () => (await shellCalls(app)).filter((c) => c.op === 'openPath').map((c) => c.path)).toEqual([pdf]);
   await expect(editor(page).getByRole('button', { name: 'Open tool.exe' })).toHaveCount(0);
   await editor(page).getByRole('button', { name: 'Show tool.exe in folder' }).click();
@@ -147,5 +148,5 @@ test('a linked file opens through the validated hand-off; a program only shows i
   await expect(missing).toHaveClass(/is-missing/);
   await expect(missing).toContainText(`File not found at ${pdf}`);
   await expect(editor(page).getByRole('button', { name: 'Show report.pdf in folder' })).toBeDisabled();
-  await expect(editor(page).getByRole('button', { name: 'Open report.pdf' })).toHaveCount(0);
+  await expect(editor(page).getByRole('button', { name: /^Open report\.pdf/ })).toHaveCount(0);
 });

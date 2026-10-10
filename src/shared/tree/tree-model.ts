@@ -1,9 +1,13 @@
 import type { LocationType, NoteColorType, TreeSnapshotType, TrashItemType } from '../contracts/hierarchy';
+import type { DocumentKind } from '../documents/kinds';
 import { COMMON_LABEL, displayTitle } from '../names';
 
 export type NodeKey = string;
 
-export type NodeKind = 'group' | 'common' | 'project' | 'folder' | 'note' | 'favorite' | 'trashItem' | 'empty';
+export type NodeKind = 'group' | 'common' | 'project' | 'folder' | 'note' | 'document' | 'favorite' | 'trashItem' | 'empty';
+
+/** The kinds of item a favorite or a trash entry can stand for. */
+export type EntityKind = 'project' | 'folder' | 'note' | 'document';
 
 export interface TreeNode {
   key: NodeKey;
@@ -14,10 +18,13 @@ export interface TreeNode {
   color?: NoteColorType | null;
   /** A locked note (D-111). */
   locked?: boolean;
+  /** A document's kind, and whether its bytes stay in a linked file (D-118). */
+  documentKind?: DocumentKind;
+  linked?: boolean;
   pinned?: boolean;
   favorite?: boolean;
-  /** For favorite entries: the kind of the underlying item. */
-  entity?: 'project' | 'folder' | 'note';
+  /** For favorite and trash entries: the kind of the underlying item. */
+  entity?: EntityKind;
   parentKey: NodeKey | null;
   childKeys: NodeKey[];
   /** Where items created at this node go (Common, project, folder and note nodes). */
@@ -90,7 +97,7 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
 
   const folderKeys = new Set(snapshot.folders.map((f) => `folder:${f.id}`));
   const scopeKey = (projectId: string | null) => (projectId === null ? 'common' : `project:${projectId}`);
-  // Under each parent: folders first, then notes, each sorted by label.
+  // Under each parent: folders first, then notes and documents together, each sorted by label.
   const folderSort = new Map<NodeKey, Sortable[]>();
   for (const f of snapshot.folders) {
     const key = `folder:${f.id}`;
@@ -126,6 +133,22 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
     });
     push(noteSort, parentKey, { key, label, createdAt: n.createdAt, id: n.id });
   }
+  for (const d of snapshot.documents) {
+    const key = `document:${d.id}`;
+    const parentKey = d.folderId !== null && folderKeys.has(`folder:${d.folderId}`) ? `folder:${d.folderId}` : scopeKey(d.projectId);
+    add({
+      key,
+      kind: 'document',
+      id: d.id,
+      label: d.title,
+      documentKind: d.kind,
+      linked: d.storage === 'linked',
+      favorite: d.favorite,
+      parentKey,
+      location: { projectId: d.projectId, folderId: d.folderId },
+    });
+    push(noteSort, parentKey, { key, label: d.title, createdAt: d.createdAt, id: d.id });
+  }
   for (const [parent, list] of folderSort) {
     const node = nodes.get(parent);
     if (node) node.childKeys = sortKeys(list);
@@ -145,6 +168,7 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
       label: t.kind === 'note' ? displayTitle(t.label) : t.label,
       sticky: t.sticky,
       entity: t.kind,
+      ...(t.documentKind ? { documentKind: t.documentKind } : {}),
       parentKey: 'trash',
       trash: t,
     });
@@ -157,7 +181,7 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
 
   // favorites
   const favSort: Sortable[] = [];
-  const addFav = (entity: 'project' | 'folder' | 'note', id: string, label: string, createdAt: number, extra: Partial<TreeNode>) => {
+  const addFav = (entity: EntityKind, id: string, label: string, createdAt: number, extra: Partial<TreeNode>) => {
     const key = `fav:${entity}:${id}`;
     add({
       key,
@@ -176,6 +200,7 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
   for (const n of snapshot.notes) {
     if (n.favorite) addFav('note', n.id, displayTitle(n.title), n.createdAt, { sticky: n.sticky, color: n.color });
   }
+  for (const d of snapshot.documents) if (d.favorite) addFav('document', d.id, d.title, d.createdAt, { documentKind: d.kind, linked: d.storage === 'linked' });
   const roots: NodeKey[] = [];
   if (favSort.length > 0) {
     add({ key: 'favorites', kind: 'group', label: 'Favorites', parentKey: null, childKeys: sortKeys(favSort) });
@@ -255,7 +280,7 @@ export function locationOfNode(model: TreeModel, key: NodeKey): LocationType | n
   const node = model.nodes.get(key);
   if (!node) return null;
   if (node.kind === 'favorite') return node.targetKey ? locationOfNode(model, node.targetKey) : null;
-  if (node.kind === 'common' || node.kind === 'project' || node.kind === 'folder' || node.kind === 'note') {
+  if (node.kind === 'common' || node.kind === 'project' || node.kind === 'folder' || node.kind === 'note' || node.kind === 'document') {
     return node.location ?? null;
   }
   return null;

@@ -58,6 +58,12 @@ Never promise notifications while fully quit or guaranteed window positioning un
   - Stickies: title and project label aligned correctly in the header; color menu has a custom color picker (any color, not only named presets); sticky text can be colored.
   - Website: rebuilt following https://github.com/emashiq/framecapt `website/` (index + docs pages, release-aware download cards, install help, about).
 
+- **v0.3.0 feature batch (2026-10-10).** The user asked for, implemented autonomously and released as v0.3.0 (same push/release permission; plan `docs/plans/release-0.3.0.md`, progress `docs/progress/release-0.3.0.md`): PDF viewer + editor, PPTX viewer + editor, DOCX viewer + editor, spreadsheet viewer + editor, Mermaid diagrams in notes, a read-only HTML viewer, comments anchored to specific items, links to other notes/documents by key or shortcut, a project document relation graph, plus short extras found by research. Constraints:
+  - Free and open-source dependencies only (MIT/ISC/BSD/Apache-2.0/MPL-2.0); nothing commercial, "pro", AGPL or telemetry-bearing; everything bundled offline.
+  - Testing happens at the end of the full implementation. **Never open Electron windows on the Windows desktop** (the user keeps using the computer): local Windows runs only non-window gates; E2E runs in WSL forced onto Xvfb (`env -u DISPLAY -u WAYLAND_DISPLAY`), Windows E2E runs on GitHub Actions.
+  - Clean, well-structured implementation; full autonomous development, then the full release without asking.
+  - Added the same day: create a note or sticky already locked (password first, never plaintext), and locked stickies. A locked sticky is blurred until revealed with a PIN, the password or Windows Hello, and blurs fully again 1 minute after the last interaction. Every dependency must be free for any use, commercial included (no paid, pro, trial or non-commercial licenses).
+
 ## Host notes (Windows development machine)
 
 - Windows has no Python (`python` is the Store alias); none is needed.

@@ -1,3 +1,5 @@
+import { DocumentView } from '../documents/DocumentView';
+import { GraphPage } from '../graph/GraphPage';
 import { HomeView } from '../home/HomeView';
 import { NoteView } from '../notes/NoteView';
 import { RemindersPage } from '../pages/RemindersPage';
@@ -24,6 +26,12 @@ export function TabPanel() {
       break;
     case 'settings':
       body = <SettingsPage />;
+      break;
+    case 'graph':
+      body = <GraphPage />;
+      break;
+    case 'document':
+      body = <DocumentView key={active.documentId} documentId={active.documentId} tabId={active.id} />;
       break;
     default:
       body = controller && controller.noteId === active.noteId && controllerNoteId === active.noteId ? <NoteView key={active.noteId} controller={controller} tabId={active.id} /> : <div aria-busy="true" className="note-loading" />;

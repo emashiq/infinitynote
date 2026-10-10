@@ -179,15 +179,17 @@ describe('restore (INF-PORT-02)', () => {
 
   it('a backup from an older schema is restored and migrated forward', async () => {
     const { a, file } = await backedUpNotebook();
-    // The same notebook as schema 6 had it: without the Phase 07 tables and the v0.2.0 sticky text color, linked files and
-    // note locks.
+    // The same notebook as schema 6 had it: without the Phase 07 tables, the v0.2.0 sticky text color, linked files and
+    // note locks, and the v0.3.0 documents, document links, comments and sticky PINs.
     const work = tmpFile('old.sqlite3');
     const archive = await openArchive(file);
     await archive.extractTo('db/infinity-notes.sqlite3', work);
     archive.close();
     const old = openBetterSqlite(work);
     old.exec(
-      'DROP TRIGGER notes_locked_plaintext; DROP TRIGGER note_versions_locked; DROP TRIGGER note_drafts_locked; DROP TRIGGER reminder_sources_locked; DROP TRIGGER suggestion_dismissals_locked; DROP TABLE note_locks; ALTER TABLE notes DROP COLUMN locked; ' +
+      'DROP TABLE note_pins; DROP TRIGGER notes_comments_purged; DROP TRIGGER documents_comments_purged; DROP TABLE comments_fts; DROP TABLE comments; DROP TABLE comment_threads; ' +
+        'DROP TABLE document_references; DROP TABLE documents_fts; DROP TABLE document_versions; DROP TABLE documents; DROP TABLE document_blobs; ' +
+        'DROP TRIGGER notes_locked_plaintext; DROP TRIGGER note_versions_locked; DROP TRIGGER note_drafts_locked; DROP TRIGGER reminder_sources_locked; DROP TRIGGER suggestion_dismissals_locked; DROP TABLE note_locks; ALTER TABLE notes DROP COLUMN locked; ' +
         'DROP TABLE note_linked_files; DROP TABLE linked_files; DROP TRIGGER note_references_target_purged; DROP TABLE note_tags; DROP TABLE tags; DROP TABLE note_references; ALTER TABLE notes DROP COLUMN text_color; PRAGMA user_version = 6;',
     );
     const oldFile = tmpFile('old.infinitybackup');

@@ -1,3 +1,4 @@
+import { inlineAtomText } from '../editor/inline-text';
 import { rowsToTsv } from './table-text';
 
 const BLOCK_NODES = new Set([
@@ -14,6 +15,7 @@ const BLOCK_NODES = new Set([
   'image',
   'fileAttachment',
   'fileLink',
+  'mathBlock',
 ]);
 /** Blocks that hold text directly; each gives exactly one line, also when empty. */
 const TEXT_BLOCKS = new Set(['paragraph', 'heading', 'codeBlock']);
@@ -23,7 +25,7 @@ interface PmNode {
   type?: unknown;
   text?: unknown;
   content?: unknown;
-  attrs?: { name?: unknown; label?: unknown } | null;
+  attrs?: { name?: unknown; latex?: unknown } | null;
 }
 
 function endsWithNewline(out: string[]): boolean {
@@ -51,9 +53,10 @@ function walk(node: unknown, depth: number, out: string[]): void {
     out.push('\n');
     return;
   }
-  // A note reference reads as the title it showed when inserted (search and conversion keep it as text).
-  if (n.type === 'noteRef') {
-    if (typeof n.attrs?.label === 'string') out.push(n.attrs.label);
+  // A link reads as what it showed when inserted and inline math as its TeX (search and conversion keep it as text).
+  const atom = inlineAtomText(n);
+  if (atom !== null) {
+    out.push(atom);
     return;
   }
   // A table reads as one line per row with tab-separated cells, as spreadsheets copy it.
@@ -67,6 +70,8 @@ function walk(node: unknown, depth: number, out: string[]): void {
   const start = out.length;
   // A file chip (copied or linked) contributes its name as its own line; images contribute no text.
   if ((n.type === 'fileAttachment' || n.type === 'fileLink') && typeof n.attrs?.name === 'string') out.push(n.attrs.name);
+  // Block math reads as its TeX source.
+  if (n.type === 'mathBlock' && typeof n.attrs?.latex === 'string') out.push(n.attrs.latex);
   if (Array.isArray(n.content)) {
     for (const child of n.content) walk(child, depth + 1, out);
   }

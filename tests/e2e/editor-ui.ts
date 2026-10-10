@@ -154,6 +154,25 @@ export async function seedClipboardImage(app: ElectronApplication, png: Buffer):
 }
 
 /** Puts HTML (with a plain-text alternative) on the real OS clipboard from the main process. */
+/**
+ * Runs a step that changes the selection and waits until the browser announced it: editors read a selection change on
+ * the asynchronous selectionchange event, so a command given before then (a toolbar button, a shortcut) would act on
+ * the old selection. A person is never that fast; Playwright is.
+ */
+export async function selectionChange(page: Page, step: () => Promise<void>): Promise<void> {
+  const announced = page.evaluate(() => new Promise<void>((resolve) => document.addEventListener('selectionchange', () => setTimeout(resolve, 0), { once: true })));
+  await step();
+  await announced;
+}
+
+/** The HTML on the OS clipboard (Electron's web-style clipboard), or '' when it holds none. */
+export function clipboardHtml(app: ElectronApplication): Promise<string> {
+  return app.evaluate(async ({ clipboard }) => {
+    const [item] = await clipboard.read();
+    return item?.types.includes('text/html') ? (await item.getType('text/html')).text() : '';
+  });
+}
+
 export async function seedClipboardHtml(app: ElectronApplication, html: string, text: string): Promise<void> {
   const ok = await app.evaluate(
     async ({ clipboard, ClipboardItem }, [h, t]) => {

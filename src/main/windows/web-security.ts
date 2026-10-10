@@ -1,6 +1,6 @@
 import { app, session } from 'electron';
-import { RENDERER_HOST, RENDERER_SCHEME } from '../../shared/app-identity';
 import type { Logger } from '../services/logger';
+import { isAllowedFrameNavigation, isAllowedPermission, isAllowedRendererUrl } from './web-policy';
 
 function originOf(raw: string): string {
   try {
@@ -9,21 +9,6 @@ function originOf(raw: string): string {
   } catch {
     return 'invalid-url';
   }
-}
-
-/** True if the URL has the renderer origin (or the dev server origin in development). */
-export function isAllowedRendererUrl(raw: string, devOrigin: string | null): boolean {
-  try {
-    const u = new URL(raw);
-    if (u.protocol === `${RENDERER_SCHEME}:` && u.host === RENDERER_HOST) return true;
-    if (devOrigin) {
-      const d = new URL(devOrigin);
-      return u.protocol === d.protocol && u.host === d.host;
-    }
-  } catch {
-    // fall through
-  }
-  return false;
 }
 
 export function installWebSecurity(options: { logger: Logger; devOrigin: string | null }): void {
@@ -38,6 +23,13 @@ export function installWebSecurity(options: { logger: Logger; devOrigin: string 
     };
     contents.on('will-navigate', (event, url) => guard(event, url));
     contents.on('will-redirect', (event, url) => guard(event, url));
+    contents.on('will-frame-navigate', (event) => {
+      if (event.isMainFrame) return;
+      if (!isAllowedFrameNavigation(event.url, event.initiator?.parent === null)) {
+        event.preventDefault();
+        logger.warn(`blocked frame navigation url=${originOf(event.url)}`);
+      }
+    });
     contents.setWindowOpenHandler(() => {
       logger.warn('blocked window.open');
       return { action: 'deny' };
@@ -49,7 +41,7 @@ export function installWebSecurity(options: { logger: Logger; devOrigin: string 
   });
 
   const ses = session.defaultSession;
-  ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-  ses.setPermissionCheckHandler(() => false);
+  ses.setPermissionRequestHandler((_wc, permission, callback, details) => callback(isAllowedPermission(permission, details.requestingUrl, devOrigin)));
+  ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => isAllowedPermission(permission, requestingOrigin, devOrigin));
   ses.setDevicePermissionHandler(() => false);
 }

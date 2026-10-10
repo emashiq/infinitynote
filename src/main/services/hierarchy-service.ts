@@ -1,4 +1,5 @@
 import type {
+  DocumentDtoType,
   FolderDtoType,
   FolderMoveResponseType,
   FolderTargetType,
@@ -11,11 +12,12 @@ import type {
 } from '../../shared/contracts/hierarchy';
 import { NAME_MESSAGE, TITLE_MESSAGE, normalizeName, normalizeTitle, validateName, validateTitle } from '../../shared/names';
 import type { Db } from '../db/driver';
+import { DocumentsRepo, type DocumentRow } from '../db/repositories/documents-repo';
 import { HierarchyRepo, MAX_FOLDER_DEPTH, type NoteMetaRow } from '../db/repositories/hierarchy-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
 import { AppError } from './app-error';
 import type { Clock } from './clock';
-import { toFolderDto, toNoteDto, toProjectDto } from './dto';
+import { toDocumentDto, toFolderDto, toNoteDto, toProjectDto } from './dto';
 import type { IdGenerator } from './ids';
 import type { Logger } from './logger';
 import { MSG } from './messages';
@@ -33,19 +35,30 @@ export interface HierarchyServiceDeps {
 export const EMPTY_DOC_JSON = '{"type":"doc","content":[{"type":"paragraph"}]}';
 
 /** Throws NOT_FOUND unless the row exists and is live. */
-function requireLive<T extends { deleted_at: number | null }>(row: T | undefined): T {
+export function requireLive<T extends { deleted_at: number | null }>(row: T | undefined): T {
   if (!row || row.deleted_at !== null) throw new AppError('NOT_FOUND', row ? MSG.inTrash : MSG.missing);
   return row;
+}
+
+/** Validates that (projectId, folderId) is a live location in one scope; returns the folder depth (0 at the scope root). */
+export function assertLiveLocation(repo: HierarchyRepo, projectId: string | null, folderId: string | null): number {
+  if (projectId !== null) requireLive(repo.getProject(projectId));
+  if (folderId === null) return 0;
+  const folder = requireLive(repo.getFolder(folderId));
+  if (folder.project_id !== projectId) throw new AppError('VALIDATION_FAILED', MSG.scope);
+  return repo.folderDepth(folderId);
 }
 
 /** Projects, folders and note metadata: create, rename, move, pin and favorite (trash lives in TrashService). */
 export class HierarchyService {
   private readonly repo: HierarchyRepo;
   private readonly notes: NotesRepo;
+  private readonly documents: DocumentsRepo;
 
   constructor(private readonly deps: HierarchyServiceDeps) {
     this.repo = new HierarchyRepo(deps.db);
     this.notes = new NotesRepo(deps.db);
+    this.documents = new DocumentsRepo(deps.db);
   }
 
   private tx<T>(fn: () => T): T {
@@ -53,7 +66,7 @@ export class HierarchyService {
   }
 
   private changed(reason: TreeChangedEventType['reason']): void {
-    this.deps.onChange({ reason, trashedNoteIds: [] });
+    this.deps.onChange({ reason, trashedNoteIds: [], trashedDocumentIds: [] });
   }
 
   private cleanName(raw: string): string {
@@ -68,13 +81,8 @@ export class HierarchyService {
     return title;
   }
 
-  /** Validates that (projectId, folderId) is a live location in one scope; returns the folder depth (0 at the scope root). */
   private assertLocation(projectId: string | null, folderId: string | null): number {
-    if (projectId !== null) requireLive(this.repo.getProject(projectId));
-    if (folderId === null) return 0;
-    const folder = requireLive(this.repo.getFolder(folderId));
-    if (folder.project_id !== projectId) throw new AppError('VALIDATION_FAILED', MSG.scope);
-    return this.repo.folderDepth(folderId);
+    return assertLiveLocation(this.repo, projectId, folderId);
   }
 
   private liveNote(noteId: string): NoteMetaRow {
@@ -91,6 +99,7 @@ export class HierarchyService {
       projects: this.repo.liveProjects().map(toProjectDto),
       folders: this.repo.liveFolders().map(toFolderDto),
       notes: this.repo.liveNotes().map(toNoteDto),
+      documents: this.documents.live().map(toDocumentDto),
     };
   }
 
@@ -164,7 +173,11 @@ export class HierarchyService {
 
   // Notes --------------------------------------------------------------------
   /** Creates an empty note: a rich document with one paragraph, or an empty plain-text note. */
-  createNote(location: LocationType, sticky: boolean, rawTitle?: string, format: 'rich' | 'plain' = 'rich'): { note: NoteDtoType } {
+  /**
+   * Creates an empty note. With `lockWith` the note is created locked (D-171): its row holds no content, and the callback
+   * writes its lock inside the same transaction, so no plaintext row ever exists.
+   */
+  createNote(location: LocationType, sticky: boolean, rawTitle?: string, format: 'rich' | 'plain' = 'rich', lockWith?: (noteId: string) => void): { note: NoteDtoType } {
     const title = rawTitle === undefined ? '' : this.cleanTitle(rawTitle);
     const note = this.tx(() => {
       this.assertLocation(location.projectId, location.folderId);
@@ -173,7 +186,7 @@ export class HierarchyService {
         id,
         title,
         format,
-        contentJson: format === 'rich' ? EMPTY_DOC_JSON : null,
+        contentJson: format === 'rich' && !lockWith ? EMPTY_DOC_JSON : null,
         contentText: format === 'plain' ? '' : null,
         plainText: '',
         now: this.deps.clock.now(),
@@ -182,6 +195,7 @@ export class HierarchyService {
         sticky,
         color: sticky ? 'yellow' : null,
       });
+      lockWith?.(id);
       return this.noteDto(id);
     });
     this.changed('create');
@@ -221,8 +235,45 @@ export class HierarchyService {
     return { note };
   }
 
+  // Documents (D-118) ---------------------------------------------------------
+  private documentDto(documentId: string): DocumentDtoType {
+    return toDocumentDto(this.documents.get(documentId)!);
+  }
+
+  private liveDocument(documentId: string): DocumentRow {
+    return requireLive(this.documents.get(documentId));
+  }
+
+  renameDocument(documentId: string, rawTitle: string): { document: DocumentDtoType } {
+    const title = this.cleanName(rawTitle);
+    const document = this.tx(() => {
+      this.liveDocument(documentId);
+      this.documents.rename(documentId, title, this.deps.clock.now());
+      return this.documentDto(documentId);
+    });
+    this.changed('rename');
+    return { document };
+  }
+
+  moveDocument(documentId: string, target: LocationType): { document: DocumentDtoType } {
+    const document = this.tx(() => {
+      this.liveDocument(documentId);
+      this.assertLocation(target.projectId, target.folderId);
+      this.documents.move(documentId, target.projectId, target.folderId);
+      this.repo.assertInvariants();
+      return this.documentDto(documentId);
+    });
+    this.changed('move');
+    return { document };
+  }
+
   setFavorite(kind: ItemKindType, id: string, favorite: boolean): { kind: ItemKindType; id: string; favorite: boolean } {
     this.tx(() => {
+      if (kind === 'document') {
+        this.liveDocument(id);
+        this.documents.setFavorite(id, favorite);
+        return;
+      }
       requireLive(kind === 'project' ? this.repo.getProject(id) : kind === 'folder' ? this.repo.getFolder(id) : this.repo.getNoteMeta(id));
       this.repo.setFavorite(kind, id, favorite);
     });

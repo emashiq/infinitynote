@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Ellipsis, Pin, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Ellipsis, Lock, Pin, X } from 'lucide-react';
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { HexColor } from '../../shared/color';
 import type { NoteColorType } from '../../shared/contracts/hierarchy';
@@ -16,7 +16,18 @@ export const STICKY_MENU_LABELS = {
   remove: 'Remove from stickies',
   trash: 'Move to Trash',
   quit: 'Quit Infinity Notes',
+  blur: 'Blur now',
+  setPin: 'Set PIN…',
+  changePin: 'Change PIN…',
 } as const;
+
+/** The lock part of the menu of a locked note's sticky (D-172, D-173). */
+export interface StickyHeaderLock {
+  revealed: boolean;
+  pinSet: boolean;
+  blur(): void;
+  editPin(): void;
+}
 
 export interface StickyHeaderActions {
   setColor(color: NoteColorType): void;
@@ -57,6 +68,7 @@ export function StickyHeader({
   canRename,
   titleField,
   actions,
+  lock,
 }: {
   state: StickyStateType;
   pinSupported: boolean;
@@ -64,6 +76,8 @@ export function StickyHeader({
   canRename: boolean;
   titleField: ReactNode;
   actions: StickyHeaderActions;
+  /** Present while the note is locked. */
+  lock?: StickyHeaderLock;
 }) {
   const [menu, setMenu] = useState<OpenMenu>(null);
   const colorRef = useRef<HTMLButtonElement>(null);
@@ -78,6 +92,12 @@ export function StickyHeader({
     { id: 'hide', label: STICKY_MENU_LABELS.hide, onSelect: actions.hide },
     { id: 'remove', label: STICKY_MENU_LABELS.remove, onSelect: actions.remove, disabled: trashed },
     { id: 'trash', label: STICKY_MENU_LABELS.trash, onSelect: actions.trash, disabled: trashed },
+    ...(lock
+      ? [
+          { id: 'blur', label: STICKY_MENU_LABELS.blur, onSelect: lock.blur, disabled: !lock.revealed, separatorBefore: true },
+          { id: 'pin', label: lock.pinSet ? STICKY_MENU_LABELS.changePin : STICKY_MENU_LABELS.setPin, onSelect: lock.editPin },
+        ]
+      : []),
     { id: 'quit', label: STICKY_MENU_LABELS.quit, onSelect: actions.quit, separatorBefore: true },
   ];
   return (
@@ -95,6 +115,7 @@ export function StickyHeader({
         <ColorDot color={state.color} />
       </button>
       <span className="sticky-heading">
+        {lock ? <Lock size={12} strokeWidth={2} className="sticky-lock-icon" aria-label="Locked" /> : null}
         {titleField}
         <span className="sticky-badge" title={path}>
           {path}

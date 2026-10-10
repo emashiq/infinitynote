@@ -1,0 +1,167 @@
+/* Word viewer and editor (F4, D-142): the app's toolbar and find bar above @portone/docx-editor. Pages stay white
+   like paper in both themes; the editor's toolbar, menus, popovers and comments follow the app theme. */
+.docx-viewer {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.docx-toolbar {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.docx-toolbar-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.docx-zoom {
+  width: auto;
+}
+
+.docx-banner {
+  flex: none;
+  margin: 8px 16px 0;
+}
+
+.docx-surface {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.docx-message {
+  margin: 16px;
+  color: var(--text);
+}
+
+/* The editor fills the tab; its own frame border and rounding would draw a box inside the pane. */
+.docx-viewer .docx-frame {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-subtle);
+  font-family: var(--font-ui);
+}
+
+.docx-viewer .docx-editor-editor,
+.docx-viewer .docx-editor-page-split {
+  background: var(--bg-subtle);
+}
+
+.docx-viewer .docx-editor-editor,
+.docx-viewer .docx-editor-comments {
+  scrollbar-color: var(--border-strong) var(--bg-subtle);
+}
+
+/* The page itself: paper is white whatever the theme, and its text keeps the document's colors. */
+.docx-viewer .docx-editor-sheet {
+  color-scheme: light;
+}
+
+.docx-viewer .docx-editor-toolbar {
+  border-bottom-color: var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.docx-viewer .docx-editor-toolbar-sep {
+  background: var(--border);
+}
+
+.docx-viewer .docx-editor-toolbar-btn:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
+.docx-viewer .docx-editor-toolbar-btn[aria-pressed='true'],
+.docx-viewer .docx-editor-toolbar-btn[aria-expanded='true'] {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.docx-viewer .docx-editor-toolbar-btn:focus-visible,
+.docx-viewer .docx-editor-toolbar-select:focus-visible,
+.docx-viewer .docx-editor-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.docx-viewer .docx-editor-toolbar-select {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Menus, popovers and link panels are placed on the screen (position: fixed), still inside the viewer. */
+.docx-viewer .docx-editor-popover,
+.docx-viewer .docx-editor-menu,
+.docx-viewer .docx-editor-link-panel,
+.docx-viewer .docx-editor-link-card {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-popover);
+}
+
+.docx-viewer .docx-editor-menu-item:hover:not([aria-disabled='true']) {
+  background: var(--accent-soft);
+}
+
+.docx-viewer .docx-editor-comments {
+  border-left-color: var(--border);
+  background: var(--bg-rail);
+  color: var(--text);
+}
+
+.docx-viewer .docx-editor-comments[data-view='rail'] {
+  background: transparent;
+}
+
+.docx-viewer .docx-editor-comment-card,
+.docx-viewer .docx-editor-comment-composer,
+.docx-viewer .docx-editor-comments-toggle {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Find highlights on the page, readable on white in both themes. */
+.docx-viewer .docx-find-match {
+  background: #fde68a;
+}
+
+.docx-viewer .docx-find-current {
+  background: #f59e0b;
+  outline: 1px solid #b45309;
+}
+
+/* A file the editor refused: the reason, then the read-only preview (D-144). */
+.docx-refused {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.docx-refused-banner {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 16px;
+}
+
+.docx-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  color-scheme: light;
+}

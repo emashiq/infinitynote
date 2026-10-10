@@ -11,9 +11,10 @@ import { AppError, errorDetail } from './app-error';
 import type { Clock } from './clock';
 import type { IdGenerator } from './ids';
 import type { Logger } from './logger';
+import { STALE_TMP_MAX_AGE_MS } from './retention-policy';
 import type { SettingsService } from './settings-service';
+import { moveIntoPlace, sweepStaleFiles, writeNewFileDurably } from './stored-files';
 
-const TMP_MAX_AGE_MS = 60 * 60 * 1000;
 
 export interface AttachmentServiceDeps {
   db: Db;
@@ -129,17 +130,8 @@ export class AttachmentService {
   private async writeFile(id: string, finalPath: string, bytes: Uint8Array, kind: AttachmentKindType): Promise<void> {
     const partPath = path.join(this.tmpDir, `${id}.part`);
     try {
-      await fs.promises.mkdir(this.tmpDir, { recursive: true });
-      const handle = await fs.promises.open(partPath, 'wx');
-      try {
-        await handle.writeFile(bytes);
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      await fs.promises.mkdir(path.dirname(finalPath), { recursive: true });
-      await fs.promises.rename(partPath, finalPath);
-      if (process.platform === 'linux') await fsyncDirectory(path.dirname(finalPath));
+      await writeNewFileDurably(partPath, bytes);
+      await moveIntoPlace(partPath, finalPath);
     } catch (err) {
       await fs.promises.rm(partPath, { force: true });
       await fs.promises.rm(finalPath, { force: true });
@@ -172,39 +164,7 @@ export class AttachmentService {
   }
 
   /** Removes leftovers of interrupted imports (older than one hour) at startup. */
-  async sweepTmp(now: number): Promise<number> {
-    let removed = 0;
-    let entries: string[];
-    try {
-      entries = await fs.promises.readdir(this.tmpDir);
-    } catch {
-      return 0;
-    }
-    for (const entry of entries) {
-      const file = path.join(this.tmpDir, entry);
-      try {
-        const stat = await fs.promises.lstat(file);
-        if (stat.mtimeMs < now - TMP_MAX_AGE_MS) {
-          await fs.promises.rm(file, { recursive: true, force: true });
-          removed += 1;
-        }
-      } catch (err) {
-        this.deps.logger.warn(`attachment: tmp sweep skipped ${entry}: ${errorDetail(err)}`);
-      }
-    }
-    return removed;
-  }
-}
-
-async function fsyncDirectory(dir: string): Promise<void> {
-  try {
-    const handle = await fs.promises.open(dir, 'r');
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    // Best effort: some file systems refuse fsync on directories.
+  sweepTmp(now: number): Promise<number> {
+    return sweepStaleFiles(this.tmpDir, now, STALE_TMP_MAX_AGE_MS, this.deps.logger, 'attachment');
   }
 }

@@ -26,7 +26,8 @@ import { InsertTableDialog } from './InsertTableDialog';
 import { applyLink, LINK_OPEN_FAILED, linkHrefAt, removeLink, selectedLinkHref } from './link';
 import { LinkDialog } from './LinkDialog';
 import { insertItems, noteMenuItems, type NoteActions } from './note-actions';
-import { ReferencePicker, type PickedReference } from './ReferencePicker';
+import { LinkPicker, type PickedLink } from './LinkPicker';
+import { LINK_TRIGGER, linkableSelection, type LinkRequest } from './link-trigger';
 import { createPasteProps } from './paste';
 import type { CardRequest } from '../reminders/card-request';
 import { blockIdAtSelection, chipsMeta, findBlock, REMINDER_CHIP_EVENT, selectionAtBlockStart, type ChipInfo } from './reminder-chips';
@@ -71,7 +72,7 @@ export interface NoteEditorProps {
   /** A new request object opens the find bar (Ctrl+F); the editor then calls onFindRequestHandled. */
   findRequest: object | null;
   onFindRequestHandled: () => void;
-  /** A new request object opens the reference picker (palette "Link to note…"); then onReferenceRequestHandled. */
+  /** A new request object opens the reference picker (palette "Link to note or document…"); then onReferenceRequestHandled. */
   referenceRequest?: object | null;
   onReferenceRequestHandled?: () => void;
   onConvert: (target: 'rich' | 'plain') => void;
@@ -136,10 +137,12 @@ export function NoteEditor(props: NoteEditorProps) {
       return null;
     };
     const link = (linkId: string) => ({ noteId: host.noteId, linkId });
+    const documents = services.documents;
     return {
       files: {
         open: (attachmentId) => void settle(() => bridge.attachment.open({ noteId: host.noteId, attachmentId })),
         showInFolder: (attachmentId) => void settle(() => bridge.attachment.showInFolder({ noteId: host.noteId, attachmentId })),
+        ...(documents ? { openInApp: (attachmentId: string) => void host.flush().then(() => documents.openAttachment(host.noteId, attachmentId)) } : {}),
       },
       links: {
         status: async (linkId) => {
@@ -150,12 +153,25 @@ export function NoteEditor(props: NoteEditorProps) {
         showInFolder: async (linkId) => (await settle(() => bridge.fileLink.showInFolder(link(linkId)))) !== null,
         copyIn: async (linkId) => (await settle(() => bridge.fileLink.copyIn(link(linkId))))?.attachment ?? null,
         copyLimitBytes: () => maxBytes(services.attachmentPrefs().documentMaxMb),
+        ...(documents ? { openInApp: (linkId: string) => void host.flush().then(() => documents.openLink(host.noteId, linkId)) } : {}),
       },
     };
   });
 
   // The insert menu sees the editor's keys first while it is open (set after every render).
   const slashKeys = useRef<(event: KeyboardEvent) => boolean>(() => false);
+  // "[[", Ctrl+Shift+L and Ctrl+Shift+K open the link picker in rich notes of windows that can link (the main window);
+  // the trigger itself does nothing while the note is read-only.
+  const [picker, setPicker] = useState<LinkRequest | null>(null);
+  const canLink = format === 'rich' && services.references !== undefined;
+  // Comments (D-165): the bubble's Comment and Ctrl+Alt+M in editable rich notes of the main window.
+  const { comments } = services;
+  const startComment = comments
+    ? () => {
+        comments.start();
+        return true;
+      }
+    : null;
 
   const openLink = (href: string) => {
     void services.bridge.shell.openExternal({ url: href }).then((r) => {
@@ -166,7 +182,21 @@ export function NoteEditor(props: NoteEditorProps) {
   const editor = useEditor(
     {
       extensions: [
-        ...(format === 'rich' ? richExtensions({ uploader, notify: services.notify, files: handoff.files, links: handoff.links, references: services.references ?? null }) : plainExtensions()),
+        ...(format === 'rich'
+          ? richExtensions({
+              uploader,
+              notify: services.notify,
+              files: handoff.files,
+              links: handoff.links,
+              references: services.references ?? null,
+              requestLink: (request) => {
+                if (!canLink) return false;
+                setPicker(request);
+                return true;
+              },
+              startComment,
+            })
+          : plainExtensions()),
         collabSync(props.sync.version, props.sync.clientID),
       ],
       content: content as JSONContent,
@@ -302,26 +332,45 @@ export function NoteEditor(props: NoteEditorProps) {
   const [linkDialog, setLinkDialog] = useState<{ href: string; editing: boolean } | null>(null);
   const [tableDialog, setTableDialog] = useState(false);
 
-  // Note references (D-098): the picker inserts a chip followed by a space, so typing goes on after it.
-  const canReference = format === 'rich' && editable && services.references !== undefined;
-  const [picker, setPicker] = useState(false);
+  // Links (D-098, D-156): the picker inserts a chip followed by a space, so typing goes on after it; a linked selection
+  // is replaced by a chip that shows the selected text.
+  const references = services.references;
+  const canReference = canLink && editable;
   // The focus moves at once (Tiptap's focus command waits for a frame), so keys typed right after the pick reach the text.
-  const insertReference = (ref: PickedReference) => {
-    setPicker(false);
+  const insertLink = (link: PickedLink) => {
+    const request = picker;
+    setPicker(null);
     if (!editor || editor.isDestroyed) return;
+    const alias = request?.selection?.text ?? null;
+    const chip =
+      link.kind === 'note'
+        ? { type: 'noteRef', attrs: { noteId: link.noteId, blockId: link.blockId, label: link.label, excerpt: link.excerpt, alias } }
+        : { type: 'docRef', attrs: { documentId: link.documentId, target: link.target, label: link.label, alias } };
+    const range = request?.selection ?? editor.state.selection;
     editor
       .chain()
-      .insertContent([{ type: 'noteRef', attrs: { ...ref } }, { type: 'text', text: ' ' }])
+      .insertContentAt({ from: range.from, to: range.to }, [chip, { type: 'text', text: ' ' }])
       .scrollIntoView()
       .run();
     editor.view.focus();
+  };
+  const selectionRequest = (): LinkRequest => {
+    const selection = linkableSelection(editor.state);
+    return selection ? { selection } : {};
+  };
+  const closePicker = () => {
+    const typed = picker?.typed === true;
+    setPicker(null);
+    // "[[" that opened the picker comes back when nothing was linked.
+    if (typed && !editor.isDestroyed) editor.chain().focus().insertContent(LINK_TRIGGER).run();
+    else editor.commands.focus();
   };
   // A palette request opens the picker once (state adjusted while rendering); the request is then consumed.
   const { referenceRequest, onReferenceRequestHandled } = props;
   const [shownReferenceRequest, setShownReferenceRequest] = useState<object | null>(null);
   if (referenceRequest && referenceRequest !== shownReferenceRequest) {
     setShownReferenceRequest(referenceRequest);
-    if (canReference) setPicker(true);
+    if (canReference) setPicker({});
   }
   useEffect(() => {
     if (referenceRequest) onReferenceRequestHandled?.();
@@ -416,7 +465,7 @@ export function NoteEditor(props: NoteEditorProps) {
   const actions: NoteActions = {
     insertAttachment: (kind) => void insertAttachment(kind),
     insertTable: format === 'rich' && editable ? () => setTableDialog(true) : undefined,
-    insertReference: canReference ? () => setPicker(true) : undefined,
+    insertReference: canReference ? () => setPicker(selectionRequest()) : undefined,
     addReminder: props.onAddReminder,
     createFromText: suggestions ? () => void createFromText() : undefined,
     openFind,
@@ -464,6 +513,7 @@ export function NoteEditor(props: NoteEditorProps) {
               editor={editor}
               editable={editable}
               request={bubbleRequest}
+              onComment={startComment ? () => void startComment() : undefined}
               link={{
                 edit: () => {
                   const href = selectedLinkHref(editor.state);
@@ -488,14 +538,13 @@ export function NoteEditor(props: NoteEditorProps) {
       {suggestions && suggestionSettings.suggestFromText ? (
         <SuggestionBar editor={editor} settings={suggestionSettings} updateInApp={suggestions.openInApp !== undefined} onCreate={(live) => openLive(live)} onUpdate={updateLive} onDismiss={dismissLive} />
       ) : null}
-      {picker ? (
-        <ReferencePicker
+      {picker && references ? (
+        <LinkPicker
           bridge={services.bridge}
-          onPick={insertReference}
-          onClose={() => {
-            setPicker(false);
-            editor.commands.focus();
-          }}
+          initialQuery={picker.selection?.text}
+          onPick={insertLink}
+          onCreateNote={(title) => references.createNote(host.noteId, title)}
+          onClose={closePicker}
         />
       ) : null}
       {tableDialog ? (

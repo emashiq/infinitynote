@@ -1,7 +1,9 @@
 import { mergeAttributes, Node } from '@tiptap/core';
 import { attachmentUrl } from '../app-identity';
 import { UUID_RE } from '../contracts/ids';
+import { DocumentTarget, type DocumentTargetType } from '../documents/targets';
 import { IMAGE_SIZES } from './doc-schema';
+import { refText } from './inline-text';
 
 /**
  * The app's own node types without their views (D-053, D-098, D-103): the renderer adds the React views, and main
@@ -12,6 +14,23 @@ const intAttr = (value: string | null): number | null => {
   const n = value === null ? NaN : Number.parseInt(value, 10);
   return Number.isInteger(n) && n > 0 ? n : null;
 };
+
+/** The text a link shows instead of its target's title (a linked selection, D-156). */
+const aliasAttr = {
+  default: null,
+  parseHTML: (el: HTMLElement) => el.getAttribute('data-alias') || null,
+  renderHTML: (a: Record<string, unknown>) => (a.alias ? { 'data-alias': a.alias } : {}),
+};
+
+function parseTargetAttr(raw: string | null): DocumentTargetType | null {
+  if (!raw) return null;
+  try {
+    const parsed = DocumentTarget.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 const uuidAttr = (el: HTMLElement, name: string): string | null => {
   const v = el.getAttribute(name);
@@ -150,8 +169,9 @@ export const NoteRefNode = Node.create({
     return {
       noteId: { default: null, parseHTML: (el) => uuidAttr(el, 'data-note-ref'), renderHTML: (a) => ({ 'data-note-ref': a.noteId }) },
       blockId: { default: null, parseHTML: (el) => uuidAttr(el, 'data-block-ref'), renderHTML: (a) => (a.blockId ? { 'data-block-ref': a.blockId } : {}) },
-      label: { default: '', parseHTML: (el) => el.textContent ?? '', renderHTML: () => ({}) },
+      label: { default: '', parseHTML: (el) => el.getAttribute('data-label') ?? el.textContent ?? '', renderHTML: (a) => ({ 'data-label': a.label }) },
       excerpt: { default: null, parseHTML: (el) => el.getAttribute('data-excerpt'), renderHTML: (a) => (a.excerpt ? { 'data-excerpt': a.excerpt } : {}) },
+      alias: aliasAttr,
     };
   },
 
@@ -160,10 +180,105 @@ export const NoteRefNode = Node.create({
   },
 
   renderHTML({ HTMLAttributes, node }) {
-    return ['span', mergeAttributes(HTMLAttributes, { class: 'note-ref' }), String(node.attrs.label)];
+    return ['span', mergeAttributes(HTMLAttributes, { class: 'note-ref' }), refText(node.attrs)];
   },
 
   renderText({ node }) {
-    return String(node.attrs.label);
+    return refText(node.attrs);
+  },
+});
+
+/**
+ * An inline link to a document, optionally at a place inside it (F9, D-156): the document ID and the target only; the
+ * label is the document's title when the link was made, shown only when the document is not live.
+ */
+export const DocRefNode = Node.create({
+  name: 'docRef',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: true,
+  marks: '',
+
+  addAttributes() {
+    return {
+      documentId: { default: null, parseHTML: (el) => uuidAttr(el, 'data-doc-ref'), renderHTML: (a) => ({ 'data-doc-ref': a.documentId }) },
+      target: {
+        default: null,
+        parseHTML: (el) => parseTargetAttr(el.getAttribute('data-doc-target')),
+        renderHTML: (a) => (a.target ? { 'data-doc-target': JSON.stringify(a.target) } : {}),
+      },
+      label: { default: '', parseHTML: (el) => el.getAttribute('data-label') ?? el.textContent ?? '', renderHTML: (a) => ({ 'data-label': a.label }) },
+      alias: aliasAttr,
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: 'span[data-doc-ref]', getAttrs: (el) => (uuidAttr(el as HTMLElement, 'data-doc-ref') ? null : false) }];
+  },
+
+  renderHTML({ HTMLAttributes, node }) {
+    return ['span', mergeAttributes(HTMLAttributes, { class: 'note-ref doc-ref' }), refText(node.attrs)];
+  },
+
+  renderText({ node }) {
+    return refText(node.attrs);
+  },
+});
+
+const latexAttr = {
+  default: '',
+  parseHTML: (el: HTMLElement) => el.getAttribute('data-latex') ?? el.textContent ?? '',
+  renderHTML: (a: Record<string, unknown>) => ({ 'data-latex': a.latex }),
+};
+
+/** Inline math (D-161): its TeX source only; the renderer draws it with KaTeX. */
+export const MathInlineNode = Node.create({
+  name: 'mathInline',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: true,
+  marks: '',
+
+  addAttributes() {
+    return { latex: latexAttr };
+  },
+
+  parseHTML() {
+    return [{ tag: 'span[data-math-inline]' }];
+  },
+
+  renderHTML({ HTMLAttributes, node }) {
+    return ['span', mergeAttributes(HTMLAttributes, { 'data-math-inline': '', class: 'math-inline' }), String(node.attrs.latex)];
+  },
+
+  renderText({ node }) {
+    return String(node.attrs.latex);
+  },
+});
+
+/** Block math (D-161): a displayed formula from its TeX source. */
+export const MathBlockNode = Node.create({
+  name: 'mathBlock',
+  group: 'block',
+  atom: true,
+  draggable: true,
+  selectable: true,
+
+  addAttributes() {
+    return { latex: latexAttr };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-math-block]' }];
+  },
+
+  renderHTML({ HTMLAttributes, node }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-math-block': '', class: 'math-block' }), String(node.attrs.latex)];
+  },
+
+  renderText({ node }) {
+    return String(node.attrs.latex);
   },
 });

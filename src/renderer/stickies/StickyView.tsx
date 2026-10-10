@@ -11,9 +11,12 @@ import { NoteTitleField } from '../notes/NoteTitleField';
 import { NoticeList } from '../shell/Notices';
 import { useStore } from '../state/use-store';
 import { ConfirmRunner, TRASH_CONFIRM } from '../ui/ConfirmDialog';
+import { Dialog } from '../ui/Dialog';
+import { PinSection } from '../notes/LockDialogs';
 import { applyStickyAppearance } from './sticky-appearance';
 import { useSticky } from './sticky-context';
 import { StickyHeader } from './StickyHeader';
+import { StickyLockPanel } from './StickyLockPanel';
 import { StickyTrashState } from './StickyTrashState';
 
 export const INVALID_WINDOW = 'This window could not be opened.';
@@ -108,7 +111,8 @@ function StickyNote({ editorHandle, findRequest, onFindHandled }: { editorHandle
 /** A sticky window (plan section 9.4, D-070). */
 export function StickyView() {
   const services = useSticky();
-  const { controller, actions, core } = services;
+  const { controller, actions, core, lockActions } = services;
+  const lock = useStore(services.lock).current;
   const { phase } = useStore(services.phase);
   const sticky = useStore(services.sticky).current;
   const caps = useStore(services.caps).current;
@@ -116,9 +120,12 @@ export function StickyView() {
   const { request: focusRequest } = useStore(services.focusEditor);
   const [editorHandle] = useState(() => new EditorHandle());
   const [confirmTrash, setConfirmTrash] = useState(false);
+  const [editPin, setEditPin] = useState(false);
   const [findRequest, setFindRequest] = useState<object | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const trashed = sticky?.trashed != null || note.status === 'trashed';
+  // A locked note's text is in the window only while main reveals it here (D-172).
+  const blurred = !trashed && sticky?.locked === true && !lock?.revealed;
   const collapsed = sticky?.collapsed ?? false;
   const canRename = !trashed && note.status === 'ready';
 
@@ -144,7 +151,7 @@ export function StickyView() {
       if (key === 'w') {
         e.preventDefault();
         hidePending = true;
-      } else if (key === 'f' && !collapsed && !trashed) {
+      } else if (key === 'f' && !collapsed && !trashed && !blurred) {
         e.preventDefault();
         setFindRequest({});
       }
@@ -160,7 +167,7 @@ export function StickyView() {
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keyup', onKeyUp, true);
     };
-  }, [actions, collapsed, trashed, canRename]);
+  }, [actions, collapsed, trashed, blurred, canRename]);
 
   // The sticky's colors paint the whole page and follow every change at once.
   const color = sticky?.color;
@@ -209,14 +216,38 @@ export function StickyView() {
           trash: () => setConfirmTrash(true),
           quit: () => void actions.quit(),
         }}
+        lock={
+          sticky.locked && lock
+            ? { revealed: lock.revealed, pinSet: lock.pinSet, blur: () => void lockActions.blur(), editPin: () => setEditPin(true) }
+            : undefined
+        }
       />
       <div className="sticky-body" hidden={collapsed}>
         {trashed ? (
           <StickyTrashState onRestore={() => void actions.restore()} onClose={() => void actions.hide()} />
+        ) : blurred ? (
+          lock ? <StickyLockPanel state={lock} actions={lockActions} /> : null
         ) : (
-          <StickyNote editorHandle={editorHandle} findRequest={findRequest} onFindHandled={() => setFindRequest(null)} />
+          // Typing, clicks, scrolling and the pointer over the text keep a revealed locked sticky shown (throttled).
+          <div className="sticky-content" onKeyDown={lockActions.activity} onPointerDown={lockActions.activity} onPointerMove={lockActions.activity} onWheel={lockActions.activity}>
+            <StickyNote editorHandle={editorHandle} findRequest={findRequest} onFindHandled={() => setFindRequest(null)} />
+          </div>
         )}
       </div>
+      {editPin && lock ? (
+        <Dialog title={lock.pinSet ? 'Change PIN' : 'Set PIN'} onClose={() => setEditPin(false)}>
+          <div className="lock-form">
+            <PinSection
+              pinSet={lock.pinSet}
+              save={async (password, pin) => {
+                const failed = await lockActions.setPin(password, pin);
+                if (!failed) setEditPin(false);
+                return failed;
+              }}
+            />
+          </div>
+        </Dialog>
+      ) : null}
       <NoticeList notices={core.notices} />
       {confirmTrash ? (
         <ConfirmRunner

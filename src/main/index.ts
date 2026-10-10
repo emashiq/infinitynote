@@ -3,7 +3,16 @@ import { BrowserWindow, Menu, Notification, app, globalShortcut, ipcMain, native
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { APP_VERSION, ATTACHMENT_SCHEME, PRODUCT_NAME, RENDERER_SCHEME, windowsNotificationIdentity } from '../shared/app-identity';
+import {
+  APP_VERSION,
+  ATTACHMENT_SCHEME,
+  DOCUMENT_SCHEME,
+  HTML_DOCUMENT_SCHEME,
+  PRODUCT_NAME,
+  RENDERER_HOST,
+  RENDERER_SCHEME,
+  windowsNotificationIdentity,
+} from '../shared/app-identity';
 import type { AppInfoType, CapabilitiesType, FlushReasonType, StartupStateType } from '../shared/contracts/app';
 import type { TreeChangedEventType } from '../shared/contracts/hierarchy';
 import type { NoteRevisionEventType } from '../shared/contracts/notes';
@@ -20,6 +29,9 @@ import { createIpcRouter } from './ipc/router';
 import { createSenderPolicy } from './ipc/sender-policy';
 import { platformVerifier, safeStorageProtector } from './locks/os-key';
 import { createMainServices, type MainServices } from './main-services';
+import { createWorkbookConverter } from './documents/spreadsheet/workbook-runner';
+import type { PdfTextWorkerOptions } from './documents/text/pdf-text-runner';
+import { PDFJS_ASSETS_DIR } from '../shared/documents/pdf-assets';
 import { openWithPendingRestore } from './portability/restore';
 import { errorMessage } from './services/app-error';
 import { createAutostartControl, createXdgAutostart, type AutostartAdapter } from './services/autostart';
@@ -45,6 +57,8 @@ import { isSelfTestMode, runSelfTestMode } from './self-test-mode';
 import { acquireSingleInstance, installSecondInstanceHandler } from './single-instance';
 import { installTestHooks, testHooksEnabled } from './test-hooks';
 import { createAttachmentHandler } from './windows/attachment-protocol';
+import { createDocumentHandler, createHtmlDocumentHandler } from './windows/document-protocol';
+import { createElectronHtmlPrinter } from './windows/html-printer';
 import { createElectronDisplayProvider } from './windows/display-provider';
 import { createElectronInspector } from './windows/electron-inspector';
 import { createRendererHandler } from './windows/renderer-protocol';
@@ -199,6 +213,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
         }
       },
       restoreOutcome,
+      printer: createElectronHtmlPrinter({ tmpDir: path.join(paths.dataDir, 'export-tmp'), logger: log }),
       onSettingsChanged: (payload) => {
         if (payload.key === 'appearance.theme') applyNativeTheme(payload.value);
         eventBus.broadcast('settings:changed', payload);
@@ -214,11 +229,14 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       },
       onNoteRevision: emitRevision,
       sendCollab: (webContentsId, channel, payload) => void eventBus.sendTo(webContentsId, channel, payload),
+      sendStickyLock: (webContentsId, state) => void eventBus.sendTo(webContentsId, 'sticky:lockState', state),
       reminderClock,
       zones,
       onReminderChanged: reminderChanged,
       onRemindersWritten: () => wakeReminders('write'),
       testFaults: hooks?.faults,
+      pdfText: pdfTextWorker(),
+      workbooks: createWorkbookConverter({ workerFile: unpacked(path.join(__dirname, 'workbook.js')) }),
       locks: { ...osKey, power: seams ? seams.power : electronPowerEvents, windowHandle: mainWindowHandle },
     });
     hooks?.attachServices({ services, db, clock: systemClock, emitRevision });
@@ -228,6 +246,9 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     void services.attachments.sweepTmp(systemClock.now()).then((removed) => {
       if (removed > 0) log.info(`attachments: removed ${removed} stale temporary file(s)`);
     });
+    void services.documentStore.sweepTmp(systemClock.now()).then((removed) => {
+      if (removed > 0) log.info(`documents: removed ${removed} stale temporary file(s)`);
+    });
     // Housekeeping only: a failure (already logged by the transaction) must not stop the app from starting.
     try {
       services.suggestions.pruneDismissals();
@@ -236,6 +257,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     }
     startHousekeeping(services, log);
     services.locks.start();
+    services.stickyLocks.start();
   }
 
   const startup: StartupStateType = opened.ok ? { status: 'ok' } : { status: 'error', code: opened.code };
@@ -344,6 +366,11 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       }),
     },
   });
+  // Document bytes for the viewers, by document ID only (D-118); readable from the renderer origin.
+  const documentFiles = services?.documentFiles ?? null;
+  const rendererOrigins = [`${RENDERER_SCHEME}://${RENDERER_HOST}`, ...(devOrigin ? [devOrigin] : [])];
+  protocol.handle(DOCUMENT_SCHEME, createDocumentHandler({ files: documentFiles, allowedOrigins: rendererOrigins, logger: log }));
+  protocol.handle(HTML_DOCUMENT_SCHEME, createHtmlDocumentHandler({ files: documentFiles, logger: log }));
   hooks?.attachDesktop({ desktop: windowsSide, registry, services, inspector: createElectronInspector() });
   shortcut?.start();
 
@@ -356,7 +383,8 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     shortcut?.stop();
     // The windows flushed before quitting; whatever main still holds of their edits is saved now (D-072, D-103).
     services?.collab.closeAll();
-    // Then every locked note's key is zeroed (D-111).
+    // Then every locked sticky blurs and every locked note's key is zeroed (D-111, D-172).
+    services?.stickyLocks.stop();
     services?.locks.stop();
     try {
       db?.close();
@@ -429,3 +457,19 @@ function applyNativeTheme(value: unknown): void {
 }
 
 bootstrap();
+
+/** A file the packaged app keeps outside app.asar (asarUnpack): worker threads load their script with plain Node file access. */
+function unpacked(file: string): string {
+  return file.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked');
+}
+
+/**
+ * The PDF text worker is built next to this file; the character maps ship with the renderer's pdf.js assets (D-129).
+ * A worker thread reads them with plain Node file access, so the packaged app keeps both outside app.asar (asarUnpack).
+ */
+function pdfTextWorker(): PdfTextWorkerOptions {
+  return {
+    workerFile: unpacked(path.join(__dirname, 'pdf-text.js')),
+    cMapDir: unpacked(path.join(__dirname, '../renderer', PDFJS_ASSETS_DIR, 'cmaps')),
+  };
+}

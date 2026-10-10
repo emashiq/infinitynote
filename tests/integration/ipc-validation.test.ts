@@ -211,6 +211,8 @@ describe('role allowlist and note ownership (D-064)', () => {
         'sticky:setTextColor',
         // v0.2.0 (D-108): copying picked files or linking files, and its note's linked files.
         'attachment:addPicked', 'fileLink:create', 'fileLink:status', 'fileLink:open', 'fileLink:showInFolder', 'fileLink:copyIn',
+        // Locked stickies reveal, blur, report activity in and set the PIN of their own note (D-172).
+        'sticky:lockStatus', 'sticky:reveal', 'sticky:activity', 'sticky:blur', 'sticky:setPin',
       ].sort(),
     );
     for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('main', channel)).toBe(true);
@@ -232,7 +234,7 @@ describe('role allowlist and note ownership (D-064)', () => {
   it('every main-only channel group answers FORBIDDEN to a sticky window and never reaches its handler', async () => {
     const r = rolesRouter();
     const mainOnly = INVOKE_CHANNELS.filter((c) => !STICKY_ALLOWED_CHANNELS.has(c));
-    for (const group of ['session:', 'settings:set', 'tree:', 'trash:', 'project:', 'folder:', 'item:', 'note:create', 'note:move', 'home:', 'palette:', 'app:showDataFolder', 'sticky:float', 'lock:']) {
+    for (const group of ['session:', 'settings:set', 'tree:', 'trash:', 'project:', 'folder:', 'item:', 'note:create', 'note:move', 'home:', 'palette:', 'app:showDataFolder', 'sticky:float', 'lock:', 'document:']) {
       expect(mainOnly.some((c) => c.startsWith(group)), group).toBe(true);
     }
     for (const channel of mainOnly) {

@@ -6,6 +6,8 @@ export interface OpenFilesRequest {
   /** The window that asked; the dialog is modal to it. */
   webContentsId: number;
   kind: AttachmentKindType;
+  /** Limits the choice to these types (documents, D-118); images always get the image filter. */
+  filter?: FileFilter;
 }
 
 export interface FileFilter {
@@ -49,8 +51,8 @@ async function openDialog(webContentsId: number, options: Electron.OpenDialogOpt
 
 export function createElectronDialogAdapter(): DialogAdapter {
   return {
-    showOpenFiles: ({ webContentsId, kind }) =>
-      openDialog(webContentsId, { properties: ['openFile', 'multiSelections'], filters: kind === 'image' ? [IMAGE_FILTER] : [] }),
+    showOpenFiles: ({ webContentsId, kind, filter }) =>
+      openDialog(webContentsId, { properties: ['openFile', 'multiSelections'], filters: kind === 'image' ? [IMAGE_FILTER] : filter ? [filter] : [] }),
     async showCloseChoice(parentWebContentsId, options) {
       const parent = windowOf(parentWebContentsId);
       const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);

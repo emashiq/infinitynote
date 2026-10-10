@@ -7,7 +7,9 @@ import type { StickyManager } from '../windows/sticky-manager';
 import type { WidgetManager } from '../windows/widget-manager';
 import { registerAppHandlers, type AppHandlerDeps } from './handlers/app-handlers';
 import { registerAttachmentHandlers } from './handlers/attachment-handlers';
+import { registerCommentAndGraphHandlers } from './handlers/comment-handlers';
 import { registerContentHandlers } from './handlers/content-handlers';
+import { registerDocumentHandlers } from './handlers/document-handlers';
 import { registerHierarchyHandlers } from './handlers/hierarchy-handlers';
 import { registerHomeHandlers } from './handlers/home-handlers';
 import { registerLockHandlers } from './handlers/lock-handlers';
@@ -25,6 +27,7 @@ import { registerTrashHandlers } from './handlers/trash-handlers';
 import { registerAutostartHandlers, registerWidgetHandlers } from './handlers/widget-handlers';
 import { registerWindowHandlers } from './handlers/window-handlers';
 import type { IpcRouter } from './router';
+import { gateStickyContent } from './sticky-gate';
 
 /** The windows side of the app; stickies and the widget need storage, so they are null when the database failed to open. */
 export interface DesktopHandlerDeps {
@@ -44,8 +47,10 @@ const storageUnavailable = (): never => {
  * Registers every catalogue channel. When the database failed to open (`services` is null) the app channels
  * still work and every storage channel answers INTERNAL "Storage is unavailable".
  */
-export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDeps; services: MainServices | null; desktop: DesktopHandlerDeps }): void {
+export function registerIpcHandlers(ipcRouter: IpcRouter, deps: { app: AppHandlerDeps; services: MainServices | null; desktop: DesktopHandlerDeps }): void {
   const { services, desktop } = deps;
+  // A locked note's sticky gets its content only while it is revealed there (D-172).
+  const router = gateStickyContent(ipcRouter, () => services?.stickyLocks ?? null);
   const use =
     <K extends keyof MainServices>(key: K) =>
     (): MainServices[K] =>
@@ -79,5 +84,7 @@ export function registerIpcHandlers(router: IpcRouter, deps: { app: AppHandlerDe
   registerAutostartHandlers(router, desktop.autostart);
   registerPortabilityHandlers(router, use('portability'));
   registerShortcutHandlers(router, () => desktop.shortcut ?? storageUnavailable());
-  registerLockHandlers(router, use('locks'));
+  registerLockHandlers(router, { locks: use('locks'), stickyLocks: use('stickyLocks'), stickies });
+  registerDocumentHandlers(router, { documents: use('documents'), spreadsheets: use('spreadsheets'), hierarchy: use('hierarchy'), trash: use('trash') });
+  registerCommentAndGraphHandlers(router, { comments: use('comments'), graph: use('graph') });
 }

@@ -95,7 +95,7 @@ describe('archive preflight (INF-PORT-03)', () => {
   it('refuses unsupported schema and format versions, unexpected or missing entries and bad hashes', async () => {
     const s = await setupServices();
     expect(await refusal(s, archiveFile(backupEntries([], { schemaVersion: LATEST + 1 })))).toMatchObject({ code: 'UNSUPPORTED', message: PORTABILITY_MESSAGES.newerSchema });
-    expect(await refusal(s, archiveFile(backupEntries([], { formatVersion: 2 })))).toMatchObject({ code: 'UNSUPPORTED', message: PORTABILITY_MESSAGES.newerFormat });
+    expect(await refusal(s, archiveFile(backupEntries([], { formatVersion: 3 })))).toMatchObject({ code: 'UNSUPPORTED', message: PORTABILITY_MESSAGES.newerFormat });
     expect(await refusal(s, archiveFile(backupEntries([], { format: 'something-else' })))).toMatchObject({ message: PORTABILITY_MESSAGES.notArchive });
     expect(await refusal(s, archiveFile([{ name: 'db/infinity-notes.sqlite3', data: DB }]))).toMatchObject({ message: PORTABILITY_MESSAGES.notArchive });
     expect(await refusal(s, archiveFile(backupEntries([{ name: 'unexpected.txt', data: Buffer.from('x') }])))).toMatchObject({ message: PORTABILITY_MESSAGES.unsafe });

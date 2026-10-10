@@ -3,6 +3,7 @@ import type { CapabilitiesType } from '../../shared/contracts/app';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import type { Result } from '../../shared/contracts/envelope';
 import type { NoteColorType } from '../../shared/contracts/hierarchy';
+import type { StickyLockStateType } from '../../shared/contracts/locks';
 import type { StickyStateType } from '../../shared/contracts/stickies';
 import { displayTitle } from '../../shared/names';
 import { NoteController, textIsSafe, type FlushResult } from '../notes/note-controller';
@@ -10,6 +11,7 @@ import { browserHideEvents, createCoreServices, type CoreServices } from '../sta
 import { WINDOW_KEPT_NOTICE, restoreNotice, trashedDraftNotice, unsavedFlushNotice } from '../state/notice-store';
 import { createStore, failOutcome, okOutcome, realTimers, uuidv4, type Outcome, type Store, type Timers } from '../state/store';
 import { browserThemeEnv, type ThemeEnv } from '../state/theme-store';
+import { createActivityReporter } from './activity-reporter';
 
 export type StickyPhase = 'loading' | 'ready' | 'invalid';
 
@@ -29,6 +31,18 @@ export interface StickyActions {
   quit(): Promise<void>;
 }
 
+/** What a sticky of a locked note does about its blur (D-172, D-173); main decides, the window follows. */
+export interface StickyLockActions {
+  /** Asks main to show the text here; resolves with the message to show when it refuses, or null. */
+  reveal(how: { kind: 'pin'; pin: string } | { kind: 'password'; password: string } | { kind: 'hello' }): Promise<string | null>;
+  /** "Blur now" in the menu. */
+  blur(): Promise<void>;
+  /** Sets (or with null clears) the PIN; resolves with the message to show when main refuses, or null. */
+  setPin(password: string, pin: string | null): Promise<string | null>;
+  /** Interaction in the revealed text (throttled before it reaches main). */
+  activity(): void;
+}
+
 export interface StickyServices {
   core: CoreServices;
   now: () => number;
@@ -38,6 +52,9 @@ export interface StickyServices {
   phase: Store<{ phase: StickyPhase }>;
   caps: Store<{ current: CapabilitiesType | null }>;
   actions: StickyActions;
+  /** The lock state of a locked note's sticky; null while the note is not locked. */
+  lock: Store<{ current: StickyLockStateType | null }>;
+  lockActions: StickyLockActions;
   /** Bumped when main asks this window to focus its editor (a repeated Float). */
   focusEditor: Store<{ request: number }>;
   ready: Promise<void>;
@@ -70,6 +87,8 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
   const phase = createStore<{ phase: StickyPhase }>({ phase: 'loading' });
   const caps = createStore<{ current: CapabilitiesType | null }>({ current: null });
   const focusEditor = createStore({ request: 0 });
+  const lock = createStore<{ current: StickyLockStateType | null }>({ current: null });
+  const now = deps.now ?? (() => Date.now());
   let lastActivation = 0;
 
   const fail = (res: Result<unknown>): boolean => {
@@ -94,7 +113,32 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
     } else if (previous?.trashed && !next.trashed) {
       void controller.reopen();
     }
+    if (previous && previous.locked !== next.locked && !next.trashed) void followLock(next.locked);
   };
+
+  /**
+   * A new lock state from main: the text is shown only while main reveals it here (D-172). Blurring drops the text
+   * (unmounted, not hidden); revealing opens the note again, which main now serves to this window.
+   */
+  const applyLock = (next: StickyLockStateType | null): void => {
+    const wasShown = lock.getState().current?.revealed ?? controller.store.getState().status !== 'locked';
+    lock.setState({ current: next?.locked ? next : null });
+    const shown = !next?.locked || next.revealed;
+    if (shown && !wasShown) void controller.reopen();
+    else if (!shown && wasShown) void controller.conceal();
+  };
+
+  /** The note was locked or its lock removed while the window floats. */
+  async function followLock(locked: boolean): Promise<void> {
+    if (!locked) {
+      applyLock(null);
+      return;
+    }
+    const res = await bridge.sticky.lockStatus({ noteId });
+    if (res.ok) applyLock(res.data);
+  }
+
+  const reporter = createActivityReporter(() => void bridge.sticky.activity({ noteId }), { timers, now });
 
   async function init(): Promise<void> {
     const state = await bridge.window.getState();
@@ -111,6 +155,15 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
     if (initial.trashed) {
       controller.store.setState({ status: 'trashed', trashBatchId: initial.trashed.batchId });
       return;
+    }
+    if (initial.locked) {
+      const status = await bridge.sticky.lockStatus({ noteId });
+      if (status.ok) lock.setState({ current: status.data });
+      // A blurred sticky never asks for its text.
+      if (!status.ok || !status.data.revealed) {
+        controller.store.setState({ status: 'locked' });
+        return;
+      }
     }
     await controller.open();
     if (initial.activation > 0) focusEditor.setState((s) => ({ request: s.request + 1 }));
@@ -134,6 +187,11 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
   core.track(
     bridge.subscribe('sticky:state', (next) => {
       if (next.noteId === noteId && phase.getState().phase === 'ready') applyState(next);
+    }),
+  );
+  core.track(
+    bridge.subscribe('sticky:lockState', (next) => {
+      if (next.noteId === noteId && phase.getState().phase === 'ready') applyLock(next);
     }),
   );
   const lifecycle = deps.lifecycle === undefined ? browserHideEvents() : deps.lifecycle;
@@ -193,18 +251,50 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
     },
   };
 
+  const lockActions: StickyLockActions = {
+    async reveal(how) {
+      const res = await bridge.sticky.reveal({ noteId, with: how });
+      if (res.ok) {
+        applyLock(res.data);
+        return null;
+      }
+      // A refusal can change what the window offers (the key was dropped, five wrong PINs).
+      const status = await bridge.sticky.lockStatus({ noteId });
+      if (status.ok) applyLock(status.data);
+      return res.error.message;
+    },
+    async blur() {
+      await controller.flush();
+      const res = await bridge.sticky.blur({ noteId });
+      if (!fail(res) && res.ok) applyLock(res.data);
+    },
+    async setPin(password, pin) {
+      const res = await bridge.sticky.setPin({ noteId, password, pin });
+      if (!res.ok) return res.error.message;
+      applyLock(res.data);
+      notices.push(pin === null ? 'PIN removed' : 'PIN set', 'info');
+      return null;
+    },
+    activity() {
+      if (lock.getState().current?.revealed) reporter.report();
+    },
+  };
+
   const ready = init();
   return {
     core,
-    now: deps.now ?? (() => Date.now()),
+    now,
     controller,
     sticky,
     phase,
     caps,
     actions,
+    lock,
+    lockActions,
     focusEditor,
     ready,
     async dispose() {
+      reporter.dispose();
       core.dispose();
       await controller.dispose();
     },

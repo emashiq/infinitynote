@@ -6,6 +6,8 @@ import { FileChipView } from './FileChipView';
 export interface FileActions {
   open(attachmentId: string): void;
   showInFolder(attachmentId: string): void;
+  /** Opens a file of a document kind as a document in a tab (main window only, D-118). */
+  openInApp?(attachmentId: string): void;
 }
 
 export interface FileAttachmentOptions {

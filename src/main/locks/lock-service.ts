@@ -1,4 +1,4 @@
-import type { TreeChangedEventType } from '../../shared/contracts/hierarchy';
+import type { LocationType, NoteDtoType, TreeChangedEventType } from '../../shared/contracts/hierarchy';
 import {
   LOCK_MESSAGES,
   MIN_PASSWORD_CHARS,
@@ -9,18 +9,21 @@ import type { ReminderChangedEventType } from '../../shared/contracts/reminders'
 import { extractPlainText } from '../../shared/text/plain-text';
 import type { Db } from '../db/driver';
 import { DraftsRepo } from '../db/repositories/drafts-repo';
-import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
 import { LocksRepo, type LockRow } from '../db/repositories/locks-repo';
 import { NotesRepo, serializedContent, type ContentRow } from '../db/repositories/notes-repo';
+import { PinsRepo } from '../db/repositories/pins-repo';
 import { AppError } from '../services/app-error';
 import type { Clock } from '../services/clock';
 import type { CollabHub } from '../services/collab-hub';
+import { EMPTY_DOC_JSON, type HierarchyService } from '../services/hierarchy-service';
 import type { Logger } from '../services/logger';
 import { MSG } from '../services/messages';
 import type { PowerEvents } from '../services/power-events';
 import type { SettingsService } from '../services/settings-service';
 import { realTimers, type Timers } from '../services/timers';
 import { runTx } from '../services/transaction';
+import { openNoteComments, sealNoteComments } from '../comments/comment-cipher';
+import { AttemptBackoff, SerialAttempts } from './attempt-backoff';
 import { purgePlaintext, scrubDatabase } from './lock-purge';
 import {
   DEFAULT_KDF,
@@ -37,12 +40,10 @@ import {
 } from './note-crypto';
 import { openDraft, type NoteVault } from './note-vault';
 import { OS_KEY_MESSAGES, type KeyProtector, type OsKeyVerifier } from './os-key';
+import { createPinRecord, isPinFormat, type PinKdf, type PinRecord } from './pin-verifier';
 
 /** How often unlocked notes are checked for the idle timeout. */
 export const SWEEP_INTERVAL_MS = 15_000;
-/** Wrong passwords accepted before each further attempt waits (1 s, 2 s, 4 s ... up to MAX_BACKOFF_S). */
-const FREE_ATTEMPTS = 3;
-const MAX_BACKOFF_S = 30;
 
 export interface LockServiceDeps {
   db: Db;
@@ -51,6 +52,8 @@ export interface LockServiceDeps {
   vault: NoteVault;
   collab: Pick<CollabHub, 'settle' | 'evict'>;
   settings: Pick<SettingsService, 'getInternal'>;
+  /** Creates the row of a note made locked (D-171), inside the same transaction as its lock. */
+  hierarchy: Pick<HierarchyService, 'createNote'>;
   /** Windows Hello where the platform has it (D-113). */
   verifier: OsKeyVerifier;
   /** Protects the Windows Hello copy of a data key (safeStorage); null where the OS cannot. */
@@ -62,33 +65,36 @@ export interface LockServiceDeps {
   /** Screen lock and suspend lock every note again. */
   power?: PowerEvents;
   kdf?: KdfParams;
+  /** Sticky PIN verifier parameters (cheap ones in tests). */
+  pinKdf?: PinKdf;
   timers?: Timers;
 }
 
-interface Failures {
-  count: number;
-  /** Epoch ms before which no password attempt is accepted. */
-  until: number;
+/** What a new lock is made from: the password (checked for length), Windows Hello and an optional sticky PIN. */
+interface NewLockRequest {
+  password: string;
+  hello: boolean;
+  pin?: string | null;
 }
 
 /**
  * Locked notes (D-111..D-113): locking (encryption and the purge of every plaintext copy), unlocking with the password
- * or Windows Hello for the session, locking again (idle, screen lock, suspend, quit, Lock now, Lock all), changing the
- * password, Windows Hello on or off, and removing the lock. Passwords exist only inside these calls: they are never
+ * or Windows Hello for the session, creating a note already locked (D-171), locking again (idle, screen lock, suspend, quit, Lock now, Lock all), changing the
+ * password, Windows Hello on or off, the sticky PIN (D-173), and removing the lock. Passwords exist only inside these calls: they are never
  * stored, logged or put in an error.
  */
 export class LockService {
   private readonly notes: NotesRepo;
-  private readonly hierarchy: HierarchyRepo;
   private readonly locks: LocksRepo;
+  private readonly pins: PinsRepo;
   private readonly drafts: DraftsRepo;
   private readonly timers: Timers;
   private readonly kdf: KdfParams;
-  private readonly failures = new Map<string, Failures>();
+  private readonly failures: AttemptBackoff;
   /** A scrub after a lock was blocked: the idle sweep and quit run it again (scrubDatabase). */
   private scrubPending = false;
-  /** The last password attempt per note; the next one waits for it (keyFromPassword). */
-  private readonly attempts = new Map<string, Promise<void>>();
+  /** Password attempts on a note run one at a time (keyFromPassword). */
+  private readonly attempts = new SerialAttempts();
   /** Notes with a lock change in progress (a key derivation runs outside any transaction). */
   private readonly busy = new Set<string>();
   private sweepTimer: unknown = null;
@@ -96,11 +102,12 @@ export class LockService {
 
   constructor(private readonly deps: LockServiceDeps) {
     this.notes = new NotesRepo(deps.db);
-    this.hierarchy = new HierarchyRepo(deps.db);
     this.locks = new LocksRepo(deps.db);
+    this.pins = new PinsRepo(deps.db);
     this.drafts = new DraftsRepo(deps.db);
     this.timers = deps.timers ?? realTimers;
     this.kdf = deps.kdf ?? DEFAULT_KDF;
+    this.failures = new AttemptBackoff(() => deps.clock.now());
   }
 
   // Lifecycle ------------------------------------------------------------------------------------------------------
@@ -153,7 +160,8 @@ export class LockService {
       locked: lock !== undefined,
       unlocked: lock !== undefined && this.deps.vault.isUnlocked(noteId),
       hello: lock?.os_key != null,
-      retryInSeconds: this.retryInSeconds(noteId),
+      pin: lock !== undefined && this.pins.has(noteId),
+      retryInSeconds: this.failures.retryInSeconds(noteId),
     };
   }
 
@@ -162,9 +170,9 @@ export class LockService {
    * Locks a note: its edits are saved, then in one step its live-sync session closes, the content is encrypted and
    * every plaintext copy is destroyed; the database is then scrubbed. The note is locked at once.
    */
-  async lock(req: { noteId: string; password: string; hello: boolean }): Promise<LockStatusType> {
+  async lock(req: NewLockRequest & { noteId: string }): Promise<LockStatusType> {
     const { noteId } = req;
-    checkNewPassword(req.password);
+    checkNewLock(req);
     this.lockable(this.liveRow(noteId));
     return this.exclusive(noteId, async () => {
       if (req.hello) await this.confirmHello();
@@ -173,20 +181,23 @@ export class LockService {
         const salt = newSalt();
         const passwordKey = await this.wrapWithPassword(noteId, req.password, salt, dataKey);
         const osKey = req.hello ? this.protect(dataKey) : null;
+        const pin = req.pin ? await createPinRecord(req.pin, this.deps.pinKdf) : null;
         this.deps.collab.settle(noteId);
         this.deps.collab.evict(noteId);
         const counts = runTx(this.deps.db, this.deps.logger, () => {
           const row = this.lockable(this.liveRow(noteId));
           const content = sealText(dataKey, 'content', noteId, serializedContent(row));
           const purged = purgePlaintext(this.deps.db, noteId);
+          sealNoteComments(this.deps.db, noteId, dataKey);
           this.locks.insert({ noteId, kdf: JSON.stringify(this.kdf), salt, passwordKey, osKey, content, now: this.deps.clock.now() });
+          if (pin) this.pins.put(noteId, pin, this.deps.clock.now());
           return purged;
         });
         this.scrub();
         this.deps.logger.info(
-          `locks: locked note=${noteId} hello=${req.hello} purged versions=${counts.versions} drafts=${counts.drafts} sources=${counts.sources} dismissals=${counts.dismissals}`,
+          `locks: locked note=${noteId} hello=${req.hello} pin=${pin !== null} purged versions=${counts.versions} drafts=${counts.drafts} sources=${counts.sources} dismissals=${counts.dismissals}`,
         );
-        this.deps.onTreeChanged({ reason: 'lock', trashedNoteIds: [] });
+        this.deps.onTreeChanged({ reason: 'lock', trashedNoteIds: [], trashedDocumentIds: [] });
         if (counts.sources > 0) this.deps.onReminderChanged({ reason: 'anchor', noteIds: [noteId] });
       } finally {
         dataKey.fill(0);
@@ -200,11 +211,45 @@ export class LockService {
     this.scrubPending = !scrubDatabase(this.deps.db, this.deps.logger);
   }
 
-  /** A note that can be locked now: live, not locked, not a sticky (a locked note never floats). */
+  /** A note that can be locked now: live and not locked. A floating sticky stays floating, blurred (D-172). */
   private lockable(row: ContentRow): ContentRow {
     if (row.locked === 1) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.alreadyLocked);
-    if (this.hierarchy.getNoteMeta(row.id)?.sticky_enabled === 1) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.sticky);
     return row;
+  }
+
+  // Create locked ----------------------------------------------------------------------------------------------------
+  /**
+   * "New locked note" and "New locked sticky" (D-171): the note row and its lock are written in one transaction, so its
+   * content never exists in plaintext: the row has no content, the lock holds the sealed empty document, and there is
+   * no first save, version, draft, index text or reminder source. The key stays in memory: the new note is open.
+   */
+  async create(req: NewLockRequest & { location: LocationType; sticky: boolean }): Promise<{ note: NoteDtoType }> {
+    checkNewLock(req);
+    if (req.hello) await this.confirmHello();
+    const salt = newSalt();
+    const kek = await derivePasswordKey(req.password, salt, this.kdf);
+    const dataKey = newDataKey();
+    try {
+      const osKey = req.hello ? this.protect(dataKey) : null;
+      const pin = req.pin ? await createPinRecord(req.pin, this.deps.pinKdf) : null;
+      const created = this.deps.hierarchy.createNote(req.location, req.sticky, undefined, 'rich', (noteId) => this.insertLock(noteId, { kek, salt, dataKey, osKey, pin }));
+      this.deps.vault.put(created.note.id, dataKey);
+      this.deps.logger.info(`locks: created locked note=${created.note.id} sticky=${req.sticky} hello=${req.hello} pin=${pin !== null}`);
+      return created;
+    } catch (err) {
+      dataKey.fill(0);
+      throw err;
+    } finally {
+      kek.fill(0);
+    }
+  }
+
+  /** The lock row (and PIN) of a note created locked; runs inside the transaction that inserts its row. */
+  private insertLock(noteId: string, key: { kek: Buffer; salt: Buffer; dataKey: Buffer; osKey: Buffer | null; pin: PinRecord | null }): void {
+    const now = this.deps.clock.now();
+    const content = sealText(key.dataKey, 'content', noteId, EMPTY_DOC_JSON);
+    this.locks.insert({ noteId, kdf: JSON.stringify(this.kdf), salt: key.salt, passwordKey: wrapKey(key.kek, noteId, key.dataKey), osKey: key.osKey, content, now });
+    if (key.pin) this.pins.put(noteId, key.pin, now);
   }
 
   // Unlock -----------------------------------------------------------------------------------------------------------
@@ -300,6 +345,22 @@ export class LockService {
     });
   }
 
+  /** Sets (or with null clears) the sticky PIN; the password confirms the owner. The PIN never touches the data key. */
+  async setPin(req: { noteId: string; password: string; pin: string | null }): Promise<LockStatusType> {
+    if (req.pin !== null && !isPinFormat(req.pin)) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.pinFormat);
+    return this.exclusive(req.noteId, async () => {
+      (await this.keyFromPassword(req.noteId, req.password)).fill(0);
+      const pin = req.pin === null ? null : await createPinRecord(req.pin, this.deps.pinKdf);
+      runTx(this.deps.db, this.deps.logger, () => {
+        this.lockedRow(req.noteId);
+        if (pin) this.pins.put(req.noteId, pin, this.deps.clock.now());
+        else this.pins.delete(req.noteId);
+      });
+      this.deps.logger.info(`locks: pin ${pin ? 'set' : 'cleared'} note=${req.noteId}`);
+      return this.status(req.noteId);
+    });
+  }
+
   /**
    * Removes the lock: the content is stored as plaintext again from now on and sealed drafts are opened. What was
    * destroyed when the note was locked (versions, earlier drafts, source texts) stays gone.
@@ -316,6 +377,7 @@ export class LockService {
           const text = openText(dataKey, 'content', req.noteId, lock.content);
           const drafts = this.drafts.allForNote(req.noteId).map((d) => ({ id: d.id, text: openDraft(() => dataKey, req.noteId, d.content) }));
           this.locks.delete(req.noteId);
+          openNoteComments(this.deps.db, req.noteId, dataKey);
           this.notes.restoreContent(req.noteId, row.format, text, extractPlainText(row.format, row.format === 'rich' ? JSON.parse(text) : text));
           for (const d of drafts) this.drafts.setContent(d.id, d.text);
         });
@@ -323,9 +385,9 @@ export class LockService {
         dataKey.fill(0);
       }
       this.deps.vault.drop(req.noteId);
-      this.failures.delete(req.noteId);
+      this.failures.clear(req.noteId);
       this.deps.logger.info(`locks: lock removed note=${req.noteId}`);
-      this.deps.onTreeChanged({ reason: 'lock', trashedNoteIds: [] });
+      this.deps.onTreeChanged({ reason: 'lock', trashedNoteIds: [], trashedDocumentIds: [] });
       return this.status(req.noteId);
     });
   }
@@ -337,41 +399,26 @@ export class LockService {
    * the delay.
    */
   private keyFromPassword(noteId: string, password: string): Promise<Buffer> {
-    return this.oneAttemptAtATime(noteId, async () => {
+    return this.attempts.run(noteId, async () => {
       const lock = this.lockedRow(noteId);
-      const wait = this.retryInSeconds(noteId);
+      const wait = this.failures.retryInSeconds(noteId);
       if (wait > 0) throw new AppError('LIMIT_EXCEEDED', LOCK_MESSAGES.wait(wait), { retryInSeconds: wait });
       const params = parseKdfParams(lock.kdf);
       if (!params) throw new AppError('INTERNAL', 'This note could not be opened');
-      this.recordFailure(noteId);
+      this.failures.record(noteId);
       const kek = await derivePasswordKey(password, lock.salt, params);
       try {
         const dataKey = unwrapKey(kek, noteId, lock.password_key);
-        this.failures.delete(noteId);
+        this.failures.clear(noteId);
         return dataKey;
       } catch (err) {
         if (!(err instanceof SealError)) throw err;
         this.deps.logger.info(`locks: wrong password note=${noteId}`);
-        throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.wrongPassword, { wrongPassword: true, retryInSeconds: this.retryInSeconds(noteId) });
+        throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.wrongPassword, { wrongPassword: true, retryInSeconds: this.failures.retryInSeconds(noteId) });
       } finally {
         kek.fill(0);
       }
     });
-  }
-
-  /** Runs password attempts on a note in order: each starts after the previous one settled. */
-  private oneAttemptAtATime<T>(noteId: string, attempt: () => Promise<T>): Promise<T> {
-    const previous = this.attempts.get(noteId) ?? Promise.resolve();
-    const result = previous.then(attempt);
-    const settled = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    this.attempts.set(noteId, settled);
-    void settled.then(() => {
-      if (this.attempts.get(noteId) === settled) this.attempts.delete(noteId);
-    });
-    return result;
   }
 
   private async wrapWithPassword(noteId: string, password: string, salt: Buffer, dataKey: Buffer): Promise<Buffer> {
@@ -381,17 +428,6 @@ export class LockService {
     } finally {
       kek.fill(0);
     }
-  }
-
-  private recordFailure(noteId: string): void {
-    const count = (this.failures.get(noteId)?.count ?? 0) + 1;
-    const delay = count < FREE_ATTEMPTS ? 0 : Math.min(MAX_BACKOFF_S, 2 ** (count - FREE_ATTEMPTS));
-    this.failures.set(noteId, { count, until: this.deps.clock.now() + delay * 1000 });
-  }
-
-  private retryInSeconds(noteId: string): number {
-    const until = this.failures.get(noteId)?.until ?? 0;
-    return Math.max(0, Math.ceil((until - this.deps.clock.now()) / 1000));
   }
 
   // Windows Hello ------------------------------------------------------------------------------------------------------
@@ -444,4 +480,9 @@ export class LockService {
 
 function checkNewPassword(password: string): void {
   if ([...password].length < MIN_PASSWORD_CHARS) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.tooShort);
+}
+
+function checkNewLock(req: NewLockRequest): void {
+  checkNewPassword(req.password);
+  if (req.pin && !isPinFormat(req.pin)) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.pinFormat);
 }

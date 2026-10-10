@@ -1,6 +1,5 @@
 import type { HexColor as HexColorValue } from '../../shared/color';
 import { HexColor, NoteColor, type NoteColorType, type TreeChangedEventType } from '../../shared/contracts/hierarchy';
-import { LOCK_MESSAGES } from '../../shared/contracts/locks';
 import { STICKY_MESSAGES, type StoredBoundsType } from '../../shared/contracts/stickies';
 import { DEFAULT_STICKY_COLOR } from '../../shared/sticky-colors';
 import { pathOf, type PathIndex } from '../../shared/tree/paths';
@@ -22,6 +21,8 @@ export interface StickyMeta {
   textColor: HexColorValue | null;
   path: string[];
   trashed: { batchId: string | null } | null;
+  /** Locked: the window shows the text only while revealed there (D-172). */
+  locked: boolean;
 }
 
 export interface StickyServiceDeps {
@@ -49,7 +50,7 @@ export class StickyService {
   }
 
   private changed(): void {
-    this.deps.onChange({ reason: 'sticky', trashedNoteIds: [] });
+    this.deps.onChange({ reason: 'sticky', trashedNoteIds: [], trashedDocumentIds: [] });
   }
 
   private liveNote(noteId: string): NoteMetaRow {
@@ -60,12 +61,10 @@ export class StickyService {
   }
 
   // Note flags ------------------------------------------------------------------------------
-  /** Makes a live note a sticky (yellow unless it has a color) and marks its window open. */
+  /** Makes a live note a sticky (yellow unless it has a color) and marks its window open. A locked note floats blurred (D-172). */
   enable(noteId: string): void {
     const changed = this.tx(() => {
       const row = this.liveNote(noteId);
-      // A locked note never floats: a sticky window would show its text outside the lock screen (D-111).
-      if (row.locked === 1) throw new AppError('VALIDATION_FAILED', LOCK_MESSAGES.noFloat);
       this.hierarchy.setSticky(noteId, true);
       this.windows.upsertSticky(noteId, { open: true }, this.deps.clock.now());
       return row.sticky_enabled !== 1 || row.color === null;
@@ -127,6 +126,7 @@ export class StickyService {
         textColor: HexColor.safeParse(row.text_color).data ?? null,
         path: pathOf(index, { projectId: row.project_id, folderId: row.folder_id }),
         trashed: trashed ? { batchId: row.trash_batch_id } : null,
+        locked: row.locked === 1,
       });
     }
     return out;

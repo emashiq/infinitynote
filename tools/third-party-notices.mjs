@@ -12,6 +12,16 @@ const OUTPUT = path.join(repoRoot, 'THIRD_PARTY_NOTICES.md');
 // Electron's npm package only downloads the runtime; its own dependencies never ship. Chromium's and Node's
 // licenses travel with the runtime as LICENSES.chromium.html next to the installed executable.
 const LEAF_PACKAGES = new Set(['electron']);
+// Optional packages that are installed for development but never bundled or packaged: pdf.js's Node canvas, which
+// the renderer does not need (it draws with the browser canvas) and the PDF text worker does not use (D-129).
+const UNSHIPPED_OPTIONAL = new Set(['@napi-rs/canvas']);
+// Packages that a shipped package's own build already bundled into its files, so they are not in package-lock.json:
+// pptx-glimpse's renderer carries @xmldom/xmldom and rtf.js's EMF/WMF readers (both MIT, D-155). Their license texts
+// come from their npm packages and are kept under tools/vendored-licenses/.
+const BUNDLED_INSIDE = [
+  { host: 'pptx-glimpse', name: '@xmldom/xmldom', version: '0.9.12', license: 'MIT', file: 'xmldom-xmldom.txt' },
+  { host: 'pptx-glimpse', name: 'rtf.js', version: '3.0.9', license: 'MIT', file: 'rtf.js.txt' },
+];
 // Type declarations are erased at build time and never ship.
 const isTypesOnly = (name) => name.startsWith('@types/');
 const IMPORT_PATTERNS = [
@@ -61,6 +71,17 @@ function resolveKey(lock, fromKey, name) {
   }
 }
 
+/** The old `licenses: [{type}]` field of a package.json (jstat), which npm does not copy into the lockfile. */
+/** Packages whose package.json names no license although their license file does (checked by hand, Run 5). */
+const LICENSE_IN_FILE_ONLY = { khroma: 'MIT' };
+
+function legacyLicense(key) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, key, 'package.json'), 'utf8'));
+  const types = Array.isArray(manifest.licenses) ? manifest.licenses.map((l) => l?.type).filter((t) => typeof t === 'string') : [];
+  if (types.length === 0) return LICENSE_IN_FILE_ONLY[manifest.name] ?? null;
+  return types.length === 1 ? types[0] : `(${types.join(' OR ')})`;
+}
+
 function shippedPackages() {
   const lock = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8'));
   const seen = new Map();
@@ -75,17 +96,23 @@ function shippedPackages() {
     if (seen.has(key)) continue;
     const entry = lock.packages[key];
     const name = key.slice(key.lastIndexOf('node_modules/') + 'node_modules/'.length);
-    seen.set(key, { name, version: entry.version, license: entry.license ?? 'UNKNOWN', dir: path.join(repoRoot, key) });
+    seen.set(key, { name, version: entry.version, license: entry.license ?? legacyLicense(key) ?? 'UNKNOWN', dir: path.join(repoRoot, key) });
     if (LEAF_PACKAGES.has(name)) continue;
     const required = Object.keys(entry.dependencies ?? {});
     // Optional and peer dependencies ship only when they are installed.
-    const optional = Object.keys({ ...entry.optionalDependencies, ...entry.peerDependencies });
+    const optional = Object.keys({ ...entry.optionalDependencies, ...entry.peerDependencies }).filter((dep) => !UNSHIPPED_OPTIONAL.has(dep));
     for (const dep of [...required, ...optional]) {
       if (isTypesOnly(dep)) continue;
       const depKey = resolveKey(lock, key, dep);
       if (depKey) queue.push(depKey);
       else if (required.includes(dep)) throw new Error(`${dep} (a dependency of ${name}) is missing from package-lock.json`);
     }
+  }
+  const shippedNames = new Set([...seen.values()].map((p) => p.name));
+  for (const inner of BUNDLED_INSIDE) {
+    if (!shippedNames.has(inner.host)) continue;
+    const text = fs.readFileSync(path.join(repoRoot, 'tools', 'vendored-licenses', inner.file), 'utf8');
+    seen.set(`bundled:${inner.name}`, { ...inner, text: text.replace(/\r\n?/g, '\n').trim() });
   }
   return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 }
@@ -105,14 +132,14 @@ function render(packages) {
     '',
     '| Package | Version | License |',
     '| --- | --- | --- |',
-    ...packages.map((p) => `| ${p.name} | ${p.version} | ${p.license} |`),
+    ...packages.map((p) => `| ${p.name} | ${p.version} | ${p.license}${p.host ? ` (bundled in ${p.host})` : ''} |`),
     '',
     '## License texts',
   ];
   // Identical texts (for example many copies of one project's MIT notice) are printed once.
   const byText = new Map();
   for (const p of packages) {
-    const text = licenseText(p.dir) ?? `No license file is included in the package; its package.json declares ${p.license}.`;
+    const text = p.text ?? licenseText(p.dir) ?? `No license file is included in the package; its package.json declares ${p.license}.`;
     byText.set(text, [...(byText.get(text) ?? []), `${p.name}@${p.version}`]);
   }
   for (const [text, owners] of byText) {

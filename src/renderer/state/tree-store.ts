@@ -1,6 +1,7 @@
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import type { ErrorEnvelope, Result } from '../../shared/contracts/envelope';
 import type {
+  DocumentDtoType,
   FolderTargetType,
   ItemKindType,
   LocationType,
@@ -11,6 +12,7 @@ import type {
   TrashResultType,
   TrashRestoreResponseType,
 } from '../../shared/contracts/hierarchy';
+import type { BlankDocumentKind } from '../../shared/documents/kinds';
 import { buildPathIndex, pathOf } from '../../shared/tree/paths';
 import { ancestorsOf, buildTreeModel, locationOfNode, type NodeKey, type TreeModel } from '../../shared/tree/tree-model';
 import { closedTabsNotice, restoreNotice, type NoticeStore } from './notice-store';
@@ -38,7 +40,7 @@ export interface MoveDestination {
 }
 
 export const EXPANDED_DEBOUNCE_MS = 300;
-const EMPTY_SNAPSHOT: TreeSnapshotType = { projects: [], folders: [], notes: [] };
+const EMPTY_SNAPSHOT: TreeSnapshotType = { projects: [], folders: [], notes: [], documents: [] };
 const EXPANDABLE = /^(common|projects|favorites|trash|(project|folder):[0-9a-f-]{36})$/;
 
 export interface TreeDeps {
@@ -102,11 +104,13 @@ export class TreeStore {
     return this.reloading;
   }
 
-  /** Handles tree:changed from main: reload, and close tabs of notes that were trashed. */
+  /** Handles tree:changed from main: reload, and close tabs of notes and documents that were trashed. */
   async handleChanged(event: TreeChangedEventType): Promise<void> {
-    const closing = event.trashedNoteIds.length > 0 ? this.deps.tabs.closeNoteTabs(event.trashedNoteIds) : Promise.resolve(0);
+    const trashed = event.trashedNoteIds.length + event.trashedDocumentIds.length > 0;
+    const closing = trashed ? this.deps.tabs.closeItemTabs({ noteIds: event.trashedNoteIds, documentIds: event.trashedDocumentIds }) : Promise.resolve(0);
     const [removed] = await Promise.all([closing, this.reload()]);
-    if (removed > 0) this.deps.notices.push(closedTabsNotice(removed, false), 'info');
+    const subject = event.trashedDocumentIds.length === 0 ? 'note' : event.trashedNoteIds.length === 0 ? 'document' : 'item';
+    if (removed > 0) this.deps.notices.push(closedTabsNotice(removed, false, subject), 'info');
   }
 
   // Selection and expansion ---------------------------------------------------------
@@ -178,6 +182,14 @@ export class TreeStore {
     return okOutcome({ id: res.data.folder.id });
   }
 
+  /** A new blank Word document, spreadsheet or presentation at the location (D-118). */
+  async createDocument(location: LocationType, kind: BlankDocumentKind): Promise<Outcome<{ document: DocumentDtoType }>> {
+    const res = await this.deps.bridge.document.create({ location, kind });
+    if (!res.ok) return this.fail(res);
+    await this.afterChange(`document:${res.data.document.id}`);
+    return okOutcome({ document: res.data.document });
+  }
+
   async createNote(location: LocationType, opts: { sticky: boolean; title?: string; format?: 'rich' | 'plain' }): Promise<Outcome<{ note: NoteDtoType }>> {
     const res = await this.deps.bridge.note.create({
       location,
@@ -209,6 +221,18 @@ export class TreeStore {
     await this.afterChange();
     return okOutcome(undefined);
   }
+  async renameDocument(documentId: string, title: string): Promise<Outcome> {
+    const res = await this.deps.bridge.document.rename({ documentId, title });
+    if (!res.ok) return this.fail(res);
+    await this.afterChange();
+    return okOutcome(undefined);
+  }
+  async moveDocument(documentId: string, target: LocationType): Promise<Outcome> {
+    const res = await this.deps.bridge.document.move({ documentId, target });
+    if (!res.ok) return this.fail(res);
+    await this.afterChange(`document:${documentId}`);
+    return okOutcome(undefined);
+  }
   async moveFolder(folderId: string, target: FolderTargetType): Promise<Outcome> {
     const res = await this.deps.bridge.folder.move({ folderId, target });
     if (!res.ok) return this.fail(res);
@@ -222,11 +246,12 @@ export class TreeStore {
     return okOutcome(undefined);
   }
 
-  /** Moves the folder or note behind `key` to a destination from moveDestinations(). */
+  /** Moves the folder, note or document behind `key` to a destination from moveDestinations(). */
   moveItem(key: NodeKey, dest: MoveDestination): Promise<Outcome> {
     const node = this.store.getState().model.nodes.get(key);
     if (node?.kind === 'folder' && node.id) return this.moveFolder(node.id, { projectId: dest.projectId, parentId: dest.folderId });
     if (node?.kind === 'note' && node.id) return this.moveNote(node.id, { projectId: dest.projectId, folderId: dest.folderId });
+    if (node?.kind === 'document' && node.id) return this.moveDocument(node.id, { projectId: dest.projectId, folderId: dest.folderId });
     return Promise.resolve(failOutcome('NOT_FOUND', 'That item no longer exists.'));
   }
 
@@ -236,10 +261,15 @@ export class TreeStore {
     const node = model.nodes.get(forKey);
     const index = buildPathIndex(snapshot.projects, snapshot.folders);
     const folder = node?.kind === 'folder' && node.id ? snapshot.folders.find((f) => f.id === node.id) : undefined;
-    const note = node?.kind === 'note' && node.id ? snapshot.notes.find((n) => n.id === node.id) : undefined;
+    const item =
+      node?.kind === 'note' && node.id
+        ? snapshot.notes.find((n) => n.id === node.id)
+        : node?.kind === 'document' && node.id
+          ? snapshot.documents.find((d) => d.id === node.id)
+          : undefined;
     const isCurrent = (projectId: string | null, folderId: string | null): boolean => {
       if (folder) return folder.projectId === projectId && folder.parentId === folderId;
-      if (note) return note.projectId === projectId && note.folderId === folderId;
+      if (item) return item.projectId === projectId && item.folderId === folderId;
       return false;
     };
     const out: MoveDestination[] = [];
@@ -287,6 +317,9 @@ export class TreeStore {
   }
   trashNote(noteId: string): Promise<Outcome<TrashResultType>> {
     return this.trash(() => this.deps.bridge.note.trash({ noteId }));
+  }
+  trashDocument(documentId: string): Promise<Outcome<TrashResultType>> {
+    return this.trash(() => this.deps.bridge.document.trash({ documentId }));
   }
 
   async restore(batchId: string): Promise<Outcome<TrashRestoreResponseType>> {

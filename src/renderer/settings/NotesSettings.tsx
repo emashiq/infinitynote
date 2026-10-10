@@ -1,6 +1,6 @@
 import type { AddFilesMode } from '../../shared/attachments/file-choice';
 import { DOCUMENT_MAX_MB_RANGE, IMAGE_MAX_MB_RANGE } from '../../shared/attachments/limits';
-import { AUTO_LOCK_MINUTES } from '../../shared/contracts/locks';
+import { AUTO_LOCK_MINUTES, BLUR_STICKY_SECONDS } from '../../shared/contracts/locks';
 import { AUTO_VERSION_DAYS_RANGE, AUTO_VERSION_MAX_RANGE } from '../../shared/versions/retention';
 import { NumberField, SelectField, SettingsSection } from './fields';
 import { useSettingValues } from './use-settings';
@@ -19,14 +19,19 @@ export const ADD_FILES_SETTING_TEXT =
 
 export const AUTO_LOCK_OPTIONS = AUTO_LOCK_MINUTES.map((m) => ({ value: String(m), label: m === 60 ? 'After 1 hour' : `After ${m} minute${m === 1 ? '' : 's'}` }));
 
+export const BLUR_STICKY_OPTIONS = BLUR_STICKY_SECONDS.map((s) => ({ value: String(s), label: s < 60 ? `After ${s} seconds` : `After ${s / 60} minute${s === 60 ? '' : 's'}` }));
+
+export const BLUR_STICKY_TEXT =
+  'A locked sticky you showed blurs again when you have not typed, clicked, scrolled or moved the pointer over its text for this long. It also blurs at once when the note locks again.';
+
 export const AUTO_LOCK_TEXT =
   'An unlocked note locks again when it is not opened or edited for this long, when the computer locks or sleeps, and when Infinity Notes quits.';
 
-const KEYS = ['locks.autoLockMinutes', 'attachments.addFiles', 'attachments.imageMaxMb', 'attachments.documentMaxMb', 'retention.trashDays', 'retention.autoVersionDays', 'retention.autoVersionMax'] as const;
+const KEYS = ['locks.autoLockMinutes', 'locks.blurStickySeconds', 'attachments.addFiles', 'attachments.imageMaxMb', 'attachments.documentMaxMb', 'retention.trashDays', 'retention.autoVersionDays', 'retention.autoVersionMax'] as const;
 
 /**
  * Settings > Notes and attachments (INF-PREF-05, INF-PORT-07, D-108, D-111): adding files, size limits, Trash and version
- * retention, and when locked notes lock again.
+ * retention, when locked notes lock again and when locked stickies blur again (D-172).
  */
 export function NotesSettings() {
   const { values, set } = useSettingValues(KEYS);
@@ -94,6 +99,13 @@ export function NotesSettings() {
         onChange={(v) => set('locks.autoLockMinutes', Number(v) as (typeof AUTO_LOCK_MINUTES)[number])}
       />
       <p className="muted">{AUTO_LOCK_TEXT}</p>
+      <SelectField
+        label="Blur locked stickies after"
+        value={String(values['locks.blurStickySeconds'])}
+        options={BLUR_STICKY_OPTIONS}
+        onChange={(v) => set('locks.blurStickySeconds', Number(v) as (typeof BLUR_STICKY_SECONDS)[number])}
+      />
+      <p className="muted">{BLUR_STICKY_TEXT}</p>
     </SettingsSection>
   );
 }

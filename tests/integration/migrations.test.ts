@@ -602,7 +602,7 @@ describe('migration 010 note locks (v0.2.0, D-111)', () => {
     const before = v9.db.prepare('SELECT * FROM notes ORDER BY rowid').all() as Array<Record<string, unknown>>;
     v9.db.close();
 
-    const v10 = await openDatabase({ dbFile, preMigrationDir });
+    const v10 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 10) });
     if (!v10.ok) throw new Error('v10 open failed');
     const db = trackDb(v10.db);
     expect([v10.schemaVersion, v10.migratedFrom, v10.preMigrationCopy]).toEqual([10, 9, true]);
@@ -656,5 +656,24 @@ describe('migration 010 note locks (v0.2.0, D-111)', () => {
     insert(randomBytes(16), randomBytes(60), randomBytes(40));
     db.prepare<[string]>('DELETE FROM notes WHERE id = ?').run(id);
     expect(db.prepare('SELECT count(*) AS n FROM note_locks').get()).toEqual({ n: 0 });
+  });
+});
+
+describe('migration 011 documents (v0.3.0, D-118)', () => {
+  it('upgrades a populated v10 database to v11: notes are untouched and the document tables start empty', async () => {
+    const { dbFile, preMigrationDir } = layout();
+    const v10 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 10) });
+    if (!v10.ok) throw new Error('v10 open failed');
+    insertNote(v10.db, 'Before documents', 'body', { id: randomUUID() });
+    const before = v10.db.prepare('SELECT * FROM notes ORDER BY rowid').all();
+    v10.db.close();
+
+    const v11 = await openDatabase({ dbFile, preMigrationDir, migrations: MIGRATIONS.slice(0, 11) });
+    if (!v11.ok) throw new Error('v11 open failed');
+    const db = trackDb(v11.db);
+    expect([v11.schemaVersion, v11.migratedFrom, v11.preMigrationCopy]).toEqual([11, 10, true]);
+    expect(db.prepare('SELECT * FROM notes ORDER BY rowid').all()).toEqual(before);
+    expect(tableNames(db)).toEqual(expect.arrayContaining(['documents', 'document_blobs', 'document_versions', 'documents_fts']));
+    for (const table of ['documents', 'document_blobs', 'document_versions']) expect(db.prepare(`SELECT count(*) AS n FROM ${table}`).get(), table).toEqual({ n: 0 });
   });
 });

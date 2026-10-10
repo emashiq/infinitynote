@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { isInTable } from '@tiptap/pm/tables';
 import { useEditorState } from '@tiptap/react';
-import { ALargeSmall, Baseline, Bold, Code, Heading, Highlighter, Italic, Link, List, ListOrdered, ListTodo, SquareCode, Table, Type } from 'lucide-react';
+import { ALargeSmall, Baseline, Bold, Code, Heading, Highlighter, Italic, Link, List, ListOrdered, ListTodo, MessageSquarePlus, SquareCode, Table, Type } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import type { ImageSize } from '../../shared/editor/doc-schema';
 import { FONT_FAMILIES, FONT_SIZES, HIGHLIGHT_COLORS, TEXT_COLORS, type ColorSwatch } from '../../shared/editor/formatting';
@@ -47,7 +47,20 @@ function bubbleButtons(toolbar: HTMLElement) {
  * presets) and while the cursor is in a link (the link actions). Alt+F10 (a new `request`) shows it at the cursor too
  * and moves the focus into it; Left and Right move between its buttons and Escape returns to the text.
  */
-export function FormatBubble({ editor, editable, request, link }: { editor: Editor; editable: boolean; request: object | null; link: LinkActions }) {
+export function FormatBubble({
+  editor,
+  editable,
+  request,
+  link,
+  onComment,
+}: {
+  editor: Editor;
+  editable: boolean;
+  request: object | null;
+  link: LinkActions;
+  /** Comments on the selection (D-165), where the window offers comments. */
+  onComment?: () => void;
+}) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -56,6 +69,7 @@ export function FormatBubble({ editor, editable, request, link }: { editor: Edit
       const inTable = isInTable(e.state);
       return {
         anchor: selection.anchor,
+        empty: selection.empty,
         head: selection.head,
         focused: e.isFocused,
         kind: bubbleKind(e.state, { editable, requested: false }),
@@ -201,6 +215,12 @@ export function FormatBubble({ editor, editable, request, link }: { editor: Edit
           <ToggleButton label="Checklist" title="Checklist (Ctrl+Shift+9)" icon={ListTodo} pressed={s.taskList} onClick={run(() => chain().toggleTaskList().run())} />
           <ToggleButton label="Code block" title="Code block (Ctrl+Alt+C)" icon={SquareCode} pressed={s.codeBlock} onClick={run(() => chain().toggleCodeBlock().run())} />
           {s.inTable ? <MenuButton label="Table" icon={Table} items={tableMenuItems(editor, s.headerRow)} /> : null}
+          {onComment && !s.empty ? (
+            <>
+              <span className="bubble-separator" aria-hidden />
+              <IconButton label="Comment" title="Comment (Ctrl+Alt+M)" icon={MessageSquarePlus} onClick={onComment} />
+            </>
+          ) : null}
         </>
       ) : null}
       {kind === 'image' && s.imageSize ? (

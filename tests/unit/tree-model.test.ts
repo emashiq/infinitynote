@@ -36,7 +36,7 @@ const note = (n: number, title: string, projectId: string | null, folderId: stri
   updatedAt: n,
   ...extra,
 });
-const snap = (s: Partial<TreeSnapshotType>): TreeSnapshotType => ({ projects: [], folders: [], notes: [], ...s });
+const snap = (s: Partial<TreeSnapshotType>): TreeSnapshotType => ({ projects: [], folders: [], notes: [], documents: [], ...s });
 const labels = (m: ReturnType<typeof buildTreeModel>, key: NodeKey) => m.nodes.get(key)!.childKeys.map((k) => m.nodes.get(k)!.label);
 
 describe('buildTreeModel', () => {
@@ -93,7 +93,8 @@ describe('buildTreeModel', () => {
       sticky: false,
       deletedAt,
       fromPath: ['Common'],
-      contains: { folders: 0, notes: 0 },
+      contains: { folders: 0, notes: 0, documents: 0 },
+      documentKind: null,
     });
     const m = buildTreeModel(snap({}), [item(1, 10), item(2, 20)]);
     expect(labels(m, 'trash')).toEqual(['t2', 't1']);

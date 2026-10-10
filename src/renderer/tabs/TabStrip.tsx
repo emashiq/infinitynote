@@ -1,12 +1,14 @@
-import { Bell, ChevronLeft, ChevronRight, FileText, House, Settings, StickyNote, X } from 'lucide-react';
+import { Bell, ChevronLeft, ChevronRight, FileText, House, Settings, StickyNote, Waypoints, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import type { NoteColorType } from '../../shared/contracts/hierarchy';
+import type { DocumentKind } from '../../shared/documents/kinds';
 import { displayTitle } from '../../shared/names';
 import { NoteTitleField, type TitleEditEnd } from '../notes/NoteTitleField';
 import type { TabType } from '../../shared/contracts/session';
 import type { AppServices } from '../state/app-services';
 import { useServices, useStore } from '../state/use-store';
 import { ColorDot } from '../ui/ColorDot';
+import { DocumentKindIcon } from '../ui/DocumentKindIcon';
 import { LockMark } from '../ui/LockMark';
 import { IconButton } from '../ui/IconButton';
 import { scrollBehavior } from '../ui/motion';
@@ -18,10 +20,12 @@ export interface TabView {
   sticky: boolean;
   color: NoteColorType | null;
   locked: boolean;
+  /** A document tab's kind (D-118). */
+  documentKind?: DocumentKind;
 }
 
 export function tabViews(services: AppServices, tabs: TabType[]): TabView[] {
-  const notes = services.tree.store.getState().snapshot.notes;
+  const { notes, documents } = services.tree.store.getState().snapshot;
   return tabs.map((tab) => {
     switch (tab.kind) {
       case 'home':
@@ -32,6 +36,12 @@ export function tabViews(services: AppServices, tabs: TabType[]): TabView[] {
         return { tab, label: 'Reminders', sticky: false, color: null, locked: false };
       case 'settings':
         return { tab, label: 'Settings', sticky: false, color: null, locked: false };
+      case 'graph':
+        return { tab, label: 'Graph', sticky: false, color: null, locked: false };
+      case 'document': {
+        const document = documents.find((d) => d.id === tab.documentId);
+        return { tab, label: document?.title ?? 'Document', sticky: false, color: null, locked: false, documentKind: document?.kind };
+      }
       default: {
         const note = notes.find((n) => n.id === tab.noteId);
         return { tab, label: displayTitle(note?.title ?? ''), sticky: !!note?.sticky, color: note?.color ?? null, locked: !!note?.locked };
@@ -51,6 +61,10 @@ function TabIcon({ view }: { view: TabView }) {
       return <Bell {...props} />;
     case 'settings':
       return <Settings {...props} />;
+    case 'graph':
+      return <Waypoints {...props} />;
+    case 'document':
+      return view.documentKind ? <DocumentKindIcon kind={view.documentKind} size={14} /> : <FileText {...props} />;
     default:
       return (
         <>

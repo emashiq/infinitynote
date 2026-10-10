@@ -1,7 +1,8 @@
-import type { FolderTargetType } from '../../shared/contracts/hierarchy';
+import type { FolderTargetType, LocationType } from '../../shared/contracts/hierarchy';
 import type { BackupSummaryType } from '../../shared/contracts/portability';
 import type { ReminderDtoType } from '../../shared/contracts/reminders';
 import type { CardRequest } from '../reminders/card-request';
+import type { PickedDocuments } from './document-commands';
 import { createStore, type Store } from './store';
 
 export type DialogState =
@@ -21,6 +22,10 @@ export type DialogState =
   /** "Lock note…" and the lock settings of a locked note (D-111). */
   | { kind: 'lockNote'; noteId: string }
   | { kind: 'lockSettings'; noteId: string }
+  /** "New locked note" and "New locked sticky": the password first (D-171). */
+  | { kind: 'createLocked'; location: LocationType; sticky: boolean }
+  /** "Add file" for files picked to import as documents while "When adding files" is Ask (D-118). */
+  | { kind: 'importDocuments'; picked: PickedDocuments; location: LocationType }
   /** The confirmation of a checked backup before the app restarts to restore it (D-099). */
   | { kind: 'restoreBackup'; summary: BackupSummaryType };
 
@@ -28,7 +33,7 @@ export type FocusRequest =
   /** Renames the note in its tab (a new note, a double-click or F2 on the tab; D-102). */
   | { target: 'noteTitle'; noteId: string }
   | { target: 'noteFind'; noteId: string }
-  /** Opens the reference picker of the note's editor (palette "Link to note…"). */
+  /** Opens the reference picker of the note's editor (palette "Link to note or document…"). */
   | { target: 'noteReference'; noteId: string }
   | { target: 'treeRename'; key: string }
   | { target: 'tree' };
@@ -40,6 +45,8 @@ export interface UiState {
   paletteQuery: string;
   menu: { key: string; anchor: { x: number; y: number } } | null;
   focusRequest: FocusRequest | null;
+  /** The last Ctrl+F in a document tab; `seq` grows with each press, for the viewer's find bar (D-130). */
+  documentFind: { documentId: string; seq: number } | null;
   /** The tab whose label is being edited: the tab is the note's title (D-102). */
   renamingTab: string | null;
 }
@@ -51,6 +58,7 @@ export class UiStore {
     paletteQuery: '',
     menu: null,
     focusRequest: null,
+    documentFind: null,
     renamingTab: null,
   });
 
@@ -77,6 +85,9 @@ export class UiStore {
   }
   endTabRename(): void {
     if (this.store.getState().renamingTab !== null) this.store.setState({ renamingTab: null });
+  }
+  requestDocumentFind(documentId: string): void {
+    this.store.setState({ documentFind: { documentId, seq: (this.store.getState().documentFind?.seq ?? 0) + 1 } });
   }
   requestFocus(request: FocusRequest): void {
     this.store.setState({ focusRequest: request });

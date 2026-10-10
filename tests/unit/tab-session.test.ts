@@ -4,10 +4,11 @@ import {
   activateTab,
   closeTab,
   nextTab,
+  documentTabId,
   noteTabId,
   openTab,
   prevTab,
-  removeNoteTabs,
+  removeItemTabs,
   sanitizeSession,
 } from '../../src/shared/tabs/tab-session';
 
@@ -76,21 +77,30 @@ describe('closeTab, activate and cycling', () => {
   });
 });
 
-describe('removeNoteTabs', () => {
+describe('removeItemTabs', () => {
   it('removes the listed notes and falls back like closeTab', () => {
     const s = session([noteTab(1), noteTab(2), noteTab(3)], noteTabId(uid(2)));
-    const r = removeNoteTabs(s, [uid(2), uid(3)]);
+    const r = removeItemTabs(s, { noteIds: [uid(2), uid(3)] });
     expect(r.removed).toBe(2);
     expect(ids(r.session)).toEqual(['home', noteTabId(uid(1))]);
     expect(r.session.activeTabId).toBe(noteTabId(uid(1)));
-    expect(removeNoteTabs(s, [uid(9)])).toEqual({ session: s, removed: 0 });
-    const keepActive = removeNoteTabs(s, [uid(1)]);
+    expect(removeItemTabs(s, { noteIds: [uid(9)] })).toEqual({ session: s, removed: 0 });
+    const keepActive = removeItemTabs(s, { noteIds: [uid(1)] });
     expect(keepActive.session.activeTabId).toBe(noteTabId(uid(2)));
+  });
+
+  it('removes document tabs by document ID, never a note tab with the same ID (D-118)', () => {
+    const doc = { id: documentTabId(uid(1)), kind: 'document' as const, documentId: uid(1) };
+    const s = session([noteTab(1), doc], doc.id);
+    const r = removeItemTabs(s, { documentIds: [uid(1)] });
+    expect(ids(r.session)).toEqual(['home', noteTabId(uid(1))]);
+    expect(r.session.activeTabId).toBe(noteTabId(uid(1)));
   });
 });
 
 describe('sanitizeSession', () => {
   const live = () => 'live' as const;
+  type Item = { kind: 'note' | 'document'; id: string };
 
   it('returns the default for an invalid value', () => {
     for (const raw of [null, 'x', 42, { version: 2 }, { version: 1, tabs: [], activeTabId: 'home' }, { version: 1, tabs: [{ id: 'home', kind: 'home' }] }]) {
@@ -119,7 +129,7 @@ describe('sanitizeSession', () => {
   });
 
   it('drops trashed and missing notes with separate counts and picks the nearest earlier tab as active', () => {
-    const state = (id: string) => (id === uid(2) ? 'trashed' : id === uid(3) ? 'missing' : 'live');
+    const state = ({ id }: Item) => (id === uid(2) ? 'trashed' : id === uid(3) ? 'missing' : 'live');
     const raw = {
       version: 1,
       tabs: [{ id: 'home', kind: 'home' }, noteTab(1), noteTab(2), noteTab(3), noteTab(4)],
@@ -137,5 +147,25 @@ describe('sanitizeSession', () => {
     const tabs: TabType[] = [{ id: 'home', kind: 'home' }, ...Array.from({ length: 199 }, (_, i) => noteTab(i + 1))];
     const r = sanitizeSession({ version: 1, tabs, activeTabId: 'home' }, live);
     expect(r.session.tabs).toHaveLength(200);
+  });
+});
+
+describe('document tabs (D-118)', () => {
+  it('a document tab keeps its id form and its state decides like a note tab', () => {
+    const doc = (n: number) => ({ id: documentTabId(uid(n)), kind: 'document', documentId: uid(n) });
+    const raw = { version: 1, tabs: [{ id: 'home', kind: 'home' }, doc(1), doc(2), noteTab(2)], activeTabId: documentTabId(uid(2)) };
+    const asked: Array<{ kind: string; id: string }> = [];
+    const r = sanitizeSession(raw, (item) => {
+      asked.push(item);
+      return item.kind === 'document' && item.id === uid(2) ? 'trashed' : 'live';
+    });
+    expect(ids(r.session)).toEqual(['home', documentTabId(uid(1)), noteTabId(uid(2))]);
+    expect(r.session.activeTabId).toBe(documentTabId(uid(1)));
+    expect(asked).toEqual([
+      { kind: 'document', id: uid(1) },
+      { kind: 'document', id: uid(2) },
+      { kind: 'note', id: uid(2) },
+    ]);
+    expect(sanitizeSession({ ...raw, tabs: [{ id: `document:${uid(5)}`, kind: 'document', documentId: uid(6) }] }, () => 'live').invalid).toBe(true);
   });
 });

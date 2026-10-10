@@ -1,5 +1,5 @@
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
-import { chooseNoteMenu, docOf, editor, focusEditorEnd, nodesOf, openFormatting, paste, seedClipboardHtml, toolbar, toolbarButton, waitSaved, type DocNode } from './editor-ui';
+import { chooseNoteMenu, clipboardHtml, docOf, editor, focusEditorEnd, nodesOf, openFormatting, paste, seedClipboardHtml, selectionChange, toolbar, toolbarButton, waitSaved, type DocNode } from './editor-ui';
 import { useApp } from './harness';
 import { COMMON, createNote, reloadUi, saveText } from './seed';
 import { openFromTree } from './ui';
@@ -141,14 +141,11 @@ test('tables: insert from "/", type with Tab, change rows from the note menu, co
   await page.keyboard.press('Control+A');
   await page.keyboard.press('Control+C');
   await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toMatch(/^Intro\n\nItem\tCost\nRent\t900\nFood\t(\n|$)/);
-  const html = await app.evaluate(async ({ clipboard }) => {
-    const [item] = await clipboard.read();
-    return item ? (await item.getType('text/html')).text() : '';
-  });
-  expect(html).toContain('<table');
+  expect(await clipboardHtml(app)).toContain('<table');
 
-  // Paste a spreadsheet's HTML table (styles and scripts stripped) and then plain tab-separated text.
-  await page.keyboard.press('Control+End');
+  // Paste a spreadsheet's HTML table (styles and scripts stripped) and then plain tab-separated text. Ctrl+End leaves
+  // the select-all for the empty paragraph after the table; the editor must have read that before the paste.
+  await selectionChange(page, () => page.keyboard.press('Control+End'));
   await seedClipboardHtml(
     app,
     '<table><tr><td style="color:#ff0000;position:fixed" onclick="window.__pwned=1">Q1</td><td>Q2</td></tr><tr><td>10</td><td>20</td></tr></table>',

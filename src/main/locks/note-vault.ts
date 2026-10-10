@@ -22,6 +22,9 @@ export function openDraft(key: () => Buffer, noteId: string, stored: string): st
 /** The error every path gives for a locked note whose key is not in memory; the renderer shows the lock screen. */
 const lockedError = (): AppError => new AppError('FORBIDDEN', LOCK_MESSAGES.locked, { locked: true });
 
+/** Told when a note's key comes into memory (held) or is dropped. */
+export type KeyListener = (noteId: string, held: boolean) => void;
+
 interface Unlocked {
   key: Buffer;
   lastUsed: number;
@@ -34,6 +37,7 @@ interface Unlocked {
  */
 export class NoteVault {
   private readonly keys = new Map<string, Unlocked>();
+  private readonly listeners = new Set<KeyListener>();
   private readonly locks: LocksRepo;
 
   constructor(
@@ -46,8 +50,20 @@ export class NoteVault {
   // Keys ---------------------------------------------------------------------------------------------------------
   /** Holds a note's data key for the session; the vault owns the buffer from now on. */
   put(noteId: string, key: Buffer): void {
-    this.drop(noteId);
+    // A key replaced by a new unlock is zeroed; the note stays unlocked throughout.
+    this.keys.get(noteId)?.key.fill(0);
     this.keys.set(noteId, { key, lastUsed: this.clock.now() });
+    this.notify(noteId, true);
+  }
+
+  /** Follows keys coming into memory and being dropped (locked stickies blur when their key goes, D-172). */
+  onKeyChange(listener: KeyListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notify(noteId: string, held: boolean): void {
+    for (const listener of [...this.listeners]) listener(noteId, held);
   }
 
   isUnlocked(noteId: string): boolean {
@@ -60,6 +76,7 @@ export class NoteVault {
     if (!unlocked) return;
     unlocked.key.fill(0);
     this.keys.delete(noteId);
+    this.notify(noteId, false);
   }
 
   unlockedNotes(): string[] {

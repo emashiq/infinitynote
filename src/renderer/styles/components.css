@@ -919,6 +919,12 @@ dialog::backdrop {
   font-weight: 600;
 }
 
+.sticky-row-lock {
+  flex: none;
+  margin-right: -6px;
+  color: var(--text-muted);
+}
+
 .sticky-path {
   flex: 1;
 }
@@ -1117,6 +1123,9 @@ dialog::backdrop {
 }
 
 .ref-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -1247,4 +1256,70 @@ dialog::backdrop {
 
 .info-lock {
   margin-top: 8px;
+}
+
+/* The optional sticky PIN of a new lock and the PIN section (D-173). */
+.lock-pin {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.lock-pin p {
+  margin: 0;
+}
+
+.lock-pin-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Outline (D-162) */
+.outline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-open {
+  display: block;
+  width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.outline-open:hover {
+  background: var(--bg-subtle);
+}
+
+.outline-level-1 .outline-open {
+  font-weight: 600;
+}
+
+.outline-level-2 .outline-open {
+  padding-left: 18px;
+}
+
+.outline-level-3 .outline-open {
+  padding-left: 30px;
+  font-size: 0.95em;
+}
+
+/* Word count under the note text (D-162) */
+.note-stats {
+  margin: 0;
+  padding: 2px 16px 4px;
+  font-size: 11px;
+  text-align: right;
 }

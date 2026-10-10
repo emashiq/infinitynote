@@ -82,6 +82,7 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
       'collab:steps',
       'collab:reset',
       'collab:status',
+      'sticky:lockState',
     ];
     expect([...EVENT_CHANNELS]).toEqual(events);
     expect(Object.keys(EVENT_SCHEMAS)).toEqual(events);
@@ -139,7 +140,7 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
     // v0.2.0: copy or link added files (D-108).
     expect(INVOKE_CHANNELS.slice(93, 99)).toEqual(['attachment:addPicked', 'fileLink:create', 'fileLink:status', 'fileLink:open', 'fileLink:showInFolder', 'fileLink:copyIn']);
     // v0.2.0: locked notes (D-111..D-113).
-    expect(INVOKE_CHANNELS.slice(99)).toEqual([
+    expect(INVOKE_CHANNELS.slice(99, 109)).toEqual([
       'lock:availability',
       'lock:status',
       'lock:set',
@@ -151,8 +152,55 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
       'lock:setHello',
       'lock:remove',
     ]);
-    expect(INVOKE_CHANNELS).toHaveLength(109);
-    expect(EVENT_CHANNELS).toHaveLength(13);
+    // v0.3.0: documents (D-118), main window only.
+    expect(INVOKE_CHANNELS.slice(109)).toEqual([
+      'document:create',
+      'document:pickFiles',
+      'document:addPicked',
+      'document:fromAttachment',
+      'document:fromLink',
+      'document:open',
+      'document:save',
+      'document:saveCopy',
+      'document:rename',
+      'document:move',
+      'document:trash',
+      'document:versions',
+      'document:restoreVersion',
+      'document:openExternal',
+      'document:showInFolder',
+      // F2 PDF page operations (D-131).
+      'document:pickPdf',
+      'document:createBeside',
+      'document:copyVersion',
+      'document:export',
+      'document:readWorkbook',
+      'document:saveWorkbook',
+      'refs:documentBacklinks',
+      'links:search',
+      'export:noteDocument',
+      'note:print',
+      // F8 comments (D-165) and F10 the relation graph (D-170).
+      'comment:list',
+      'comment:create',
+      'comment:reply',
+      'comment:edit',
+      'comment:delete',
+      'comment:deleteThread',
+      'comment:resolve',
+      'graph:build',
+      'graph:local',
+      // Notes created locked and locked stickies (D-171..D-173).
+      'lock:create',
+      'lock:setPin',
+      'sticky:lockStatus',
+      'sticky:reveal',
+      'sticky:activity',
+      'sticky:blur',
+      'sticky:setPin',
+    ]);
+    expect(INVOKE_CHANNELS).toHaveLength(150);
+    expect(EVENT_CHANNELS).toHaveLength(14);
     const all: string[] = [...INVOKE_CHANNELS, ...EVENT_CHANNELS];
     for (const name of ['note:trashed', 'sticky:removeSticky', 'attachment:importImageBytes']) {
       expect(all, name).not.toContain(name);

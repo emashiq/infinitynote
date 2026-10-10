@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { DocumentTarget } from '../documents/targets';
+import { DocumentKindSchema } from './hierarchy';
 import { Uuid } from './ids';
 
 /** Most references and backlinks one `refs:list` answer carries (each list). */
@@ -18,6 +20,8 @@ export type RefTargetStateType = z.infer<typeof RefTargetState>;
 export const REF_MESSAGES = {
   trashed: 'The linked note is in Trash',
   missing: 'The linked note no longer exists',
+  documentTrashed: 'The linked document is in Trash',
+  documentMissing: 'The linked document no longer exists',
 } as const;
 
 export const OutgoingRef = z.strictObject({
@@ -45,11 +49,54 @@ export const Backlink = z.strictObject({
 });
 export type BacklinkType = z.infer<typeof Backlink>;
 
+/** A link from the note to a document, at a place inside it or not (D-156). */
+export const OutgoingDocRef = z.strictObject({
+  targetDocumentId: Uuid,
+  target: DocumentTarget.nullable(),
+  /** The document's current title, or the last title it had when it no longer exists. */
+  title: z.string().max(200),
+  /** The document's kind; null when it no longer exists. */
+  kind: DocumentKindSchema.nullable(),
+  path: z.array(z.string()),
+  state: z.enum(['ok', 'trashed', 'missing']),
+  trashBatchId: Uuid.nullable(),
+});
+export type OutgoingDocRefType = z.infer<typeof OutgoingDocRef>;
+
 export const RefsListRequest = z.strictObject({ noteId: Uuid });
 export const RefsListResponse = z.strictObject({
   outgoing: z.array(OutgoingRef).max(MAX_REF_ROWS),
+  documents: z.array(OutgoingDocRef).max(MAX_REF_ROWS),
   backlinks: z.array(Backlink).max(MAX_REF_ROWS),
 });
+
+/** A live note linking to a document (D-156), with the place it links to. */
+export const DocumentBacklink = z.strictObject({
+  sourceNoteId: Uuid,
+  sourceBlockId: Uuid.nullable(),
+  target: DocumentTarget.nullable(),
+  title: z.string().max(200),
+  path: z.array(z.string()),
+  context: z.string().max(MAX_REF_CONTEXT),
+});
+export type DocumentBacklinkType = z.infer<typeof DocumentBacklink>;
+
+export const DocumentBacklinksRequest = z.strictObject({ documentId: Uuid });
+export const DocumentBacklinksResponse = z.strictObject({ backlinks: z.array(DocumentBacklink).max(MAX_REF_ROWS) });
+export type DocumentBacklinksResponseType = z.infer<typeof DocumentBacklinksResponse>;
+
+/** Most items one link search answers with. */
+export const MAX_LINK_RESULTS = 30;
+
+/** The link picker's search over note and document titles (D-157). */
+export const LinksSearchRequest = z.strictObject({ query: z.string().max(200), limit: z.number().int().min(1).max(MAX_LINK_RESULTS).optional() });
+export const LinkCandidate = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('note'), id: Uuid, title: z.string(), path: z.array(z.string()), locked: z.boolean() }),
+  z.strictObject({ kind: z.literal('document'), id: Uuid, title: z.string(), path: z.array(z.string()), documentKind: DocumentKindSchema }),
+]);
+export type LinkCandidateType = z.infer<typeof LinkCandidate>;
+export const LinksSearchResponse = z.strictObject({ items: z.array(LinkCandidate).max(MAX_LINK_RESULTS) });
+export type LinksSearchResponseType = z.infer<typeof LinksSearchResponse>;
 export type RefsListResponseType = z.infer<typeof RefsListResponse>;
 
 /** The blocks of one note a reference can point to (the picker's second step). */

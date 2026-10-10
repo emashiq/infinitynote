@@ -127,7 +127,7 @@ describe('retention (INF-PORT-07, F-03-4)', () => {
     s.settings.set('retention.trashDays', 30);
     expect((await s.maintenance.run()).trashedNotesPurged).toBe(1);
     expect(s.rows('SELECT title FROM notes WHERE deleted_at IS NOT NULL')).toEqual([{ title: 'Recent' }]);
-    expect(s.events.at(-1)).toEqual({ reason: 'purge', trashedNoteIds: [] });
+    expect(s.events.at(-1)).toEqual({ reason: 'purge', trashedNoteIds: [], trashedDocumentIds: [] });
   });
 
   it('lease_lost drafts kept before live sync are capped at 20 open per note; resolved drafts go after 30 days', async () => {

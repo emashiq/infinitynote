@@ -193,6 +193,7 @@ export class HierarchyRepo {
     const notes = this.db
       .prepare<[string | null, string]>('UPDATE notes SET project_id = ? WHERE folder_id IN (SELECT value FROM json_each(?))')
       .run(projectId, ids);
+    this.db.prepare<[string | null, string]>('UPDATE documents SET project_id = ? WHERE folder_id IN (SELECT value FROM json_each(?))').run(projectId, ids);
     return { folders: subtree.length, notes: notes.changes };
   }
 
@@ -247,6 +248,14 @@ export class HierarchyRepo {
          OR EXISTS (SELECT 1 FROM projects pr WHERE pr.id = f.project_id AND pr.deleted_at IS NOT NULL))`,
     );
     if (id) return `live folder ${id} has a trashed parent or project`;
+    id = one('SELECT d.id AS id FROM documents d JOIN folders f ON f.id = d.folder_id WHERE d.project_id IS NOT f.project_id');
+    if (id) return `document ${id} has a different project than its folder`;
+    id = one(
+      `SELECT d.id AS id FROM documents d WHERE d.deleted_at IS NULL AND (
+         EXISTS (SELECT 1 FROM folders f WHERE f.id = d.folder_id AND f.deleted_at IS NOT NULL)
+         OR EXISTS (SELECT 1 FROM projects pr WHERE pr.id = d.project_id AND pr.deleted_at IS NOT NULL))`,
+    );
+    if (id) return `live document ${id} has a trashed folder or project`;
     id = one(
       `SELECT n.id AS id FROM notes n WHERE n.deleted_at IS NULL AND (
          EXISTS (SELECT 1 FROM folders f WHERE f.id = n.folder_id AND f.deleted_at IS NOT NULL)

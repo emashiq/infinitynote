@@ -1,0 +1,312 @@
+/* PowerPoint viewer and editor (F5, D-151): slides render as authored (their own colors on white or their background);
+   the toolbar, slide list, notes and frames around them follow the app theme. */
+.pptx-viewer {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pptx-toolbar {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.pptx-toolbar-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 4px;
+  background: var(--border);
+}
+
+.pptx-toolbar-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.pptx-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pptx-size {
+  width: 64px;
+}
+
+.pptx-color {
+  width: 32px;
+  height: 26px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+}
+
+.pptx-zoom {
+  width: auto;
+}
+
+.pptx-banner {
+  flex: none;
+  margin: 8px 16px 0;
+}
+
+.pptx-message,
+.pptx-refused {
+  margin: 16px;
+  color: var(--text);
+}
+
+.pptx-refused {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pptx-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.pptx-thumbnails {
+  flex: none;
+  width: 176px;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-rail);
+  list-style: none;
+  scrollbar-color: var(--border-strong) var(--bg-rail);
+}
+
+.pptx-thumbnails:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.pptx-thumb {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.pptx-thumb img,
+.pptx-thumb-wait {
+  display: block;
+  width: 132px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  object-fit: contain;
+}
+
+.pptx-thumb-current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.pptx-thumb-drop-before {
+  box-shadow: 0 -3px 0 var(--accent);
+}
+
+.pptx-thumb-drop-after {
+  box-shadow: 0 3px 0 var(--accent);
+}
+
+.pptx-thumb-number {
+  width: 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.pptx-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pptx-stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 24px;
+  overflow: auto;
+  background: var(--bg-subtle);
+}
+
+.pptx-slide {
+  position: relative;
+  flex: none;
+  margin: auto;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(16, 18, 32, 0.2);
+  touch-action: none;
+}
+
+.pptx-slide:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.pptx-slide-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  pointer-events: none;
+}
+
+.pptx-slide-wait {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.pptx-frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  cursor: move;
+  transform-origin: center;
+}
+
+.pptx-frame:hover {
+  border-color: var(--accent-border);
+}
+
+.pptx-frame-selected,
+.pptx-frame-selected:hover {
+  border: 1px solid var(--accent);
+}
+
+.pptx-frame-hit {
+  outline: 3px solid var(--warning);
+  outline-offset: 2px;
+}
+
+.pptx-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+}
+
+.pptx-handle-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.pptx-handle-n { top: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+.pptx-handle-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.pptx-handle-e { top: calc(50% - 5px); right: -5px; cursor: ew-resize; }
+.pptx-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.pptx-handle-s { bottom: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+.pptx-handle-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.pptx-handle-w { top: calc(50% - 5px); left: -5px; cursor: ew-resize; }
+
+/* The text editor covers the shape while it is edited: the slide's own drawing of the text would show under it. */
+.pptx-text-editor {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  min-height: 1.5em;
+  padding: 4px 8px;
+  overflow: auto;
+  border: 1px dashed var(--accent);
+  background: rgba(255, 255, 255, 0.96);
+  color: #000000;
+  font-family: Calibri, Carlito, var(--font-ui);
+  line-height: 1.2;
+  white-space: pre-wrap;
+  outline: none;
+  color-scheme: light;
+}
+
+.pptx-notes {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.pptx-notes-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pptx-notes-text {
+  min-height: 64px;
+  max-height: 30vh;
+  resize: vertical;
+}
+
+.pptx-notes-hit .pptx-notes-text {
+  outline: 3px solid var(--warning);
+}
+
+/* Presentation mode covers the window; slides are shown as large as fits, on black. */
+.pptx-presenter {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: #000000;
+  cursor: pointer;
+  outline: none;
+}
+
+.pptx-presenter-slide {
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+}
+
+.pptx-presenter-wait {
+  color: #ffffff;
+}
+
+.pptx-presenter-counter {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  padding: 2px 8px;
+  border-radius: var(--radius-control);
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.pptx-presenter-exit {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--radius-control);
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.pptx-presenter:hover .pptx-presenter-exit,
+.pptx-presenter-exit:focus-visible {
+  opacity: 1;
+}
+

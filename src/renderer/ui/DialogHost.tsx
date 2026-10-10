@@ -1,8 +1,9 @@
+import { AddFilesDialog } from '../editor/AddFilesDialog';
 import { ReminderDialog } from '../reminders/ReminderDialog';
 import { SuggestionCard } from '../reminders/SuggestionCard';
 import { AboutDialog, ShortcutsDialog } from '../shell/HelpDialogs';
 import { MoveDialog } from '../tree/MoveDialog';
-import { LockNoteDialog, LockSettingsDialog } from '../notes/LockDialogs';
+import { CreateLockedDialog, LockNoteDialog, LockSettingsDialog } from '../notes/LockDialogs';
 import { useServices, useStore } from '../state/use-store';
 import type { Outcome } from '../state/store';
 import { restoreConfirmBody } from '../state/portability-commands';
@@ -68,7 +69,9 @@ export function DialogHost() {
       const node = treeState.model.nodes.get(dialog.key);
       if (!node?.id) return null;
       const id = node.id;
-      const run = () => after(node.kind === 'project' ? tree.trashProject(id) : node.kind === 'folder' ? tree.trashFolder(id) : tree.trashNote(id), node.parentKey);
+      const trash = () =>
+        node.kind === 'project' ? tree.trashProject(id) : node.kind === 'folder' ? tree.trashFolder(id) : node.kind === 'document' ? tree.trashDocument(id) : tree.trashNote(id);
+      const run = () => after(trash(), node.parentKey);
       return (
         <ConfirmRunner
           title={TRASH_CONFIRM.title}
@@ -146,7 +149,36 @@ export function DialogHost() {
         notify: (message: string) => notices.push(message, 'info'),
         onClose: close,
       };
-      return dialog.kind === 'lockNote' ? <LockNoteDialog {...props} sticky={note.sticky} /> : <LockSettingsDialog {...props} />;
+      return dialog.kind === 'lockNote' ? <LockNoteDialog {...props} sticky={note.sticky} /> : <LockSettingsDialog {...props} sticky={note.sticky} />;
+    }
+    case 'createLocked':
+      return (
+        <CreateLockedDialog
+          location={dialog.location}
+          sticky={dialog.sticky}
+          bridge={services.bridge}
+          onClose={close}
+          onCreated={(note) => {
+            // A locked sticky floats from main; a locked note opens in a tab, unlocked for this session.
+            if (dialog.sticky) return;
+            void tabs.openNote(note.id).then(() => ui.requestFocus({ target: 'noteTitle', noteId: note.id }));
+          }}
+        />
+      );
+    case 'importDocuments': {
+      const { picked, location } = dialog;
+      return (
+        <AddFilesDialog
+          request={{ files: picked.files.map((file) => ({ ...file, linkable: true })), copyLimitMb: services.attachmentPrefs.getState().documentMaxMb }}
+          canRemember
+          onCancel={close}
+          onChoose={({ action, remember }) => {
+            close();
+            if (remember) services.editor.rememberAddFiles?.(action);
+            void services.documents.addPicked(picked, location, action);
+          }}
+        />
+      );
     }
     case 'restoreBackup':
       return (

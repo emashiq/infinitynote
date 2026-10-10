@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { RENDERER_HOST } from '../../shared/app-identity';
-import { PROD_CSP } from '../../shared/csp';
+import { PDF_WORKER_CSP, PROD_CSP } from '../../shared/csp';
+import { PDFJS_ASSETS_DIR } from '../../shared/documents/pdf-assets';
 import { resolveContained } from '../app-paths';
 import type { Logger } from '../services/logger';
 import { nullLogger } from '../services/logger';
@@ -9,12 +10,19 @@ import { nullLogger } from '../services/logger';
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.woff2': 'font/woff2',
   '.ico': 'image/x-icon',
+  // pdf.js run-time files (D-128): WebAssembly decoders, packed character maps, standard fonts, ICC profiles.
+  '.wasm': 'application/wasm',
+  '.bcmap': 'application/octet-stream',
+  '.pfb': 'application/octet-stream',
+  '.ttf': 'font/ttf',
+  '.icc': 'application/vnd.iccprofile',
 };
 
 function notFound(): Response {
@@ -67,6 +75,7 @@ export function createRendererHandler(options: { root: string; logger?: Logger }
       'Cache-Control': 'no-store',
     };
     if (ext === '.html') headers['Content-Security-Policy'] = PROD_CSP;
+    else if (rel.startsWith(`${PDFJS_ASSETS_DIR}/`)) headers['Content-Security-Policy'] = PDF_WORKER_CSP;
     return new Response(new Uint8Array(body), { status: 200, headers });
   };
 }

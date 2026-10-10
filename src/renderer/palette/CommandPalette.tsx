@@ -1,17 +1,19 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { HomeScopeType } from '../../shared/contracts/home';
-import { SEARCH_DEBOUNCE_MS, type SearchResultType } from '../../shared/contracts/search';
+import { SEARCH_DEBOUNCE_MS, type DocumentSearchResultType, type SearchResultType } from '../../shared/contracts/search';
 import type { TagInfoType } from '../../shared/contracts/tags';
 import { displayTitle } from '../../shared/names';
 import { filterActions, PALETTE_ACTIONS, type PaletteAction } from '../state/palette-actions';
 import { useServices, useStore } from '../state/use-store';
 import { openModal, useReturnFocus } from '../ui/Dialog';
+import { DocumentKindIcon } from '../ui/DocumentKindIcon';
 import { LockMark } from '../ui/LockMark';
 import { Highlighted } from './Highlighted';
 import { quickNotes, type QuickNote } from './quick-notes';
 
 type Option =
   | { kind: 'result'; result: SearchResultType }
+  | { kind: 'document'; result: DocumentSearchResultType }
   | { kind: 'quick'; group: 'Pinned' | 'Favorites'; note: QuickNote }
   | { kind: 'action'; action: PaletteAction };
 
@@ -39,6 +41,7 @@ function PaletteDialog() {
   const [tags, setTags] = useState<TagInfoType[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [results, setResults] = useState<SearchResultType[]>([]);
+  const [documentResults, setDocumentResults] = useState<DocumentSearchResultType[]>([]);
   const [active, setActive] = useState(0);
   const { snapshot } = useStore(tree.store);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -61,7 +64,9 @@ function PaletteDialog() {
     let stale = false;
     const handle = setTimeout(() => {
       void bridge.search.query({ query, scope, ...(tag ? { tags: [tag] } : {}) }).then((res) => {
-        if (!stale) setResults(res.ok ? res.data.results : []);
+        if (stale) return;
+        setResults(res.ok ? res.data.results : []);
+        setDocumentResults(res.ok ? res.data.documents : []);
       });
     }, SEARCH_DEBOUNCE_MS);
     return () => {
@@ -75,7 +80,7 @@ function PaletteDialog() {
   const projects = useMemo(() => [...snapshot.projects].sort((a, b) => a.name.localeCompare(b.name)), [snapshot.projects]);
   const options: Option[] = [
     ...(searching
-      ? results.map((result): Option => ({ kind: 'result', result }))
+      ? [...results.map((result): Option => ({ kind: 'result', result })), ...documentResults.map((result): Option => ({ kind: 'document', result }))]
       : [
           ...quick.pinned.map((note): Option => ({ kind: 'quick', group: 'Pinned', note })),
           ...quick.favorites.map((note): Option => ({ kind: 'quick', group: 'Favorites', note })),
@@ -88,18 +93,20 @@ function PaletteDialog() {
     if (!option) return;
     ui.closePalette();
     if (option.kind === 'action') void commands.run(option.action.id);
+    else if (option.kind === 'document') void tabs.openDocument(option.result.document.id);
     else void tabs.openNote(option.kind === 'result' ? option.result.note.id : option.note.id);
   };
 
-  const groupOf = (o: Option): string => (o.kind === 'result' ? 'Notes' : o.kind === 'quick' ? o.group : 'Actions');
-  const keyOf = (o: Option): string => (o.kind === 'action' ? `a-${o.action.id}` : o.kind === 'result' ? `n-${o.result.note.id}` : `q-${o.group}-${o.note.id}`);
+  const groupOf = (o: Option): string => (o.kind === 'result' ? 'Notes' : o.kind === 'document' ? 'Documents' : o.kind === 'quick' ? o.group : 'Actions');
+  const keyOf = (o: Option): string =>
+    o.kind === 'action' ? `a-${o.action.id}` : o.kind === 'result' ? `n-${o.result.note.id}` : o.kind === 'document' ? `d-${o.result.document.id}` : `q-${o.group}-${o.note.id}`;
   const renderOption = (option: Option, index: number) => {
     return (
       <li
         id={`palette-opt-${index}`}
         role="option"
         aria-selected={index === current}
-        className={`option ${option.kind === 'result' ? 'option-result ' : ''}${index === current ? 'is-active' : ''}`}
+        className={`option ${option.kind === 'result' || option.kind === 'document' ? 'option-result ' : ''}${index === current ? 'is-active' : ''}`}
         onMouseMove={() => setActive(index)}
         onClick={() => run(option)}
       >
@@ -109,6 +116,15 @@ function PaletteDialog() {
               <Highlighted segments={option.result.title} className="option-title" />
               {option.result.note.locked ? <LockMark /> : null}
               <span className="muted option-path">{option.result.note.path.join(' › ')}</span>
+            </span>
+            {option.result.snippet.length > 0 ? <Highlighted segments={option.result.snippet} className="muted option-snippet" /> : null}
+          </>
+        ) : option.kind === 'document' ? (
+          <>
+            <span className="option-line">
+              <DocumentKindIcon kind={option.result.document.kind} size={14} />
+              <Highlighted segments={option.result.title} className="option-title" />
+              <span className="muted option-path">{option.result.document.path.join(' › ')}</span>
             </span>
             {option.result.snippet.length > 0 ? <Highlighted segments={option.result.snippet} className="muted option-snippet" /> : null}
           </>

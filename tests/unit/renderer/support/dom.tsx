@@ -32,8 +32,25 @@ export function setupDom(width = 1400) {
     }
   };
 
+  /**
+   * Settles until `find` returns an element, for content behind a lazily imported chunk whose first import can take
+   * longer than a few rounds on a loaded machine. Fails after `timeoutMs`.
+   */
+  const until = async <T,>(find: () => T | null | undefined, timeoutMs = 5_000): Promise<T> => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const found = find();
+      if (found) return found;
+      if (Date.now() > deadline) throw new Error(`not found within ${timeoutMs} ms`);
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    }
+  };
+
   return {
     settle,
+    until,
     async mount(fake: FakeBridge = createFakeBridge()): Promise<{ el: HTMLElement; fake: FakeBridge }> {
       host = document.createElement('div');
       document.body.appendChild(host);

@@ -4,8 +4,9 @@ import { UniqueID } from '@tiptap/extension-unique-id';
 import type { Schema } from '@tiptap/pm/model';
 import StarterKit, { type StarterKitOptions } from '@tiptap/starter-kit';
 import { parseExternalUrl } from '../url-policy';
+import { CommentMark } from './comment-mark';
 import { BLOCK_ID_TYPES } from './doc-schema';
-import { FileAttachmentNode, FileLinkNode, ImageNode, NoteRefNode } from './nodes';
+import { DocRefNode, FileAttachmentNode, FileLinkNode, ImageNode, MathBlockNode, MathInlineNode, NoteRefNode } from './nodes';
 import { TABLE_EXTENSIONS } from './tables';
 import { TEXT_STYLE_EXTENSIONS } from './text-style';
 
@@ -66,8 +67,12 @@ export function noteSchema(format: 'rich' | 'plain'): Schema {
     FileAttachmentNode,
     FileLinkNode,
     NoteRefNode,
+    DocRefNode,
+    MathInlineNode,
+    MathBlockNode,
     ...TABLE_EXTENSIONS,
     ...TEXT_STYLE_EXTENSIONS,
+    CommentMark,
     UniqueID.configure({ types: [...BLOCK_ID_TYPES] }),
   ];
   return (rich ??= getSchema(extensions));

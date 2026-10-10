@@ -2,6 +2,7 @@ import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { Link2 } from 'lucide-react';
 import { useCallback, useEffect, useState, type MouseEvent } from 'react';
 import { formatBytes } from '../../shared/attachments/names';
+import { documentKindOf } from '../../shared/documents/kinds';
 import { LINK_MESSAGES, type FileLinkStatusType } from '../../shared/contracts/attachments';
 import type { FileLinkOptions } from './file-link';
 
@@ -11,7 +12,8 @@ const keepSelection = (e: MouseEvent) => e.preventDefault();
 /**
  * Linked-file chip (D-108): link icon, name, "Linked" and the path as tooltip. Main checks the file when the chip
  * appears and after a failed action: a missing file reads "File not found at <path>" with Show in folder disabled; a
- * program, script or shortcut offers Show in folder only. Copy into Infinity Notes replaces the link with a copy.
+ * program, script or shortcut offers Show in folder only. Copy into Infinity Notes replaces the link with a copy, and a
+ * document kind can be opened in Infinity Notes as a linked document (D-118).
  */
 export function FileLinkView({ node, selected, extension, editor, getPos }: ReactNodeViewProps) {
   const { linkId, name, sizeBytes } = node.attrs as { linkId: string; name: string; sizeBytes: number };
@@ -59,6 +61,11 @@ export function FileLinkView({ node, selected, extension, editor, getPos }: Reac
       <span className="muted file-chip-detail">{detail}</span>
       {links && status ? (
         <span className="file-chip-actions">
+          {links.openInApp && !missing && documentKindOf(name) ? (
+            <button type="button" className="btn btn-small" aria-label={`Open ${name} in Infinity Notes`} onMouseDown={keepSelection} onClick={() => links.openInApp?.(linkId)}>
+              Open in Infinity Notes
+            </button>
+          ) : null}
           {status.state === 'available' ? (
             <button type="button" className="btn btn-small" aria-label={`Open ${name}`} onMouseDown={keepSelection} onClick={() => run(links.open)}>
               Open

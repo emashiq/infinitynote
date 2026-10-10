@@ -61,6 +61,8 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: 'Ctrl+Z', action: 'Undo' },
       { keys: 'Ctrl+Shift+Z, Ctrl+Y', action: 'Redo' },
       { keys: 'Ctrl+Click', action: 'Open a link' },
+      { keys: '[[, Ctrl+Shift+L', action: 'Link to a note or document' },
+      { keys: 'Ctrl+Shift+K', action: 'Link the selected text to a note or document' },
       { keys: 'Alt+F10', action: 'Formatting toolbar' },
       { keys: '/', action: 'Insert menu (at the start of a line or after a space)' },
       { keys: 'Shift+F10', action: 'Note menu' },

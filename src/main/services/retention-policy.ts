@@ -5,4 +5,6 @@ export const MAX_OPEN_LEASE_LOST_DRAFTS = 20;
 export const RESOLVED_DRAFT_KEEP_MS = 30 * DAY_MS;
 /** An unreferenced attachment file is deleted only after this grace period (INF-PORT-08). */
 export const ATTACHMENT_GC_GRACE_MS = 7 * DAY_MS;
+/** Leftovers of interrupted file writes in a temporary directory are removed at startup once they are this old. */
+export const STALE_TMP_MAX_AGE_MS = 60 * 60 * 1000;
 export const MAINTENANCE_INTERVAL_MS = 6 * 60 * 60 * 1000;

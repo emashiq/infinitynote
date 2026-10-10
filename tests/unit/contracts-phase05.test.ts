@@ -162,7 +162,8 @@ describe('Phase 05 catalogue (D-074)', () => {
       'autostart:set',
     ]);
     expect(EVENT_CHANNELS.slice(6, 10)).toEqual(['reminder:changed', 'reminder:alert', 'widget:state', 'app:openReminders']);
-    expect(EVENT_CHANNELS).toHaveLength(13);
+    // Later events (live sync, locked stickies) come after these.
+    expect(EVENT_CHANNELS).toHaveLength(14);
   });
 
   it('app:openNote takes an optional block (default null); the main window state carries a pending Reminders view', () => {

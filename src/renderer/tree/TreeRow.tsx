@@ -1,11 +1,14 @@
-import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Pin, Star, StickyNote, Trash } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Link2, Pin, Star, StickyNote, Trash } from 'lucide-react';
 import { useRef, useState, type MouseEvent } from 'react';
 import type { TreeNode, VisibleRow } from '../../shared/tree/tree-model';
 import { ColorDot } from '../ui/ColorDot';
+import { DocumentKindIcon } from '../ui/DocumentKindIcon';
 import { LockMark } from '../ui/LockMark';
 
 function NodeIcon({ node, expanded }: { node: TreeNode; expanded: boolean }) {
   const props = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
+  // Documents, and favorites and trash entries of documents, show their kind (D-118).
+  if (node.documentKind) return <DocumentKindIcon kind={node.documentKind} />;
   switch (node.kind) {
     case 'folder':
       return expanded ? <FolderOpen {...props} /> : <Folder {...props} />;
@@ -132,6 +135,7 @@ export function TreeRow({
         <span className="tree-label">{node.label}</span>
       )}
       {node.locked ? <LockMark /> : null}
+      {node.linked && node.kind === 'document' ? <Link2 size={12} strokeWidth={1.75} aria-label="Linked file" className="tree-pin" /> : null}
       {node.pinned ? <Pin size={12} strokeWidth={1.75} aria-label="Pinned" className="tree-pin" /> : null}
     </li>
   );

@@ -12,6 +12,9 @@ import './styles/editor.css';
 import './styles/stickies.css';
 import './styles/reminders.css';
 import './styles/widget.css';
+import './styles/documents.css';
+import './styles/comments.css';
+import './styles/graph.css';
 
 // The startup loader belongs to the main window; stickies and the widget drop it before their first render (D-109).
 if (parseRoute(window.location.hash).kind !== 'main') dismissStartupLoader({ fade: false });

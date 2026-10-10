@@ -241,3 +241,81 @@
 .sticky-close {
   margin-left: auto;
 }
+
+/* The revealed text of a sticky; it reports interaction for a locked note (D-172). */
+.sticky-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sticky-lock-icon {
+  flex: none;
+  color: var(--sticky-text-muted);
+}
+
+/*
+ * A blurred locked sticky (D-172): frosted lines in the shape of text (the note's text is not in the window) under the
+ * unlock field.
+ */
+.sticky-locked {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sticky-blur {
+  position: absolute;
+  inset: 4px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  filter: blur(4px);
+  opacity: 0.55;
+}
+
+.sticky-blur-line {
+  height: 10px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--sticky-text) 35%, transparent);
+}
+
+.sticky-unlock {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  text-align: center;
+  color: var(--sticky-text);
+  backdrop-filter: blur(6px);
+}
+
+.sticky-unlock-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.sticky-unlock-hint {
+  margin: 0;
+  max-width: 30ch;
+  font-size: 12px;
+  color: var(--sticky-text-muted);
+}
+
+.sticky-unlock-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.sticky-unlock-row .text-input {
+  width: 12ch;
+}

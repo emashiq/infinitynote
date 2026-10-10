@@ -14,18 +14,13 @@ import { containedAttachmentFile } from '../services/attachment-files';
 import { isUsableLinkPath } from '../services/linked-file';
 import type { Logger } from '../services/logger';
 import { richToMarkdown } from './markdown';
+import { writeFileAtomically } from './write-file';
 
 export interface NoteExportDeps {
   db: Db;
   dataDir: string;
   logger: Logger;
   vault: NoteVault;
-}
-
-async function writeAtomically(file: string, text: string): Promise<void> {
-  const part = `${file}.part`;
-  await fs.promises.writeFile(part, text, 'utf8');
-  await fs.promises.rename(part, file);
 }
 
 /** The folder next to an exported Markdown file that holds its images and files: "<name> files". */
@@ -80,11 +75,11 @@ export async function writeNoteExport(deps: NoteExportDeps, noteId: string, form
   const content: unknown = row.format === 'rich' ? JSON.parse(serialized) : serialized;
   if (format === 'text' || row.format === 'plain') {
     const text = extractPlainText(row.format, content);
-    await writeAtomically(file, row.title ? `${row.title}\n\n${text}` : text);
+    await writeFileAtomically(file, row.title ? `${row.title}\n\n${text}` : text);
     return { attachments: 0 };
   }
   const links = await copyAssets(deps, content as RichDocLike, file);
   const linked = linkedFileUrls(deps, content as RichDocLike);
-  await writeAtomically(file, richToMarkdown(row.title, content as RichDocLike, { linkOf: (id) => links.get(id) ?? null, linkedFileUrl: (id) => linked.get(id) ?? null }));
+  await writeFileAtomically(file, richToMarkdown(row.title, content as RichDocLike, { linkOf: (id) => links.get(id) ?? null, linkedFileUrl: (id) => linked.get(id) ?? null }));
   return { attachments: links.size };
 }

@@ -1,0 +1,195 @@
+/* The relation graph (D-170): the Graph page, the local graph in the Details panel and their legend. */
+:root,
+:root[data-theme='light'] {
+  --graph-pdf: #c0392b;
+  --graph-docx: #2b6cb0;
+  --graph-xlsx: #2e7d4f;
+  --graph-csv: #2c8c8c;
+  --graph-pptx: #c46a1a;
+  --graph-html: #6b7280;
+}
+
+.graph-canvas {
+  --graph-edge: var(--border-strong);
+  --graph-edge-strong: var(--accent);
+  --graph-label: var(--text);
+  --graph-halo: var(--bg);
+  --graph-note: var(--accent);
+  --graph-locked: var(--text-muted);
+  --graph-ring: var(--warning);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg);
+}
+
+:root[data-theme='dark'] {
+  --graph-pdf: #ff7a6e;
+  --graph-docx: #6aa8f0;
+  --graph-xlsx: #6bcb8f;
+  --graph-csv: #5fc9c9;
+  --graph-pptx: #f0a35c;
+  --graph-html: #a0a4b3;
+}
+
+.graph-canvas canvas {
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+.graph-canvas canvas.is-pointing {
+  cursor: pointer;
+}
+
+.graph-canvas canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.graph-tooltip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: 60%;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  font-size: 0.9em;
+  pointer-events: none;
+}
+
+.graph-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.graph-header {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.graph-field,
+.graph-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.graph-search {
+  min-width: 160px;
+}
+
+.graph-main {
+  flex: 1;
+  min-height: 280px;
+}
+
+.graph-local {
+  height: 220px;
+  margin-top: 6px;
+}
+
+.graph-list-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.graph-list,
+.graph-list-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.graph-list > li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.graph-list-links {
+  padding-left: 22px;
+}
+
+.graph-list-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.graph-list-open:hover {
+  background: var(--bg-subtle);
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  list-style: none;
+}
+
+.graph-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.graph-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+}
+
+.graph-swatch-note {
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.graph-swatch-locked {
+  background: var(--text-muted);
+}
+
+.graph-swatch-document {
+  border-radius: 3px;
+}
+
+.graph-swatch-pdf {
+  background: var(--graph-pdf);
+}
+
+.graph-swatch-docx {
+  background: var(--graph-docx);
+}
+
+.graph-swatch-xlsx {
+  background: var(--graph-xlsx);
+}
+
+.graph-swatch-csv {
+  background: var(--graph-csv);
+}
+
+.graph-swatch-pptx {
+  background: var(--graph-pptx);
+}
+
+.graph-swatch-html {
+  background: var(--graph-html);
+}

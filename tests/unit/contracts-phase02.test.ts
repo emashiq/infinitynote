@@ -107,6 +107,7 @@ describe('Phase 02 request schemas', () => {
       'retention.autoVersionDays',
       'retention.autoVersionMax',
       'locks.autoLockMinutes',
+      'locks.blurStickySeconds',
       'backup.auto',
       'backup.lastAuto',
       'shortcut.quickSticky',

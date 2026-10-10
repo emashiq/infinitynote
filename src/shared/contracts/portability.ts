@@ -6,7 +6,8 @@ export const BACKUP_EXTENSION = 'infinitybackup';
 export const EXPORT_EXTENSION = 'infinityexport';
 export const BACKUP_FORMAT = 'infinity-notes-backup';
 export const EXPORT_FORMAT = 'infinity-notes-export';
-export const ARCHIVE_FORMAT_VERSION = 1;
+/** 2 (v0.3.0): backups list document blobs and exports carry documents (D-118); version 1 archives still read. */
+export const ARCHIVE_FORMAT_VERSION = 2;
 
 export const AUTO_BACKUP_INTERVAL_DAYS = [1, 7, 14, 30] as const;
 export const AUTO_BACKUP_KEEP_COUNTS = [3, 5, 10, 20] as const;
@@ -73,6 +74,7 @@ export const PortableCounts = z.strictObject({
   notes: z.number().int().nonnegative(),
   reminders: z.number().int().nonnegative(),
   attachments: z.number().int().nonnegative(),
+  documents: z.number().int().nonnegative(),
 });
 export type PortableCountsType = z.infer<typeof PortableCounts>;
 
@@ -111,3 +113,25 @@ export const PORTABILITY_MESSAGES = {
   restored: 'Your notebook was restored from the backup.',
   noteMissing: 'This note no longer exists',
 } as const;
+
+/** Longest Mermaid source and drawn SVG a note export carries, and how many diagrams (D-163). */
+export const MAX_EXPORT_DIAGRAM_SOURCE = 20_000;
+export const MAX_EXPORT_DIAGRAM_SVG = 2_000_000;
+export const MAX_EXPORT_DIAGRAMS = 100;
+
+/** A diagram the renderer drew for an export: main shows it as an image only, so it can never run (D-163). */
+export const NoteDiagram = z.strictObject({
+  source: z.string().max(MAX_EXPORT_DIAGRAM_SOURCE),
+  svg: z.string().max(MAX_EXPORT_DIAGRAM_SVG).startsWith('<svg'),
+});
+export type NoteDiagramType = z.infer<typeof NoteDiagram>;
+
+export const ExportNoteDocumentRequest = z.strictObject({
+  noteId: Uuid,
+  format: z.enum(['html', 'pdf']),
+  diagrams: z.array(NoteDiagram).max(MAX_EXPORT_DIAGRAMS),
+});
+export const ExportNoteDocumentResponse = z.union([Canceled, z.strictObject({ canceled: z.literal(false), file: z.string() })]);
+
+export const NotePrintRequest = z.strictObject({ noteId: Uuid, diagrams: z.array(NoteDiagram).max(MAX_EXPORT_DIAGRAMS) });
+export const NotePrintResponse = z.strictObject({ printed: z.boolean() });

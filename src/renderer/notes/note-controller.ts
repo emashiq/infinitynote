@@ -450,6 +450,15 @@ export class NoteController implements EditorHost {
     return flushed;
   }
 
+  /**
+   * The view stops showing the note (its locked sticky blurred, D-172): it leaves live sync and drops the text and its
+   * drafts, so nothing of it stays in the window. Main saved the session's edits before it blurred the sticky.
+   */
+  async conceal(): Promise<void> {
+    await this.leave();
+    if (!this.disposed) this.store.setState({ status: 'locked', content: null, drafts: [], conflict: null, save: 'saved', message: undefined });
+  }
+
   /** The note is back from Trash: open it again from the stored content. */
   async reopen(): Promise<void> {
     this.failure = null;

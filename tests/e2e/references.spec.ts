@@ -22,11 +22,11 @@ async function seedDesign(page: Page): Promise<{ design: string; target: string 
   return { design, target };
 }
 
-/** Inserts a reference through the note menu → "Link to note…": the note by title, then the whole note or a paragraph. */
+/** Inserts a reference through the note menu → "Link to note or document…": the note by title, then the whole note or a paragraph. */
 async function linkTo(page: Page, title: string, paragraph: string | null): Promise<void> {
-  await chooseNoteMenu(page, 'Link to note…');
+  await chooseNoteMenu(page, 'Link to note or document…');
   const picker = dialogByName(page, 'Link to note');
-  await picker.getByRole('combobox', { name: 'Search notes by title' }).fill(title.slice(0, 3));
+  await picker.getByRole('combobox', { name: 'Search notes and documents' }).fill(title.slice(0, 3));
   await expect(picker.getByRole('option', { name: new RegExp(title) })).toBeVisible();
   await page.keyboard.press('Enter');
   const blocks = dialogByName(page, `Link to ${title}`);
@@ -176,7 +176,7 @@ test('attached documents open only through the validated hand-off; programs are 
     await expect(editor(page).locator('.file-chip')).toHaveCount(2);
     await waitSaved(page);
 
-    await editor(page).getByRole('button', { name: 'Open report.pdf' }).click();
+    await editor(page).getByRole('button', { name: 'Open report.pdf', exact: true }).click();
     await expect.poll(async () => (await shellCalls(app)).filter((c) => c.op === 'openPath').map((c) => path.extname(c.path!))).toEqual(['.pdf']);
 
     await editor(page).getByRole('button', { name: 'Open tool.exe' }).click();

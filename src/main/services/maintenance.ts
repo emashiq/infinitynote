@@ -14,6 +14,8 @@ import { ATTACHMENT_GC_GRACE_MS, MAX_OPEN_LEASE_LOST_DRAFTS, RESOLVED_DRAFT_KEEP
 import type { SettingsService } from './settings-service';
 import type { TrashService } from './trash-service';
 import type { VersionService } from './version-service';
+import type { DocumentService } from '../documents/document-service';
+import type { DocumentStore } from '../documents/document-store';
 
 export interface MaintenanceDeps {
   db: Db;
@@ -24,6 +26,8 @@ export interface MaintenanceDeps {
   settings: Pick<SettingsService, 'getInternal'>;
   trash: Pick<TrashService, 'purgeDeletedBefore'>;
   versions: Pick<VersionService, 'pruneAutoVersions'>;
+  documents: Pick<DocumentService, 'pruneVersions'>;
+  documentStore: Pick<DocumentStore, 'collect'>;
   /** True while a backup, restore, export or import runs: attachment files are then left alone. */
   isBusy(): boolean;
 }
@@ -36,13 +40,16 @@ export interface MaintenanceReport {
   attachmentsDeleted: number;
   /** Link records (D-108) that nothing used for the grace period; the linked files themselves are never touched. */
   linkedFilesDeleted: number;
+  /** Document versions beyond the retention, and stored document bytes nothing used for the grace period (D-118). */
+  documentVersionsPruned: number;
+  documentBlobsDeleted: number;
 }
 
 /**
  * Retention and garbage collection (INF-PORT-07, INF-PORT-08, F-03-4), run at startup and every few hours: empties
  * Trash after the configured days (never by default), prunes automatic versions to the configured age and count,
- * caps open `lease_lost` drafts, deletes old resolved drafts and deletes attachment files and link records nobody uses
- * any more.
+ * caps open `lease_lost` drafts, deletes old resolved drafts and deletes attachment files, link records and document
+ * bytes nobody uses any more; document versions follow the version retention.
  * Each step is independent; a failure is logged and the others still run.
  */
 export class MaintenanceService {
@@ -77,11 +84,18 @@ export class MaintenanceService {
       draftsDeleted: this.step('drafts', 0, () => this.drafts.deleteResolvedBefore(now - RESOLVED_DRAFT_KEEP_MS)),
       attachmentsDeleted: 0,
       linkedFilesDeleted: this.step('links', 0, () => this.links.deleteUnreferencedSince(now - ATTACHMENT_GC_GRACE_MS, now)),
+      documentVersionsPruned: this.step('document versions', 0, () => this.deps.documents.pruneVersions(now)),
+      documentBlobsDeleted: 0,
     };
     try {
       report.attachmentsDeleted = await this.collectAttachments(now);
     } catch (err) {
       this.deps.logger.error(`maintenance: attachment GC failed ${errorDetail(err)}`);
+    }
+    try {
+      report.documentBlobsDeleted = this.deps.isBusy() ? 0 : await this.deps.documentStore.collect(now);
+    } catch (err) {
+      this.deps.logger.error(`maintenance: document GC failed ${errorDetail(err)}`);
     }
     this.deps.logger.info(`maintenance: ${JSON.stringify(report)}`);
     return report;

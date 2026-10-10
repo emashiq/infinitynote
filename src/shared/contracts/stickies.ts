@@ -44,6 +44,8 @@ export const StickyState = z.strictObject({
   path: z.array(z.string()).max(66),
   /** Null while the note is live. */
   trashed: z.strictObject({ batchId: Uuid.nullable() }).nullable(),
+  /** The note is locked: the window shows its text only while main has revealed it there (D-172). */
+  locked: z.boolean(),
   collapsed: z.boolean(),
   alwaysOnTop: z.boolean(),
   /** Explicit user activations (Float) since this window was created; an increase means "take edit control". */

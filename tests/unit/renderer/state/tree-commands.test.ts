@@ -87,7 +87,7 @@ describe('TreeStore', () => {
     const restored = await services.tree.restore(t.data.trashBatchId);
     expect(restored.ok).toBe(true);
     expect(services.notices.store.getState().notices.map((x) => x.text)).toEqual(['Restored to Common']);
-    const relocated = { ...fake.bridge, trash: { ...fake.bridge.trash, restore: async () => ({ ok: true as const, data: { kind: 'note' as const, id: a.id, relocated: true, location: { projectId: null, folderId: null }, path: ['Alpha', 'L1'], restoredNoteIds: [a.id] } }) } };
+    const relocated = { ...fake.bridge, trash: { ...fake.bridge.trash, restore: async () => ({ ok: true as const, data: { kind: 'note' as const, id: a.id, relocated: true, location: { projectId: null, folderId: null }, path: ['Alpha', 'L1'], restoredNoteIds: [a.id], restoredDocumentIds: [] } }) } };
     const { createAppServices } = await import('../../../../src/renderer/state/app-services');
     const s2 = createAppServices(relocated, { viewport: { width: () => 1280, onResize: () => () => undefined }, themeEnv: null, lifecycle: null });
     await s2.ready;

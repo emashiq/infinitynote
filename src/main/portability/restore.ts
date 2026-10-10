@@ -8,10 +8,11 @@ import type { Db, OpenOptions } from '../db/driver';
 import type { DbOpenResult } from '../db/open-database';
 import { AppError, errorDetail } from '../services/app-error';
 import type { Logger } from '../services/logger';
-import { BACKUP_DB_ENTRY, MANIFEST_ENTRY, MAX_MANIFEST_BYTES, parseBackupManifest, type BackupManifestType } from './backup-manifest';
+import { BACKUP_DB_ENTRY, MANIFEST_ENTRY, MAX_MANIFEST_BYTES, parseBackupManifest, storedFiles, type BackupManifestType } from './backup-manifest';
+import { hasTable } from './backup-writer';
 import { ArchiveRefused, DEFAULT_ARCHIVE_LIMITS, hashFile, openArchive, refusalError, type ArchiveLimits, type OpenedArchive } from './zip-archive';
 
-export type RestorePaths = Pick<DataPaths, 'dataDir' | 'dbFile' | 'attachmentsDir' | 'restoreStagingDir' | 'restorePendingFile'>;
+export type RestorePaths = Pick<DataPaths, 'dataDir' | 'dbFile' | 'attachmentsDir' | 'documentsDir' | 'restoreStagingDir' | 'restorePendingFile'>;
 
 const ROLLBACK_PREFIX = 'rollback-';
 const ROLLBACK_RE = /^rollback-(\d{8}T\d{6}Z)$/;
@@ -23,7 +24,7 @@ function stagedDbFile(staging: string): string {
 
 /** Hashes every staged file against the manifest. */
 async function verifyStagedFiles(staging: string, manifest: BackupManifestType): Promise<boolean> {
-  const files = [{ path: BACKUP_DB_ENTRY, sha256: manifest.db.sha256, size: manifest.db.size }, ...manifest.attachments];
+  const files = [{ path: BACKUP_DB_ENTRY, sha256: manifest.db.sha256, size: manifest.db.size }, ...storedFiles(manifest)];
   for (const f of files) {
     const actual = await hashFile(path.join(staging, ...f.path.split('/'))).catch(() => null);
     if (!actual || actual.sha256 !== f.sha256 || actual.size !== f.size) return false;
@@ -31,7 +32,7 @@ async function verifyStagedFiles(staging: string, manifest: BackupManifestType):
   return true;
 }
 
-/** Opens the staged database read-only: integrity, schema and attachment rows must match the manifest. */
+/** Opens the staged database read-only: integrity, schema, attachment and document blob rows must match the manifest. */
 function checkStagedDatabase(file: string, manifest: BackupManifestType, latestSchema: number, open: (f: string, o: OpenOptions) => Db): void {
   let db: Db;
   try {
@@ -45,8 +46,8 @@ function checkStagedDatabase(file: string, manifest: BackupManifestType, latestS
     const version = Number(db.pragmaValue('user_version'));
     if (version > latestSchema) throw new AppError('UNSUPPORTED', PORTABILITY_MESSAGES.newerSchema);
     if (version !== manifest.schemaVersion) throw new AppError('VALIDATION_FAILED', PORTABILITY_MESSAGES.databaseDamaged);
-    const listed = new Set([...manifest.attachments.map((a) => a.id), ...manifest.missing]);
-    const rows = db.prepare<[], { id: string }>('SELECT id FROM attachments').all();
+    const listed = new Set([...storedFiles(manifest).map((a) => a.id), ...manifest.missing]);
+    const rows = db.prepare<[], { id: string }>(hasTable(db, 'document_blobs') ? 'SELECT id FROM attachments UNION ALL SELECT id FROM document_blobs' : 'SELECT id FROM attachments').all();
     if (rows.some((r) => !listed.has(r.id))) throw new AppError('VALIDATION_FAILED', PORTABILITY_MESSAGES.databaseDamaged);
   } catch (err) {
     if (err instanceof AppError) throw err;
@@ -85,13 +86,13 @@ export async function prepareRestore(archiveFile: string, opts: PrepareRestoreOp
     if (!archive.names.has(MANIFEST_ENTRY)) throw new AppError('VALIDATION_FAILED', PORTABILITY_MESSAGES.notArchive);
     const manifest = parseBackupManifest(await archive.read(MANIFEST_ENTRY, MAX_MANIFEST_BYTES));
     if (manifest.schemaVersion > opts.latestSchema) throw new AppError('UNSUPPORTED', PORTABILITY_MESSAGES.newerSchema);
-    const expected = new Set([MANIFEST_ENTRY, BACKUP_DB_ENTRY, ...manifest.attachments.map((a) => a.path)]);
+    const expected = new Set([MANIFEST_ENTRY, BACKUP_DB_ENTRY, ...storedFiles(manifest).map((a) => a.path)]);
     if (archive.names.size !== expected.size || [...archive.names].some((n) => !expected.has(n))) {
       throw new AppError('VALIDATION_FAILED', PORTABILITY_MESSAGES.unsafe);
     }
     await fs.promises.mkdir(staging, { recursive: true });
     await extractVerified(archive, staging, manifest.db);
-    for (const attachment of manifest.attachments) await extractVerified(archive, staging, attachment);
+    for (const stored of storedFiles(manifest)) await extractVerified(archive, staging, stored);
     checkStagedDatabase(stagedDbFile(staging), manifest, opts.latestSchema, opts.open ?? openBetterSqlite);
     await fs.promises.writeFile(path.join(staging, MANIFEST_ENTRY), JSON.stringify(manifest));
     opts.logger.info(`restore: staged schema=${manifest.schemaVersion} notes=${manifest.notes} attachments=${manifest.attachments.length}`);
@@ -135,7 +136,12 @@ function stamp(d: Date): string {
 /** The live files a restore replaces, as [live path, name inside the rollback copy]. */
 function liveItems(paths: RestorePaths): Array<[string, string]> {
   const db = path.basename(paths.dbFile);
-  return [[paths.dbFile, db], ...WAL_SUFFIXES.map((s): [string, string] => [`${paths.dbFile}${s}`, `${db}${s}`]), [paths.attachmentsDir, 'attachments']];
+  return [
+    [paths.dbFile, db],
+    ...WAL_SUFFIXES.map((s): [string, string] => [`${paths.dbFile}${s}`, `${db}${s}`]),
+    [paths.attachmentsDir, 'attachments'],
+    [paths.documentsDir, 'documents'],
+  ];
 }
 
 /** Moves the live data into the rollback copy, then the staged data into place. */
@@ -146,9 +152,11 @@ async function swapIn(paths: RestorePaths, rollbackDir: string, move: MoveFn): P
   }
   const staging = paths.restoreStagingDir;
   await move(stagedDbFile(staging), paths.dbFile);
-  const stagedAttachments = path.join(staging, 'attachments');
-  if (fs.existsSync(stagedAttachments)) await move(stagedAttachments, paths.attachmentsDir);
-  await fs.promises.mkdir(path.join(paths.attachmentsDir, 'tmp'), { recursive: true });
+  for (const [area, live] of [['attachments', paths.attachmentsDir], ['documents', paths.documentsDir]] as const) {
+    const staged = path.join(staging, area);
+    if (fs.existsSync(staged)) await move(staged, live);
+    await fs.promises.mkdir(path.join(live, 'tmp'), { recursive: true });
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { FilePlus, FolderPlus, StickyNote } from 'lucide-react';
+import { FileLock, FilePlus, FileUp, FolderPlus, LockKeyhole, StickyNote } from 'lucide-react';
 import { useServices } from '../state/use-store';
 
 export function QuickActions() {
@@ -6,7 +6,10 @@ export function QuickActions() {
   const tiles = [
     { id: 'note.new', label: 'New note', icon: FilePlus },
     { id: 'sticky.new', label: 'New sticky', icon: StickyNote },
+    { id: 'note.newLocked', label: 'New locked note', icon: FileLock },
+    { id: 'sticky.newLocked', label: 'New locked sticky', icon: LockKeyhole },
     { id: 'project.new', label: 'New project', icon: FolderPlus },
+    { id: 'document.import', label: 'Import file', icon: FileUp },
   ] as const;
   return (
     <section aria-labelledby="home-quick">

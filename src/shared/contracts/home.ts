@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NoteSummary } from './hierarchy';
+import { DocumentSummary, NoteSummary } from './hierarchy';
 import { Uuid } from './ids';
 
 export const HomeScope = z.discriminatedUnion('kind', [
@@ -16,5 +16,7 @@ export const HomeSummaryResponse = z.strictObject({
   pinned: z.array(NoteSummary).max(100),
   pinnedTotal: z.number().int().min(0),
   recent: z.array(NoteSummary).max(10),
+  /** The most recently changed documents (D-118); Home lists them with the recent notes. */
+  recentDocuments: z.array(DocumentSummary).max(10),
 });
 export type HomeSummaryType = z.infer<typeof HomeSummaryResponse>;

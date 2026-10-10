@@ -135,7 +135,7 @@ describe('tree pane (INF-HIER-12, INF-HIER-01)', () => {
     await act(async () => common.focus());
     await dom.key(common, 'F10', { shiftKey: true });
     const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
-    expect([...menu.querySelectorAll('[role="menuitem"]')].map((m) => m.textContent)).toEqual(['New note', 'New sticky', 'New folder']);
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((m) => m.textContent)).toEqual(['New note', 'New sticky', 'New locked note…', 'New locked sticky…', 'New Word document', 'New spreadsheet', 'New presentation', 'Import file…', 'New folder', 'Open graph']);
     await dom.key(menu, 'Escape');
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(document.activeElement).toBe(item(el, 'common'));

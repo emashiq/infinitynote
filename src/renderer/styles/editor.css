@@ -454,6 +454,12 @@
   gap: 2px;
 }
 
+.link-option-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* Highlighted text without its own color gets the ink that reads on its highlight (text-style.ts, shared/color.ts INK). */
 .note-editor-content [data-ink] {
   border-radius: 2px;
@@ -547,3 +553,195 @@
   cursor: default;
 }
 
+
+/* Code blocks: language picker, highlighting (D-159) and Mermaid diagrams (D-158). */
+.note-editor-content .code-block {
+  margin: 0.5em 0;
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+
+.note-editor-content .code-block pre {
+  margin: 0;
+  background: none;
+}
+
+.note-editor-content .code-block pre.is-hidden {
+  display: none;
+}
+
+.code-block-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 0;
+  user-select: none;
+}
+
+.code-language {
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+}
+
+.code-language-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.diagram {
+  padding: 4px 12px 10px;
+}
+
+.diagram-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.diagram-error {
+  margin: 4px 0;
+  color: var(--danger);
+  font-family: var(--font-code);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.diagram-status {
+  margin: 4px 0;
+  font-size: 12px;
+}
+
+.diagram-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.note-editor-content .hljs-comment,
+.note-editor-content .hljs-quote {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.note-editor-content .hljs-keyword,
+.note-editor-content .hljs-selector-tag,
+.note-editor-content .hljs-built_in,
+.note-editor-content .hljs-meta {
+  color: #8250df;
+}
+
+.note-editor-content .hljs-string,
+.note-editor-content .hljs-attr,
+.note-editor-content .hljs-template-tag,
+.note-editor-content .hljs-addition {
+  color: #0a7d35;
+}
+
+.note-editor-content .hljs-number,
+.note-editor-content .hljs-literal,
+.note-editor-content .hljs-symbol,
+.note-editor-content .hljs-variable {
+  color: #b35900;
+}
+
+.note-editor-content .hljs-title,
+.note-editor-content .hljs-section,
+.note-editor-content .hljs-name,
+.note-editor-content .hljs-type {
+  color: #0550ae;
+}
+
+.note-editor-content .hljs-deletion {
+  color: var(--danger);
+}
+
+[data-theme='dark'] .note-editor-content .hljs-keyword,
+[data-theme='dark'] .note-editor-content .hljs-selector-tag,
+[data-theme='dark'] .note-editor-content .hljs-built_in,
+[data-theme='dark'] .note-editor-content .hljs-meta {
+  color: #d2a8ff;
+}
+
+[data-theme='dark'] .note-editor-content .hljs-string,
+[data-theme='dark'] .note-editor-content .hljs-attr,
+[data-theme='dark'] .note-editor-content .hljs-template-tag,
+[data-theme='dark'] .note-editor-content .hljs-addition {
+  color: #7ee787;
+}
+
+[data-theme='dark'] .note-editor-content .hljs-number,
+[data-theme='dark'] .note-editor-content .hljs-literal,
+[data-theme='dark'] .note-editor-content .hljs-symbol,
+[data-theme='dark'] .note-editor-content .hljs-variable {
+  color: #ffa657;
+}
+
+[data-theme='dark'] .note-editor-content .hljs-title,
+[data-theme='dark'] .note-editor-content .hljs-section,
+[data-theme='dark'] .note-editor-content .hljs-name,
+[data-theme='dark'] .note-editor-content .hljs-type {
+  color: #79c0ff;
+}
+
+/* Math (D-161) */
+.note-editor-content .math-inline {
+  display: inline-block;
+  padding: 0 2px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.note-editor-content .math-block {
+  margin: 0.5em 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  text-align: center;
+  cursor: pointer;
+}
+
+.note-editor-content .math-inline.is-selected,
+.note-editor-content .math-block.is-selected {
+  outline: 2px solid var(--accent);
+}
+
+.math-render {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.math-block .math-render {
+  display: block;
+}
+
+.math-edit {
+  display: inline-flex;
+}
+
+.math-block .math-edit {
+  display: flex;
+  margin-bottom: 6px;
+}
+
+.math-source {
+  font-family: var(--font-code);
+  font-size: 13px;
+}
+
+.math-block .math-source {
+  width: 100%;
+  resize: vertical;
+}
+
+.math-error {
+  color: var(--danger);
+  font-family: var(--font-code);
+  font-size: 12px;
+}

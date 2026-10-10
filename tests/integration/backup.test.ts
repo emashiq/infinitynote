@@ -48,7 +48,7 @@ describe('backup (INF-PORT-01)', () => {
     try {
       expect([...archive.names].sort()).toEqual([`attachments/${seeded.attachment.id.slice(0, 2)}/${seeded.attachment.id}.png`, BACKUP_DB_ENTRY, MANIFEST_ENTRY].sort());
       const manifest = parseBackupManifest(await archive.read(MANIFEST_ENTRY, 1 << 20));
-      expect(manifest).toMatchObject({ format: 'infinity-notes-backup', formatVersion: 1, schemaVersion: LATEST, notes: 4, missing: [] });
+      expect(manifest).toMatchObject({ format: 'infinity-notes-backup', formatVersion: 2, schemaVersion: LATEST, notes: 4, missing: [] });
       expect(manifest.attachments).toEqual([{ id: seeded.attachment.id, path: expect.stringMatching(/\.png$/), sha256: sha(seeded.png), size: seeded.png.length }]);
       const dbCopy = path.join(mkTmp(), 'db.sqlite3');
       const extracted = await archive.extractTo(BACKUP_DB_ENTRY, dbCopy);

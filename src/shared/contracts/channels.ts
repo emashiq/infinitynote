@@ -19,6 +19,46 @@ import {
 } from './attachments';
 import type { EventChannel, InvokeChannel } from './channel-names';
 import {
+  CommentCreateRequest,
+  CommentDeletedResponse,
+  CommentEditRequest,
+  CommentIdRequest,
+  CommentListRequest,
+  CommentListResponse,
+  CommentReplyRequest,
+  CommentResolveRequest,
+  CommentThreadIdRequest,
+  CommentThreadResponse,
+} from './comments';
+import { GraphBuildRequest, GraphLocalRequest, GraphModel } from './graph';
+import {
+  DocumentAddPickedRequest,
+  DocumentCreateBesideRequest,
+  DocumentCreateRequest,
+  DocumentFromAttachmentRequest,
+  DocumentFromFileResponse,
+  DocumentFromLinkRequest,
+  DocumentIdRequest,
+  DocumentMoveRequest,
+  DocumentOpenResponse,
+  DocumentPickFilesResponse,
+  DocumentPickPdfResponse,
+  DocumentRenameRequest,
+  DocumentResponse,
+  DocumentRestoreVersionRequest,
+  DocumentSaveCopyRequest,
+  DocumentSaveCopyResponse,
+  DocumentSaveRequest,
+  DocumentSaveResponse,
+  DocumentVersionsResponse,
+  DocumentExportRequest,
+  DocumentExportResponse,
+  DocumentReadWorkbookRequest,
+  DocumentReadWorkbookResponse,
+  DocumentSaveWorkbookRequest,
+  DocumentVersionRequest,
+} from './documents';
+import {
   CollabFlushRequest,
   CollabFlushResponse,
   CollabJoinRequest,
@@ -71,6 +111,11 @@ import {
   LockSetRequest,
   LockStatus,
   LockUnlockRequest,
+  LockCreateRequest,
+  LockCreateResponse,
+  LockSetPinRequest,
+  StickyLockState,
+  StickyRevealRequest,
   OsKeyAvailabilitySchema,
 } from './locks';
 import {
@@ -98,11 +143,24 @@ import {
   BackupStatus,
   ExportMarkdownRequest,
   ExportMarkdownResponse,
+  ExportNoteDocumentRequest,
+  ExportNoteDocumentResponse,
   ExportPortableResponse,
   ImportPortableResponse,
+  NotePrintRequest,
+  NotePrintResponse,
 } from './portability';
 import { ShortcutSetRequest, ShortcutState } from './shortcuts';
-import { NotesPickRequest, NotesPickResponse, RefsListRequest, RefsListResponse } from './references';
+import {
+  DocumentBacklinksRequest,
+  DocumentBacklinksResponse,
+  LinksSearchRequest,
+  LinksSearchResponse,
+  NotesPickRequest,
+  NotesPickResponse,
+  RefsListRequest,
+  RefsListResponse,
+} from './references';
 import { SearchQueryRequest, SearchQueryResponse } from './search';
 import { TagsListRequest, TagsListResponse, TagsSetRequest, TagsSetResponse } from './tags';
 import {
@@ -273,6 +331,51 @@ export const CHANNEL_SCHEMAS = {
   'lock:changePassword': { request: LockChangePasswordRequest, response: LockStatus },
   'lock:setHello': { request: LockSetHelloRequest, response: LockStatus },
   'lock:remove': { request: LockRemoveRequest, response: LockStatus },
+  // v0.3.0: documents (D-118), main window only.
+  'document:create': { request: DocumentCreateRequest, response: DocumentResponse },
+  'document:pickFiles': { request: Empty, response: DocumentPickFilesResponse },
+  'document:addPicked': { request: DocumentAddPickedRequest, response: DocumentResponse },
+  'document:fromAttachment': { request: DocumentFromAttachmentRequest, response: DocumentFromFileResponse },
+  'document:fromLink': { request: DocumentFromLinkRequest, response: DocumentFromFileResponse },
+  'document:open': { request: DocumentIdRequest, response: DocumentOpenResponse },
+  'document:save': { request: DocumentSaveRequest, response: DocumentSaveResponse },
+  'document:saveCopy': { request: DocumentSaveCopyRequest, response: DocumentSaveCopyResponse },
+  'document:rename': { request: DocumentRenameRequest, response: DocumentResponse },
+  'document:move': { request: DocumentMoveRequest, response: DocumentResponse },
+  'document:trash': { request: DocumentIdRequest, response: TrashResult },
+  'document:versions': { request: DocumentIdRequest, response: DocumentVersionsResponse },
+  'document:restoreVersion': { request: DocumentRestoreVersionRequest, response: DocumentSaveResponse },
+  'document:openExternal': { request: DocumentIdRequest, response: AttachmentOpenResponse },
+  'document:showInFolder': { request: DocumentIdRequest, response: AttachmentShowResponse },
+  'document:pickPdf': { request: Empty, response: DocumentPickPdfResponse },
+  'document:createBeside': { request: DocumentCreateBesideRequest, response: DocumentResponse },
+  'document:copyVersion': { request: DocumentVersionRequest, response: DocumentResponse },
+  'document:export': { request: DocumentExportRequest, response: DocumentExportResponse },
+  'document:readWorkbook': { request: DocumentReadWorkbookRequest, response: DocumentReadWorkbookResponse },
+  'document:saveWorkbook': { request: DocumentSaveWorkbookRequest, response: DocumentSaveResponse },
+  'refs:documentBacklinks': { request: DocumentBacklinksRequest, response: DocumentBacklinksResponse },
+  'links:search': { request: LinksSearchRequest, response: LinksSearchResponse },
+  'export:noteDocument': { request: ExportNoteDocumentRequest, response: ExportNoteDocumentResponse },
+  'note:print': { request: NotePrintRequest, response: NotePrintResponse },
+  // v0.3.0: comments (D-165) and the relation graph (D-170), main window only.
+  'comment:list': { request: CommentListRequest, response: CommentListResponse },
+  'comment:create': { request: CommentCreateRequest, response: CommentThreadResponse },
+  'comment:reply': { request: CommentReplyRequest, response: CommentThreadResponse },
+  'comment:edit': { request: CommentEditRequest, response: CommentThreadResponse },
+  'comment:delete': { request: CommentIdRequest, response: CommentThreadResponse },
+  'comment:deleteThread': { request: CommentThreadIdRequest, response: CommentDeletedResponse },
+  'comment:resolve': { request: CommentResolveRequest, response: CommentThreadResponse },
+  'graph:build': { request: GraphBuildRequest, response: GraphModel },
+  'graph:local': { request: GraphLocalRequest, response: GraphModel },
+  // v0.3.0: notes created locked and locked stickies (D-171..D-174). lock:* stay main window only; a sticky window
+  // reveals, reports activity in, blurs and sets the PIN of its own note only.
+  'lock:create': { request: LockCreateRequest, response: LockCreateResponse },
+  'lock:setPin': { request: LockSetPinRequest, response: LockStatus },
+  'sticky:lockStatus': { request: StickyNoteRequest, response: StickyLockState },
+  'sticky:reveal': { request: StickyRevealRequest, response: StickyLockState },
+  'sticky:activity': { request: StickyNoteRequest, response: Empty },
+  'sticky:blur': { request: StickyNoteRequest, response: StickyLockState },
+  'sticky:setPin': { request: LockSetPinRequest, response: StickyLockState },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {
@@ -289,6 +392,7 @@ export const EVENT_SCHEMAS = {
   'collab:steps': CollabStepsEvent,
   'collab:reset': CollabResetEvent,
   'collab:status': CollabStatusEvent,
+  'sticky:lockState': StickyLockState,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 type ChannelSchemas = typeof CHANNEL_SCHEMAS;

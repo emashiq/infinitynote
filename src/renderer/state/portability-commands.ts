@@ -1,5 +1,5 @@
 import type { InfinityBridge } from '../../shared/contracts/bridge';
-import type { BackupSummaryType } from '../../shared/contracts/portability';
+import type { BackupSummaryType, NoteDiagramType } from '../../shared/contracts/portability';
 import type { NoticeStore } from './notice-store';
 import { failOutcome, okOutcome, type Outcome } from './store';
 import type { UiStore } from './ui-store';
@@ -24,6 +24,9 @@ export interface PortabilityCommands {
   /** The confirmed restore: main schedules it and restarts the app. */
   confirmRestore(): Promise<Outcome<unknown>>;
   exportNote(noteId: string, format: 'markdown' | 'text'): Promise<void>;
+  /** "Export as HTML…" and "Export as PDF…" with the note's diagrams drawn (D-163). */
+  exportNoteDocument(noteId: string, format: 'html' | 'pdf'): Promise<void>;
+  printNote(noteId: string): Promise<void>;
   exportAll(): Promise<void>;
   importNotes(): Promise<void>;
 }
@@ -37,6 +40,8 @@ export function createPortabilityCommands(deps: {
   notices: NoticeStore;
   ui: UiStore;
   flushActive: () => Promise<unknown>;
+  /** The open note's Mermaid diagrams, drawn for an export (D-163). */
+  noteDiagrams: () => Promise<NoteDiagramType[]>;
 }): PortabilityCommands {
   const { bridge, notices, ui } = deps;
   const report = async <T>(request: Promise<{ ok: true; data: T } | { ok: false; error: { message: string } }>, done: (data: T) => string | null) => {
@@ -65,6 +70,16 @@ export function createPortabilityCommands(deps: {
     async exportNote(noteId, format) {
       await deps.flushActive();
       await report(bridge.export.markdown({ noteId, format }), (r) => (r.canceled ? null : `Exported to ${fileName(r.file)}`));
+    },
+    async exportNoteDocument(noteId, format) {
+      await deps.flushActive();
+      const diagrams = await deps.noteDiagrams();
+      await report(bridge.export.noteDocument({ noteId, format, diagrams }), (r) => (r.canceled ? null : `Exported to ${fileName(r.file)}`));
+    },
+    async printNote(noteId) {
+      await deps.flushActive();
+      const diagrams = await deps.noteDiagrams();
+      await report(bridge.note.print({ noteId, diagrams }), () => null);
     },
     async exportAll() {
       await deps.flushActive();

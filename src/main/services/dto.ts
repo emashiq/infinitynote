@@ -1,5 +1,6 @@
-import type { FolderDtoType, NoteColorType, NoteDtoType, NoteSummaryType, ProjectDtoType } from '../../shared/contracts/hierarchy';
+import type { DocumentDtoType, DocumentSummaryType, FolderDtoType, NoteColorType, NoteDtoType, NoteSummaryType, ProjectDtoType } from '../../shared/contracts/hierarchy';
 import { buildPathIndex, pathOf, type PathIndex } from '../../shared/tree/paths';
+import type { DocumentRow } from '../db/repositories/documents-repo';
 import type { FolderRow, HierarchyRepo, NoteMetaRow, ProjectRow } from '../db/repositories/hierarchy-repo';
 
 export const toProjectDto = (r: ProjectRow): ProjectDtoType => ({
@@ -37,6 +38,25 @@ export const toNoteDto = (r: NoteMetaRow): NoteDtoType => ({
 
 export const toNoteSummary = (r: NoteMetaRow, index: PathIndex): NoteSummaryType => ({
   ...toNoteDto(r),
+  path: pathOf(index, { projectId: r.project_id, folderId: r.folder_id }),
+});
+
+export const toDocumentDto = (r: DocumentRow): DocumentDtoType => ({
+  id: r.id,
+  projectId: r.project_id,
+  folderId: r.folder_id,
+  title: r.title,
+  kind: r.kind,
+  storage: r.storage,
+  sizeBytes: r.size_bytes,
+  revision: r.revision,
+  favorite: r.favorite === 1,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export const toDocumentSummary = (r: DocumentRow, index: PathIndex): DocumentSummaryType => ({
+  ...toDocumentDto(r),
   path: pathOf(index, { projectId: r.project_id, folderId: r.folder_id }),
 });
 

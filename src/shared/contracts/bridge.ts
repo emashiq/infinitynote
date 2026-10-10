@@ -55,6 +55,32 @@ export interface InfinityBridge {
     changePassword: Call<'lock:changePassword'>;
     setHello: Call<'lock:setHello'>;
     remove: Call<'lock:remove'>;
+    create: Call<'lock:create'>;
+    setPin: Call<'lock:setPin'>;
+  };
+  /** Documents (D-118): main window only; bytes are read through the document protocol, never through IPC. */
+  readonly document: {
+    create: Call<'document:create'>;
+    pickFiles: Query<'document:pickFiles'>;
+    addPicked: Call<'document:addPicked'>;
+    fromAttachment: Call<'document:fromAttachment'>;
+    fromLink: Call<'document:fromLink'>;
+    open: Call<'document:open'>;
+    save: Call<'document:save'>;
+    saveCopy: Call<'document:saveCopy'>;
+    rename: Call<'document:rename'>;
+    move: Call<'document:move'>;
+    trash: Call<'document:trash'>;
+    versions: Call<'document:versions'>;
+    restoreVersion: Call<'document:restoreVersion'>;
+    openExternal: Call<'document:openExternal'>;
+    showInFolder: Call<'document:showInFolder'>;
+    pickPdf: Query<'document:pickPdf'>;
+    createBeside: Call<'document:createBeside'>;
+    copyVersion: Call<'document:copyVersion'>;
+    exportCopy: Call<'document:export'>;
+    readWorkbook: Call<'document:readWorkbook'>;
+    saveWorkbook: Call<'document:saveWorkbook'>;
   };
   readonly settings: {
     get(req: { keys: PublicSettingKey[] }): Res<{ values: Partial<{ [K in PublicSettingKey]: SettingValue<K> }> }>;
@@ -79,6 +105,7 @@ export interface InfinityBridge {
   };
   readonly note: {
     create: Call<'note:create'>;
+    print: Call<'note:print'>;
     rename: Call<'note:rename'>;
     move: Call<'note:move'>;
     trash: Call<'note:trash'>;
@@ -126,6 +153,23 @@ export interface InfinityBridge {
   };
   readonly refs: {
     list: Call<'refs:list'>;
+    documentBacklinks: Call<'refs:documentBacklinks'>;
+  };
+  readonly links: {
+    search: Call<'links:search'>;
+  };
+  readonly comments: {
+    list: Call<'comment:list'>;
+    create: Call<'comment:create'>;
+    reply: Call<'comment:reply'>;
+    edit: Call<'comment:edit'>;
+    delete: Call<'comment:delete'>;
+    deleteThread: Call<'comment:deleteThread'>;
+    resolve: Call<'comment:resolve'>;
+  };
+  readonly graph: {
+    build: Call<'graph:build'>;
+    local: Call<'graph:local'>;
   };
   readonly notes: {
     pick: Call<'notes:pick'>;
@@ -147,6 +191,11 @@ export interface InfinityBridge {
     setCollapsed: Call<'sticky:setCollapsed'>;
     remove: Call<'sticky:remove'>;
     restore: Call<'sticky:restore'>;
+    lockStatus: Call<'sticky:lockStatus'>;
+    reveal: Call<'sticky:reveal'>;
+    activity: Call<'sticky:activity'>;
+    blur: Call<'sticky:blur'>;
+    setPin: Call<'sticky:setPin'>;
   };
   readonly window: {
     getState: Query<'window:getState'>;
@@ -197,6 +246,7 @@ export interface InfinityBridge {
   };
   readonly export: {
     markdown: Call<'export:markdown'>;
+    noteDocument: Call<'export:noteDocument'>;
     portable: Query<'export:portable'>;
   };
   readonly import: {

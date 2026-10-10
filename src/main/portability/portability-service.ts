@@ -1,4 +1,3 @@
-import path from 'node:path';
 import {
   BACKUP_EXTENSION,
   EXPORT_EXTENSION,
@@ -6,15 +5,19 @@ import {
   type BackupCreateResponseType,
   type BackupPrepareResponseType,
   type BackupStatusType,
+  type NoteDiagramType,
   type RestoreOutcomeType,
 } from '../../shared/contracts/portability';
 import { suggestedFileName } from '../../shared/names';
+import { withExtension } from '../services/save-paths';
 import type { TreeChangedEventType } from '../../shared/contracts/hierarchy';
 import { LOCK_MESSAGES } from '../../shared/contracts/locks';
 import type { Db } from '../db/driver';
 import { NotesRepo } from '../db/repositories/notes-repo';
 import type { NoteVault } from '../locks/note-vault';
 import { AppError, errorDetail } from '../services/app-error';
+import type { DocumentStore } from '../documents/document-store';
+import type { DocumentText } from '../documents/text/document-text';
 import type { AttachmentService } from '../services/attachment-service';
 import type { Clock } from '../services/clock';
 import type { DialogAdapter, FileFilter } from '../services/dialog-adapter';
@@ -25,7 +28,9 @@ import type { ReminderService } from '../services/reminder-service';
 import type { SettingsService } from '../services/settings-service';
 import { AutoBackup } from './auto-backup';
 import { writeBackup } from './backup-writer';
+import { buildNoteHtml, type HtmlPrinter } from './note-document';
 import { writeNoteExport } from './note-export';
+import { writeFileAtomically } from './write-file';
 import { importPortable } from './portable-import';
 import { writePortableExport } from './portable-export';
 import { deleteRollbackCopies, listRollbackCopies, prepareRestore, scheduleRestore, type RestorePaths } from './restore';
@@ -34,6 +39,8 @@ const BACKUP_FILTER: FileFilter = { name: 'Infinity Notes backup', extensions: [
 const EXPORT_FILTER: FileFilter = { name: 'Infinity Notes export', extensions: [EXPORT_EXTENSION] };
 const MARKDOWN_FILTER: FileFilter = { name: 'Markdown', extensions: ['md'] };
 const TEXT_FILTER: FileFilter = { name: 'Plain text', extensions: ['txt'] };
+const HTML_FILTER: FileFilter = { name: 'Web page', extensions: ['html'] };
+const PDF_FILTER: FileFilter = { name: 'PDF', extensions: ['pdf'] };
 
 export interface PortabilityServiceDeps {
   db: Db;
@@ -46,6 +53,9 @@ export interface PortabilityServiceDeps {
   settings: SettingsService;
   dialog: Pick<DialogAdapter, 'showSaveFile' | 'showOpenFile' | 'showOpenFolder'>;
   attachments: Pick<AttachmentService, 'importArchived'>;
+  documents: Pick<DocumentStore, 'putBytes' | 'fileOf'>;
+  /** Indexes the text of imported documents. */
+  documentText: DocumentText;
   content: NoteContent;
   /** Exports a locked note only while it is unlocked (D-111). */
   vault: NoteVault;
@@ -55,14 +65,11 @@ export interface PortabilityServiceDeps {
   restart(): void;
   /** What a restore at this start did, if one was pending. */
   restoreOutcome: RestoreOutcomeType | null;
+  /** Makes PDFs and prints exported pages in a window that is never shown (D-163). */
+  printer: HtmlPrinter;
 }
 
 type Ctx = { webContentsId: number };
-
-/** Adds the extension a save dialog was asked for; some Linux dialogs return the typed name without it. */
-function withExtension(file: string, extension: string): string {
-  return path.extname(file).toLowerCase() === `.${extension}` ? file : `${file}.${extension}`;
-}
 
 /** "2026-10-09" in local time, for suggested file names. */
 function localDate(ms: number): string {
@@ -193,6 +200,39 @@ export class PortabilityService {
     return { canceled: false as const, file: target, ...result };
   }
 
+  /** The page of a note for HTML, PDF and printing (D-163); a locked note only while it is unlocked (D-111). */
+  private async notePage(noteId: string, diagrams: readonly NoteDiagramType[]) {
+    const row = new NotesRepo(this.deps.db).getContentRow(noteId);
+    if (!row || row.deleted_at !== null) throw new AppError('NOT_FOUND', PORTABILITY_MESSAGES.noteMissing);
+    if (row.locked === 1 && !this.deps.vault.isUnlocked(noteId)) throw new AppError('FORBIDDEN', LOCK_MESSAGES.exportLocked, { locked: true });
+    const { db, paths, logger, vault } = this.deps;
+    return buildNoteHtml({ db, dataDir: paths.dataDir, logger, vault }, noteId, new Map(diagrams.map((d) => [d.source, d.svg])));
+  }
+
+  /** "Export as HTML…" and "Export as PDF…" (F11.5, D-163): one self-contained file the user chooses. */
+  async exportNoteDocument(req: { noteId: string; format: 'html' | 'pdf'; diagrams: readonly NoteDiagramType[] }, ctx: Ctx) {
+    const page = await this.notePage(req.noteId, req.diagrams);
+    const pdf = req.format === 'pdf';
+    const file = await this.deps.dialog.showSaveFile({
+      webContentsId: ctx.webContentsId,
+      title: pdf ? 'Export note as PDF' : 'Export note as HTML',
+      defaultName: `${suggestedFileName(page.title)}.${req.format}`,
+      filters: [pdf ? PDF_FILTER : HTML_FILTER],
+    });
+    if (file === null) return { canceled: true as const };
+    const target = withExtension(file, req.format);
+    await this.exclusive(() =>
+      this.writing('export', async () => writeFileAtomically(target, pdf ? await this.deps.printer.toPdf(page.html) : Buffer.from(page.html, 'utf8'))),
+    );
+    return { canceled: false as const, file: target };
+  }
+
+  /** "Print…" (F11.5): the note's page in the system print dialog. */
+  async printNote(req: { noteId: string; diagrams: readonly NoteDiagramType[] }) {
+    const page = await this.notePage(req.noteId, req.diagrams);
+    return { printed: await this.deps.printer.print(page.html) };
+  }
+
   async exportPortable(ctx: Ctx) {
     const file = await this.deps.dialog.showSaveFile({
       webContentsId: ctx.webContentsId,
@@ -212,10 +252,10 @@ export class PortabilityService {
   async importPortable(ctx: Ctx) {
     const file = await this.deps.dialog.showOpenFile({ webContentsId: ctx.webContentsId, title: 'Import notes', filters: [EXPORT_FILTER] });
     if (file === null) return { canceled: true as const };
-    const { db, ids, clock, logger, attachments, content, reminders, onTreeChanged } = this.deps;
+    const { db, ids, clock, logger, attachments, documents, documentText, content, reminders, onTreeChanged } = this.deps;
     const result = await this.exclusive(() =>
       this.writing('import', () =>
-        importPortable({ db, uuid: () => ids.uuid(), now: () => clock.now(), logger, attachments, content, reminders, onTreeChanged }, file),
+        importPortable({ db, uuid: () => ids.uuid(), now: () => clock.now(), logger, attachments, documents, text: documentText, content, reminders, onTreeChanged }, file),
       ),
     );
     return { canceled: false as const, ...result };

@@ -111,6 +111,7 @@ export function createDesktop(deps: DesktopDeps): Desktop {
       theme: () => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light'),
       logger,
       onLayout: deps.onStickyLayout,
+      lockWindows: services.stickyLocks,
     });
     widget = new WidgetManager({
       store: services.widgetState,

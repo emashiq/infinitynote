@@ -43,13 +43,16 @@ export class NoticeStore {
   }
 }
 
-export function closedTabsNotice(count: number, includesMissing: boolean): string {
+/** What the closed tabs showed: notes, documents (D-118), or both. */
+export type ClosedTabSubject = 'note' | 'document' | 'item';
+
+export function closedTabsNotice(count: number, includesMissing: boolean, subject: ClosedTabSubject = 'note'): string {
   if (includesMissing) {
     return count === 1
-      ? '1 tab was closed because its note is in Trash or no longer exists'
-      : `${count} tabs were closed because their notes are in Trash or no longer exist`;
+      ? `1 tab was closed because its ${subject} is in Trash or no longer exists`
+      : `${count} tabs were closed because their ${subject}s are in Trash or no longer exist`;
   }
-  return count === 1 ? '1 tab was closed because its note is in Trash' : `${count} tabs were closed because their notes are in Trash`;
+  return count === 1 ? `1 tab was closed because its ${subject} is in Trash` : `${count} tabs were closed because their ${subject}s are in Trash`;
 }
 
 /** Shown when the active note was trashed elsewhere while it had unsaved edits that main kept as a draft (F-02-1). */

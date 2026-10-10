@@ -104,12 +104,13 @@ test('tree', async () => {
   await expect.poll(() => h.one<{ deleted_at: number | null }>('SELECT deleted_at FROM notes WHERE id = ?', k2)?.deleted_at).not.toBeNull();
   expect(await focusIsContained(page)).toBe(true);
 
-  // Shift+F10, Down, Down, Enter chooses "New folder"; Enter accepts the default name.
+  // Shift+F10, Down to "New folder" (after the note, sticky and document items), Enter; Enter accepts the default name.
   await treeByKey(page, `folder:${kf}`).focus();
   await page.keyboard.press('Shift+F10');
   await expect(page.getByRole('menu')).toBeVisible();
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
+  const focusedItem = () => page.evaluate(() => document.activeElement?.textContent ?? '');
+  for (let i = 0; i < 15 && (await focusedItem()) !== 'New folder'; i += 1) await page.keyboard.press('ArrowDown');
+  expect(await focusedItem()).toBe('New folder');
   await page.keyboard.press('Enter');
   const dialog = dialogByName(page, 'New folder');
   await expect(dialog).toBeVisible();

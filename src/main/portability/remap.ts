@@ -1,6 +1,6 @@
-import { BLOCK_ID_TYPES, collectBlockIds, normalizeRichDoc, type RichDocLike, type RichNode } from '../../shared/editor/doc-schema';
+import { BLOCK_ID_TYPES, collectBlockIds, normalizeRichDoc, type RichDocLike, type RichMark, type RichNode } from '../../shared/editor/doc-schema';
 
-/** Fresh IDs for one import (INF-PORT-04): every project, folder, note, block, attachment and linked file gets a new ID. */
+/** Fresh IDs for one import (INF-PORT-04): every project, folder, note, block, attachment, linked file and comment thread gets a new ID. */
 export interface IdRemap {
   /** The new ID of an imported item, created on first use; an ID outside the archive also gets a stable fresh ID. */
   item(oldId: string): string;
@@ -10,6 +10,8 @@ export interface IdRemap {
   attachment(oldId: string): string | null;
   /** The new ID of an archived linked file (D-108), or null when the archive does not list it. */
   link(oldId: string): string | null;
+  /** The new ID of an archived comment thread (D-165), or null when the archive does not list it. */
+  thread(oldId: string): string | null;
 }
 
 export function createIdRemap(deps: {
@@ -18,6 +20,7 @@ export function createIdRemap(deps: {
   blocksByNote: ReadonlyMap<string, ReadonlySet<string>>;
   attachments: ReadonlyMap<string, string>;
   links: ReadonlyMap<string, string>;
+  threads: ReadonlyMap<string, string>;
 }): IdRemap {
   const items = new Map<string, string>();
   const blocks = new Map<string, string>();
@@ -43,6 +46,7 @@ export function createIdRemap(deps: {
     },
     attachment: (oldId) => deps.attachments.get(oldId) ?? null,
     link: (oldId) => deps.links.get(oldId) ?? null,
+    thread: (oldId) => deps.threads.get(oldId) ?? null,
   };
 }
 
@@ -58,10 +62,10 @@ export function archivedBlockIds(content: unknown): Set<string> {
 const BLOCK_TYPES: ReadonlySet<string> = new Set(BLOCK_ID_TYPES);
 
 /**
- * Rewrites an archived rich document for its new note: block IDs, `noteRef` targets (a target outside the archive keeps
+ * Rewrites an archived rich document for its new note: block IDs, `noteRef` and `docRef` targets (a target outside the archive keeps
  * its label and shows as missing, never aliasing a local note), attachment IDs and link IDs. Images and files whose
  * attachment could not be imported, and linked files the archive does not list, are dropped, since a node must name a
- * stored attachment or link.
+ * stored attachment or link. Comment marks follow their thread; a mark of a thread the archive does not list is dropped.
  */
 export function remapRichDoc(doc: RichDocLike, oldNoteId: string, remap: IdRemap): RichDocLike {
   const rewrite = (node: RichNode): RichNode | null => {
@@ -83,10 +87,20 @@ export function remapRichDoc(doc: RichDocLike, oldNoteId: string, remap: IdRemap
         attrs.noteId = remap.item(target);
         attrs.blockId = typeof attrs.blockId === 'string' ? remap.block(target, attrs.blockId) : null;
       }
+      if (node.type === 'docRef' && typeof attrs.documentId === 'string') attrs.documentId = remap.item(attrs.documentId);
     }
+    if (node.marks?.some((m) => m.type === 'comment')) return { ...node, marks: remapCommentMarks(node.marks, remap) };
     const content = node.content?.map(rewrite).filter((c): c is RichNode => c !== null);
     return { ...node, ...(attrs ? { attrs } : {}), ...(content ? { content } : {}) };
   };
   const content = (doc.content as RichNode[] | undefined)?.map(rewrite).filter((c): c is RichNode => c !== null);
   return normalizeRichDoc({ ...doc, content: content && content.length > 0 ? content : [{ type: 'paragraph' }] });
+}
+
+function remapCommentMarks(marks: readonly RichMark[], remap: IdRemap): RichMark[] {
+  return marks.flatMap((m) => {
+    if (m.type !== 'comment') return [m];
+    const threadId = typeof m.attrs?.threadId === 'string' ? remap.thread(m.attrs.threadId) : null;
+    return threadId ? [{ type: 'comment', attrs: { threadId } }] : [];
+  });
 }
