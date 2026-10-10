@@ -386,6 +386,28 @@ describe('documents in Trash', () => {
     s.check();
   });
 
+  it('bytes stored again after their blob sat unused past the grace are kept while the import goes on (D-179)', async () => {
+    const { s, documentRow, blobFile } = await setupDocuments();
+    const { document } = await s.documents.createBlank('docx', COMMON);
+    const blob = documentRow(document.id)!.blob_id!;
+    const bytes = fs.readFileSync(blobFile(blob));
+    s.trash.trashDocument(document.id);
+    s.trash.purge({ target: { kind: 'all' }, confirmed: true });
+    s.clock.advance(ATTACHMENT_GC_GRACE_MS + 1000);
+    // An import stores the same bytes and, before it writes the row that uses them, maintenance runs.
+    expect((await s.documentStore.putBytes('docx', bytes)).id).toBe(blob);
+    expect((await s.maintenance.run()).documentBlobsDeleted).toBe(0);
+    expect(fs.existsSync(blobFile(blob))).toBe(true);
+    const { document: again } = await s.documents.createBlank('docx', COMMON);
+    expect(documentRow(again.id)!.blob_id).toBe(blob);
+    // Left unused, the blob still goes after a full grace period of its own.
+    s.trash.trashDocument(again.id);
+    s.trash.purge({ target: { kind: 'all' }, confirmed: true });
+    expect((await s.maintenance.run()).documentBlobsDeleted).toBe(0);
+    s.clock.advance(ATTACHMENT_GC_GRACE_MS + 1000);
+    expect((await s.maintenance.run()).documentBlobsDeleted).toBe(1);
+  });
+
   it('versions keep their blobs alive until they are pruned', async () => {
     const { s } = await setupDocuments();
     const { document } = await s.documents.createBlank('docx', COMMON);

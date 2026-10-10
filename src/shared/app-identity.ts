@@ -24,7 +24,9 @@ export const ATTACHMENT_SCHEME = 'infinity-attachment';
 /** Document bytes by document ID (D-118), and HTML documents for the sandboxed viewer frame. */
 export const DOCUMENT_SCHEME = 'infinity-document';
 export const HTML_DOCUMENT_SCHEME = 'infinity-html';
-export const APP_VERSION = '0.2.0';
+/** Pages printed or exported as PDF, served from memory to the hidden print window only (D-176). */
+export const PRINT_PAGE_SCHEME = 'infinity-print';
+export const APP_VERSION = '0.3.0';
 export const AUTHOR_NAME = 'Ashiqur Rahman Emran';
 export const DEVELOPER_CREDIT = `Developed by ${AUTHOR_NAME}`;
 /** Also electron-builder's copyright field (checked by the app identity test). */

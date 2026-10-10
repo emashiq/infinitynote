@@ -6,7 +6,7 @@ import { findInSlides } from '../../../src/renderer/documents/pptx/pptx-find';
 import { slideImage } from '../../../src/renderer/documents/pptx/pptx-image';
 import { contentNotShown, slideShapes } from '../../../src/renderer/documents/pptx/pptx-model';
 import { readAllNotes, writeSlideNotes } from '../../../src/renderer/documents/pptx/pptx-notes';
-import { readPresentation, repack, withinBounds } from '../../../src/renderer/documents/pptx/pptx-package';
+import { readPresentation, repack } from '../../../src/renderer/documents/pptx/pptx-package';
 import { renderSlides } from '../../../src/renderer/documents/pptx/pptx-render';
 import { EditRefused, PptxSession } from '../../../src/renderer/documents/pptx/pptx-session';
 import { browserXml, readShapeText, setShapeBox, writeShapeText } from '../../../src/renderer/documents/pptx/pptx-xml';
@@ -43,7 +43,7 @@ describe('presentation packages (F5, D-150, D-153)', () => {
     const types = strFromU8(parts['[Content_Types].xml']!).replace('presentation.main+xml', 'presentation.macroEnabled.main+xml');
     expect(readPresentation(repack(parts, new Map([['[Content_Types].xml', strToU8(types)]])))).toEqual({ ok: false, reason: 'macros' });
     // A highly compressible entry over 1 MiB is a zip bomb shape, whatever its name.
-    expect(withinBounds(zipSync({ ...parts, 'ppt/media/fill.bin': new Uint8Array(8 * 1024 * 1024) }))).toBe(false);
+    expect(readPresentation(zipSync({ ...parts, 'ppt/media/fill.bin': new Uint8Array(8 * 1024 * 1024) }))).toEqual({ ok: false, reason: 'notPresentation' });
   });
 
   it('lists the content it does not show', () => {

@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { NOTE_HTML_CSP } from '../../src/main/portability/note-html';
+import { removeLeftoverPrintPages } from '../../src/main/windows/print-pages';
 import { ExportNoteDocumentRequest } from '../../src/shared/contracts/portability';
 import { setupServices, type Services } from './hierarchy-helpers';
 import { paragraph, saveDoc, tmpFile } from './portability-helpers';
@@ -85,5 +87,59 @@ describe('note export as HTML and PDF, and printing (F11.5, D-163)', () => {
     await expect(s.portability.printNote({ noteId: note.id, diagrams: [] })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(ExportNoteDocumentRequest.safeParse({ noteId: note.id, format: 'html', diagrams: [{ source: 'x', svg: '<script>x</script>' }] }).success).toBe(false);
     expect(ExportNoteDocumentRequest.safeParse({ noteId: note.id, format: 'docx', diagrams: [] }).success).toBe(false);
+  });
+});
+
+describe('printing and PDF export keep the page off the disk (D-176)', () => {
+  const MARKER = 'quokkaprintmarker';
+  const PASSWORD = 'correct horse battery';
+
+  /** The files under a test profile (database, WAL, attachments, documents, …) that hold the marker. */
+  const filesWithMarker = (root: string): string[] =>
+    fs
+      .readdirSync(root, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.join(entry.parentPath, entry.name))
+      .filter((file) => {
+        const bytes = fs.readFileSync(file);
+        return bytes.includes(Buffer.from(MARKER, 'utf8')) || bytes.includes(Buffer.from(MARKER, 'utf16le'));
+      });
+
+  it('an unlocked locked note is printed and exported as PDF while no file holds its text, and no export-tmp appears', async () => {
+    const s = await setupServices();
+    const note = s.note(null, null, 'Vault');
+    saveDoc(s, note.id, { type: 'doc', content: [paragraph(randomUUID(), `Code ${MARKER}`)] });
+    // The scan means something: before the lock the database holds the text.
+    expect(filesWithMarker(s.t.dir)).not.toEqual([]);
+    await s.locks.lock({ noteId: note.id, password: PASSWORD, hello: false });
+    await expect(s.portability.printNote({ noteId: note.id, diagrams: [] })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await s.locks.unlock({ noteId: note.id, password: PASSWORD });
+
+    const whilePrinting: string[][] = [];
+    s.printResult.whilePrinting = () => void whilePrinting.push([...filesWithMarker(s.t.dir), ...(fs.existsSync(s.paths.leftoverPrintDir) ? [s.paths.leftoverPrintDir] : [])]);
+    expect(await s.portability.printNote({ noteId: note.id, diagrams: [] })).toEqual({ printed: true });
+    const pdf = tmpFile('Vault.pdf');
+    s.pathQueue.push(pdf);
+    expect(await s.portability.exportNoteDocument({ noteId: note.id, format: 'pdf', diagrams: [] }, CTX)).toEqual({ canceled: false, file: pdf });
+
+    // The printer had the decrypted page (in memory) both times; at those moments no file held the text.
+    expect(s.printed.map((p) => p.op)).toEqual(['print', 'pdf']);
+    for (const page of s.printed) expect(page.html).toContain(MARKER);
+    expect(whilePrinting).toEqual([[], []]);
+    expect(filesWithMarker(s.t.dir)).toEqual([]);
+    s.locks.stop();
+  });
+
+  it('pages earlier builds left in data/export-tmp are removed at startup, and a missing folder is fine', async () => {
+    const s = await setupServices();
+    const dir = s.paths.leftoverPrintDir;
+    expect(dir).toBe(path.join(s.dataDir, 'export-tmp'));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${randomUUID()}.html`), `<p>${MARKER}</p>`);
+    fs.writeFileSync(path.join(dir, `${randomUUID()}.html`), '<p>other</p>');
+    expect(await removeLeftoverPrintPages(dir, s.logger)).toBe(2);
+    expect(fs.existsSync(dir)).toBe(false);
+    expect(await removeLeftoverPrintPages(dir, s.logger)).toBe(0);
+    expect(filesWithMarker(s.t.dir)).toEqual([]);
   });
 });

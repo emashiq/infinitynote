@@ -34,6 +34,11 @@ export class DocumentBlobsRepo {
       .run(b.id, b.sha256, b.relativePath, b.sizeBytes, b.now, b.now);
   }
 
+  /** A row that is still unreferenced starts its grace period again at `now` (its bytes are about to be used). */
+  restartGrace(id: string, now: number): void {
+    this.db.prepare<[number, string]>('UPDATE document_blobs SET unreferenced_since = ? WHERE id = ? AND unreferenced_since IS NOT NULL').run(now, id);
+  }
+
   /** Every row, for the backup manifest. */
   all(): DocumentBlobRow[] {
     return this.db.prepare<[], DocumentBlobRow>(`SELECT ${COLUMNS} FROM document_blobs ORDER BY id`).all();

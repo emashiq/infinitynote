@@ -1,7 +1,7 @@
 import '@portone/docx-editor/styles.css';
 import { MAX_COMMENT_QUOTE } from '../../../shared/contracts/comments';
 import '../../styles/docx.css';
-import { DEFAULT_ZOOM_LEVELS, DocxEditor, type DocxEditorHandle, type DocxEditorMode, type DocxEditorZoom, type DocxImportError } from '@portone/docx-editor';
+import { DEFAULT_ZOOM_LEVELS, DocxEditor, type DocxEditorHandle, type DocxEditorMode, type DocxEditorZoom, type DocxImportErrorCode } from '@portone/docx-editor';
 import { documentFidelity, insertPageBreak } from '@portone/docx-editor/commands';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import { keymap } from '@tiptap/pm/keymap';
@@ -14,6 +14,7 @@ import type { DocumentViewerProps } from '../viewer-registry';
 import { exportForSave } from './docx-export';
 import { clearFind, docxFindPlugin, findState, runFind, stepFind } from './docx-find';
 import { canPreview, DOCX_IMPORT_MESSAGES, DOCX_MESSAGES, EDIT_REFUSAL_MESSAGES, hasPlaceholders } from './docx-messages';
+import { wordPackageRefusal } from './docx-package';
 import { paragraphIndexAt, showPosition, targetPosition } from './docx-targets';
 
 /** The read-only preview of files the editor refuses is its own chunk, fetched only for such a file. */
@@ -27,7 +28,7 @@ const COMMENT_AUTHOR = { id: 'infinity-notes', name: 'Infinity Notes', initials:
 const EDIT_MODE: DocxEditorMode = { kind: 'edit', author: COMMENT_AUTHOR };
 const READ_ONLY_MODE: DocxEditorMode = { kind: 'readOnly' };
 
-type Loaded = { status: 'loading' } | { status: 'error' } | { status: 'ready'; bytes: Uint8Array };
+type Loaded = { status: 'loading' } | { status: 'error' } | { status: 'refused'; code: DocxImportErrorCode; bytes: Uint8Array } | { status: 'ready'; bytes: Uint8Array };
 
 /**
  * Ctrl+K is the app's search everywhere (the window opens it before the editor sees the key), so the editor's own
@@ -40,15 +41,15 @@ function labelPlugin(label: string): Plugin {
   return new Plugin({ props: { attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': label } } });
 }
 
-function Refused({ error, bytes }: { error: DocxImportError; bytes: Uint8Array }) {
+function Refused({ code, bytes }: { code: DocxImportErrorCode; bytes: Uint8Array }) {
   return (
     <div className="docx-refused">
       <div role="alert" className="banner docx-refused-banner">
         <strong>{DOCX_MESSAGES.refusedTitle}</strong>
-        <span>{DOCX_IMPORT_MESSAGES[error.code]}</span>
-        {canPreview(error.code) ? <span className="muted">{DOCX_MESSAGES.previewNote}</span> : null}
+        <span>{DOCX_IMPORT_MESSAGES[code]}</span>
+        {canPreview(code) ? <span className="muted">{DOCX_MESSAGES.previewNote}</span> : null}
       </div>
-      {canPreview(error.code) ? (
+      {canPreview(code) ? (
         <Suspense fallback={<span className="muted docx-message">Opening preview…</span>}>
           <DocxPreview bytes={bytes} />
         </Suspense>
@@ -92,7 +93,10 @@ export default function DocxViewer({ document, sourceUrl, host, target, findRequ
     fetch(source, { signal: abort.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error(`status ${res.status}`);
-        setLoaded({ status: 'ready', bytes: new Uint8Array(await res.arrayBuffer()) });
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        // The package's directory is checked before the editor unpacks anything (D-178).
+        const refusal = wordPackageRefusal(bytes);
+        setLoaded(refusal ? { status: 'refused', code: refusal, bytes } : { status: 'ready', bytes });
       })
       .catch(() => {
         if (!abort.signal.aborted) setLoaded({ status: 'error' });
@@ -255,6 +259,8 @@ export default function DocxViewer({ document, sourceUrl, host, target, findRequ
           <p role="alert" className="docx-message">
             {DOCX_MESSAGES.unreadable}
           </p>
+        ) : loaded.status === 'refused' ? (
+          <Refused code={loaded.code} bytes={loaded.bytes} />
         ) : (
           <DocxEditor
             ref={editor}
@@ -267,7 +273,7 @@ export default function DocxViewer({ document, sourceUrl, host, target, findRequ
             onReady={onReady}
             onChange={onChange}
             onEditRefused={(r) => setRefusal(EDIT_REFUSAL_MESSAGES[r.reason])}
-            renderImportError={(error) => <Refused error={error} bytes={loaded.bytes} />}
+            renderImportError={(error) => <Refused code={error.code} bytes={loaded.bytes} />}
           />
         )}
       </div>

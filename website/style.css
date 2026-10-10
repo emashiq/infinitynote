@@ -222,6 +222,39 @@ pre code {
   filter: drop-shadow(0 12px 28px rgb(67 82 232 / 30%));
 }
 
+/* Sits on its own line between the logo and the heading. */
+.whats-new {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 18px auto 0;
+  padding: 4px 14px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-decoration: none;
+}
+
+.whats-new:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.whats-new-tag {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .hero h1 {
   margin: 18px 0 10px;
   font-size: clamp(2rem, 5vw, 3.1rem);

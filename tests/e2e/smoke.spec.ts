@@ -12,7 +12,7 @@ test('starts a real window with temp userData', async () => {
   expect(await page.title()).toBe('Infinity Notes');
   await expect(page.locator('h1')).toHaveText('Infinity Notes');
   await railGo(page, 'Settings');
-  await expect(page.getByText('Version 0.2.0')).toBeVisible();
+  await expect(page.getByText('Version 0.3.0')).toBeVisible();
   const windows = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
   expect(windows).toBe(1);
   const nativeTitle = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('#/'))!.getTitle());

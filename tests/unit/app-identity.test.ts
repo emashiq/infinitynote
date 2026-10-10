@@ -64,7 +64,7 @@ describe('app identity (INF-FND-11)', () => {
   it('package.json identity and engines', () => {
     expect(pkg.name).toBe(NPM_NAME);
     expect(pkg.productName).toBe(PRODUCT_NAME);
-    expect(pkg.version).toBe('0.2.0');
+    expect(pkg.version).toBe('0.3.0');
     expect(pkg.version).toBe(APP_VERSION);
     expect(pkg.engines.node).toBe('>=24.15.0 <25');
     expect(pkg.main).toBe('out/main/index.js');

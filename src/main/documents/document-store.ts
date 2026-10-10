@@ -70,7 +70,7 @@ export class DocumentStore {
     try {
       if (!(await isDocumentOfKind(kind, temp))) throw new AppError('VALIDATION_FAILED', DOCUMENT_MESSAGES.damaged(kind));
       const { sha256, size } = await hashFile(temp);
-      const existing = this.blobs.findBySha(sha256);
+      const existing = this.reuse(sha256);
       if (existing) {
         // A stored row whose file went missing gets the file back.
         if (!(await this.fileOf(existing))) await moveIntoPlace(temp, path.join(this.deps.dataDir, existing.relative_path));
@@ -93,6 +93,20 @@ export class DocumentStore {
     } finally {
       await fs.promises.rm(temp, { force: true });
     }
+  }
+
+  /**
+   * The stored blob of these bytes, if any. Its grace period restarts in the same transaction that finds it, so blob GC
+   * (which re-checks the clock in its own transaction) cannot delete it while the caller still has to insert the row
+   * that uses it, which may wait for text extraction (D-179).
+   */
+  private reuse(sha256: string): DocumentBlobRow | undefined {
+    return this.deps.db.transaction(() => {
+      const row = this.blobs.findBySha(sha256);
+      if (!row) return undefined;
+      this.blobs.restartGrace(row.id, this.deps.clock.now());
+      return this.blobs.get(row.id);
+    }, 'immediate');
   }
 
   /**

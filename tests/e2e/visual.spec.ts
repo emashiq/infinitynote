@@ -215,7 +215,9 @@ test('760x560 light: formatting toolbar on a selection', async () => {
   await openByPalette(page, 'Editor tour');
   await expect(editor(page)).toContainText('Launch plan');
   await expect(page.getByRole('toolbar', { name: 'Formatting' })).toHaveCount(0);
-  await editor(page).click();
+  // Into the text, not the editor's middle: there the code block's language picker (a native select since v0.3.0) can
+  // sit under the pointer with Windows font metrics, and its open list then takes the keys (Run R).
+  await editor(page).getByRole('heading', { name: 'Launch plan' }).click();
   await page.keyboard.press('Control+Home');
   await page.keyboard.press('Shift+End');
   await expect(page.getByRole('toolbar', { name: 'Formatting' })).toBeVisible();

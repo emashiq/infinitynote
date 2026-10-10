@@ -607,3 +607,49 @@ All logs under `.infinity-work/logs/release-0.3.0/`.
 - Lazy loading of the highlight.js grammars (main chunk 1,525 kB) was not done: the TipTap lowlight plugin recomputes decorations only on document changes, so grammars arriving later would leave visible code blocks unhighlighted until the next edit; doing it cleanly needs a plugin of our own. Document print per kind was skipped (optional).
 - `graph.test` › "a step keeps to its time budget …" asserts one layout tick of 2,000 nodes under 50 ms; under the full parallel unit run in WSL one tick measured 65 ms once (it passes alone and on Windows). Kept as is (a timing assertion is not loosened); see the WSL check results above.
 - `graph.spec` (finding a node by hovering a grid over the canvas) takes about 30 s under Xvfb.
+
+## Run R (acceptance repairs)
+
+Implementer: infinity-code-opus. Scope: the acceptance report's must-fix M1, the CI failure of `graph.test`'s wall-clock assertion (L2), the follow-ups L1, L3 and L4, and the three Windows E2E failures of GitHub Actions run 38059580351 (windows-2025: `comments.spec:51`, `comments.spec:79`, `visual.spec:210`; traces and error contexts read from the run's artifact). No Electron window was opened on the Windows desktop: Windows ran only `check` and `build`; Electron ran in WSL (user `infinity`, `/home/infinity/infinity-notes`, synced with `rsync -a --delete` and the Run 7 excludes, its own `node_modules` kept) as `env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_SESSION_TYPE …`, so the runner re-ran itself under `xvfb-run`.
+
+### Changes
+
+- **M1, print pages from memory (D-176, amends D-163).** `src/main/windows/print-pages.ts` (new): an in-memory page store served by random token (`infinity-print://<uuid>/`, GET at the root only, page CSP as a header, `nosniff`, `no-store`, `no-referrer`; 404 for everything else and once released) and `removeLeftoverPrintPages`. `src/main/windows/html-printer.ts`: the hidden window (never shown, JavaScript off, no preload, sandbox) now uses the in-memory session `session.fromPartition('infinity-print', { cache: false })` with the network guard, all permissions denied and the scheme's handler; the page is released and the window destroyed after the PDF or the print dialog, also on failure. No temporary file is written any more. `src/shared/app-identity.ts` (`PRINT_PAGE_SCHEME`), `src/main/windows/schemes.ts` (standard, secure), `src/main/app-paths.ts` (`leftoverPrintDir` = `data/export-tmp`), `src/main/index.ts` (printer without a temp dir; the leftover folder is deleted at startup after a pending restore).
+- **L2 / CI, deterministic layout budget (D-177).** `tests/unit/graph.test.ts`: `step`'s budget contract tested with its injected clock moving only when the simulation ticks (3 ticks of 3 ms in an 8 ms budget, then stop; one tick when a tick is slower than the budget; no tick once settled; ticks again after reheat); the model-build test asserts the whole graph, not its time. Wall-clock checks moved to `tests/e2e/perf.spec.ts` (serial perf suite): medians of the 2,000/5,000 build (< 250 ms) and tick (< 50 ms), with a `PERF graph-2000` line. Shared generator `tests/support/graph-fixture.ts`. Scan of the unit/integration tests added in v0.3.0 (`git diff fb41102..HEAD -- tests/unit tests/integration`): no other elapsed-time assertion (the remaining `setTimeout` waits are ordered timers); pre-v0.3.0 ones were left alone.
+- **L4, FortuneSheet license (D-180).** `tools/vendored-licenses/fortune-sheet.txt` (LICENSE of ruilisi/fortune-sheet at tag v1.0.4, MIT, Suzhou Ruilisi Technology Co., Ltd), `tools/third-party-notices.mjs` (`UPSTREAM_LICENSE_FILES`, shared `vendoredLicense`), `THIRD_PARTY_NOTICES.md` regenerated.
+- **L3, Word package preflight (D-178).** `src/renderer/documents/zip-bounds.ts` (new, `checkZipBounds` moved out of `pptx-package.ts`, now a verdict `ok`/`tooLarge`/`unreadable`), `src/renderer/documents/docx/docx-package.ts` (new, `WORD_LIMITS`, `wordPackageRefusal`), `DocxViewer.tsx` (checks the bytes before the editor mounts; shows the editor's own "too large" / "not a readable Word document" reason), `pptx-package.ts` uses the shared check.
+- **Windows CI, Ctrl+Alt+M (D-181).** Root cause in app code: the shortcut was Tiptap's `'Mod-Alt-m'`; Playwright sends `key: "M"`, the keymap finds no `Ctrl-Alt-M`, and prosemirror-keymap skips its physical-key fallback on Windows whenever Ctrl and Alt are held (AltGr), while Linux falls back and matched. Real Windows users with Caps Lock or a non-Latin layout hit the same. `src/renderer/editor/comments/comment-marks.ts`: `isCommentShortcut` (Ctrl+Alt, no Shift/Meta; `m` in either case, or physical `KeyM` unless AltGr is reported) in the plugin's `handleKeyDown`. The shortcut and its documentation stay Ctrl+Alt+M.
+- **Windows CI, visual toolbar test (D-181).** `visual.spec` › 760x560 formatting toolbar clicked the editor's middle; a probe under Xvfb at 760x560 put that point on the code block's last line, 35 px below its language `<select>` (new in v0.3.0, D-159); with Windows font metrics a click there can open the native list, which takes Ctrl+Home and Shift+End. The test now clicks the heading it selects (no product defect).
+- **L1, blob reuse and GC (D-179).** `DocumentStore.commit` finds an existing blob and restarts its grace period in one immediate transaction (`DocumentBlobsRepo.restartGrace`); GC re-checks inside its own transaction.
+
+### Tests added or changed
+
+- unit `print-pages.test` (3): served at its token with the page policy; 404 after release, for other tokens, paths, queries, POST, other schemes, bad URLs; tokens differ.
+- integration `note-documents.test` (+2): a locked note, unlocked, printed and exported as PDF; while the (fake) printer holds the decrypted page no file under the profile holds its text and `export-tmp` does not exist; locked, printing is FORBIDDEN; the startup sweep removes leftovers and accepts a missing folder. `hierarchy-helpers.ts`: `printResult.whilePrinting` hook.
+- integration `documents.test` (+1): bytes stored again after their blob sat unused past the grace survive maintenance before the row is written; the blob still goes after a fresh grace. Fails without the fix (1 blob deleted).
+- unit `renderer/editor/comments.test` (+1): `isCommentShortcut` cases (`m`, `M`, Bangla letter on KeyM, AltGr µ refused, Shift/Meta/no Ctrl/no Alt/other key refused) and a `keydown` with `key: "M"` on the editor starts the comment once, not with Shift, not read-only.
+- unit `graph.test` (layout budget, 3 deterministic cases replace the wall-clock one), `renderer/zip-bounds.test` (3), `renderer/docx-viewer.test` (+1: a zip-bomb-shaped package is refused before the editor, no preview), `renderer/pptx-editor.test` (bomb shape checked through `readPresentation`).
+- E2E `visual.spec` (760x560 toolbar: click the heading).
+- E2E `extras.spec` (export: a pre-seeded `data/export-tmp` is gone after start; after Export as PDF no file under userData but the database holds the note's text), `perf.spec` (+1 graph timing).
+
+### Commands run
+
+Logs under `.infinity-work/logs/release-0.3.0/`.
+
+| Where | Command | Result | Log |
+| --- | --- | --- | --- |
+| Windows | targeted `npx vitest run` (note-documents, documents, graph, print-pages, zip-bounds, pptx-editor, docx-viewer) | all passed; `documents.test` › D-179 fails with `document-store.ts` reverted (expected 1 to be 0) | (console) |
+| Windows | `npm run check` | lint 0 warnings, typecheck, unit 137 files / 1078 passed, integration 63 files / 576 passed + 2 skipped (pre-existing), traceability fails=0 warns=0, EXIT 0 | `runR-win-check.log` |
+| Windows | `npm run build`; `node tools/third-party-notices.mjs --check` | build EXIT 0; notices up to date | `runR-win-build.log` |
+| WSL | `rsync -a --delete` (Run 7 excludes) + `diff -rq` | MIRROR_IDENTICAL; `node_modules` kept (lockfile unchanged) | `runR-wsl-sync.log` |
+| WSL | `npm run check` | lint, typecheck, unit 137 files / 1078 passed, integration 63 files / 578 passed, traceability fails=0, EXIT 0 | `runR-wsl-check.log` |
+| WSL Xvfb | `npm run test:e2e -- tests/e2e/extras.spec.ts tests/e2e/docx.spec.ts tests/e2e/pptx.spec.ts tests/e2e/documents.spec.ts` | build, then 24 passed (36.1 s), EXIT 0 | `runR-e2e-affected.log` |
+| Windows (after the CI repairs) | `npm run check`; `npm run build`; notices `--check` | unit 137 files / 1079 passed, integration 576 passed + 2 skipped, traceability fails=0, EXIT 0; build EXIT 0; notices up to date | `runR-win-check-2.log`, `runR-win-build-2.log` |
+| WSL (after the CI repairs) | sync (MIRROR_IDENTICAL); `npm run check` | unit 1079 passed, integration 578 passed, traceability fails=0, EXIT 0 | `runR-wsl-sync-2.log`, `runR-wsl-check-2.log` |
+| WSL Xvfb | `npm run test:e2e -- tests/e2e/extras.spec.ts tests/e2e/docx.spec.ts tests/e2e/pptx.spec.ts tests/e2e/documents.spec.ts tests/e2e/comments.spec.ts tests/e2e/visual.spec.ts tests/e2e/links.spec.ts tests/e2e/editor.spec.ts` | build, then 68 passed (1.9 min), EXIT 0 | `runR-e2e-affected-2.log` |
+| WSL Xvfb | `npm run test:e2e -- tests/e2e/perf.spec.ts -g graph` | 1 passed; `PERF graph-2000` build median 5.5 ms, tick median 4.2 ms (p95 8.8), frame median 10.8 ms | `runR-e2e-perf-graph.log` |
+
+### Not run
+
+- Windows E2E for the three CI failures: they can only be confirmed by the coordinator's CI re-run (no window may open on this computer).
+- The real system print dialog (no window may open here; the print path shares the page server with Export as PDF, which E2E ran for real under Xvfb), Windows E2E (GitHub Actions), the full E2E suite (only the specs touching changed code), native WSLg.

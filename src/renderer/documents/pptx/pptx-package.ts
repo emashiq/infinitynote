@@ -1,6 +1,7 @@
 import { readPptx, writePptx, type PptxSourceModel } from '@pptx-glimpse/document';
 import { unzipSync, zipSync, type Zippable } from 'fflate';
 import { MAX_PRESENTATION_SLIDES, PRESENTATION_LIMITS } from '../../../shared/documents/presentation';
+import { checkZipBounds } from '../zip-bounds';
 
 /** Why a file does not open in the presentation editor (D-153). */
 export type PackageRefusal = 'tooLarge' | 'notPresentation' | 'macros' | 'tooManySlides';
@@ -10,32 +11,6 @@ export type ReadResult = { ok: true; model: PptxSourceModel } | { ok: false; rea
 /** What a package's content types declare for macros (as main's check, D-143). */
 const MACRO_CONTENT_TYPE = /macroEnabled|vbaProject/i;
 const MACRO_PART = /(^|\/)vbaProject\.bin$/i;
-
-/**
- * Whether a zip's central directory stays inside the editor's bounds, read without unpacking anything: entry count,
- * unpacked total and the compression ratio of each larger entry. A zip that cannot be read is out of bounds too.
- */
-export function withinBounds(bytes: Uint8Array): boolean {
-  if (bytes.length > PRESENTATION_LIMITS.maxFileBytes) return false;
-  let entries = 0;
-  let total = 0;
-  let ok = true;
-  try {
-    unzipSync(bytes, {
-      filter: (file) => {
-        entries += 1;
-        total += file.originalSize;
-        const ratio = file.size === 0 ? Infinity : file.originalSize / file.size;
-        if (entries > PRESENTATION_LIMITS.maxEntries || total > PRESENTATION_LIMITS.maxUnpackedBytes) ok = false;
-        if (file.originalSize > PRESENTATION_LIMITS.ratioFloorBytes && ratio > PRESENTATION_LIMITS.maxRatio) ok = false;
-        return false;
-      },
-    });
-  } catch {
-    return false;
-  }
-  return ok && entries > 0;
-}
 
 function declaresMacros(model: PptxSourceModel): boolean {
   const { contentTypes, parts } = model.packageGraph;
@@ -48,7 +23,7 @@ function declaresMacros(model: PptxSourceModel): boolean {
  * else in the app (D-136, D-143), and so is a deck with more slides than the editor shows.
  */
 export function readPresentation(bytes: Uint8Array): ReadResult {
-  if (!withinBounds(bytes)) return { ok: false, reason: bytes.length > PRESENTATION_LIMITS.maxFileBytes ? 'tooLarge' : 'notPresentation' };
+  if (checkZipBounds(bytes, PRESENTATION_LIMITS) !== 'ok') return { ok: false, reason: bytes.length > PRESENTATION_LIMITS.maxFileBytes ? 'tooLarge' : 'notPresentation' };
   let model: PptxSourceModel;
   try {
     model = readPptx(bytes);

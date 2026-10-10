@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Infinity Notes: offline notes, stickies and reminders for Windows and Linux</title>
+    <title>Infinity Notes: offline notes, documents, stickies and reminders for Windows and Linux</title>
     <meta
       name="description"
-      content="Infinity Notes is a free, fully offline desktop app for notes, floating stickies and time-zone-aware reminders on Windows and Linux. No account, no sync, no telemetry."
+      content="Infinity Notes is a free, fully offline desktop app for notes, documents (PDF, Word, PowerPoint, spreadsheets), floating stickies and time-zone-aware reminders on Windows and Linux. No account, no sync, no telemetry."
     />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f7f8fc" media="(prefers-color-scheme: light)" />
@@ -17,10 +17,10 @@
     <link rel="apple-touch-icon" href="assets/logo.png" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Infinity Notes" />
-    <meta property="og:title" content="Infinity Notes: offline notes, stickies and reminders" />
+    <meta property="og:title" content="Infinity Notes: offline notes, documents, stickies and reminders" />
     <meta
       property="og:description"
-      content="A free, fully offline desktop app for notes, floating stickies and reminders on Windows and Linux."
+      content="A free, fully offline desktop app for notes, documents, floating stickies and reminders on Windows and Linux."
     />
     <meta property="og:url" content="https://emashiq.github.io/infinitynote/" />
     <meta property="og:image" content="https://emashiq.github.io/infinitynote/assets/og-image.png" />
@@ -49,11 +49,20 @@
       <div class="hero">
         <div class="wrap">
           <img class="logo" src="assets/logo.png" alt="Infinity Notes logo" width="128" height="128" />
-          <h1>Notes, stickies and reminders.<br /><span class="accent">All on your own computer.</span></h1>
+          <a class="whats-new" href="https://github.com/emashiq/infinitynote/releases/tag/v0.3.0"
+            ><span class="whats-new-tag">New in v0.3.0</span
+            ><span>PDF, Word, PowerPoint and spreadsheets in your projects</span></a
+          >
+          <h1>
+            Notes, documents, stickies and reminders.<br /><span class="accent"
+              >All on your own computer.</span
+            >
+          </h1>
           <p class="lede">
-            Write notes in projects and folders, float any of them as a sticky on your desktop, and
-            get reminded on time in any time zone. Infinity Notes works fully offline: nothing you
-            write ever leaves your computer.
+            Write notes and keep your PDFs, Word documents, presentations and spreadsheets next to
+            them in projects and folders. Link and comment on all of it, float any note as a sticky
+            on your desktop, and get reminded on time in any time zone. Infinity Notes works fully
+            offline: nothing you write ever leaves your computer.
           </p>
           <ul class="pills">
             <li>Free to use</li>
@@ -335,6 +344,14 @@ infinity-notes    # or use the app menu</code></pre>
                   <td class="keys"><kbd>/</kbd> at the start of a line or after a space</td>
                 </tr>
                 <tr>
+                  <td>Link to a note or document</td>
+                  <td class="keys"><kbd>[[</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></td>
+                </tr>
+                <tr>
+                  <td>Comment on selected text</td>
+                  <td class="keys"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd></td>
+                </tr>
+                <tr>
                   <td>Next / previous tab, close tab</td>
                   <td class="keys">
                     <kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd>,
@@ -362,8 +379,31 @@ infinity-notes    # or use the app menu</code></pre>
             <div class="feature">
               <h3><span class="dot"></span>Notes and projects</h3>
               <p>
-                Rich or plain-text notes in Common or in projects with folders of any depth. Tabs,
-                autosave, version history and a Trash you can restore from.
+                Rich or plain-text notes and documents in Common or in projects with folders of any
+                depth. Tabs, autosave, version history and a Trash you can restore from.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Documents</h3>
+              <p>
+                PDF, Word, PowerPoint, Excel and CSV files and saved web pages live next to your
+                notes. Copy them in or link to the original, or start a blank document, spreadsheet
+                or presentation. Their text is found by search.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>PDF, Word, slides and sheets</h3>
+              <p>
+                Annotate PDFs and rearrange their pages, edit Word documents as pages, slides with
+                speaker notes and a presentation mode, and spreadsheets with formulas. Every save
+                keeps the previous version.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Safe web pages</h3>
+              <p>
+                Saved HTML pages open read-only with scripts and network access blocked, and a
+                Source view of their markup.
               </p>
             </div>
             <div class="feature">
@@ -374,6 +414,13 @@ infinity-notes    # or use the app menu</code></pre>
               </p>
             </div>
             <div class="feature">
+              <h3><span class="dot"></span>Diagrams, code and math</h3>
+              <p>
+                Mermaid diagrams with Edit and Preview, copied as SVG or PNG. Code blocks with syntax
+                colors, and formulas in the text or on their own line.
+              </p>
+            </div>
+            <div class="feature">
               <h3><span class="dot"></span>Files in your notes</h3>
               <p>
                 Copy a file into Infinity Notes so it travels with your backups, or just link to the
@@ -381,10 +428,26 @@ infinity-notes    # or use the app menu</code></pre>
               </p>
             </div>
             <div class="feature">
+              <h3><span class="dot"></span>Links and graph</h3>
+              <p>
+                Type <kbd>[[</kbd> to link a note, a heading, a PDF page, a slide or a sheet cell.
+                Backlinks, a relation graph of everything, and search with
+                <kbd>Ctrl</kbd>+<kbd>K</kbd>.
+              </p>
+            </div>
+            <div class="feature">
+              <h3><span class="dot"></span>Comments</h3>
+              <p>
+                Comment threads with replies, resolve and reopen, on note text, PDF pages,
+                spreadsheet cells, slides, Word paragraphs and web pages.
+              </p>
+            </div>
+            <div class="feature">
               <h3><span class="dot"></span>Locked notes</h3>
               <p>
                 Lock a note with a password, and unlock it with Windows Hello too where available.
-                Its body is encrypted on disk, and earlier unencrypted copies are destroyed.
+                Its body and comments are encrypted on disk; a new locked note is never stored
+                unencrypted.
               </p>
             </div>
             <div class="feature">
@@ -395,6 +458,13 @@ infinity-notes    # or use the app menu</code></pre>
               </p>
             </div>
             <div class="feature">
+              <h3><span class="dot"></span>Locked stickies</h3>
+              <p>
+                A locked note floats as a blurred sticky. Show it with a PIN, the password or
+                Windows Hello; it blurs again after a minute without use.
+              </p>
+            </div>
+            <div class="feature">
               <h3><span class="dot"></span>Time-zone reminders</h3>
               <p>
                 Reminders in any time zone with repeats and follow-ups, suggested from what you type
@@ -402,17 +472,10 @@ infinity-notes    # or use the app menu</code></pre>
               </p>
             </div>
             <div class="feature">
-              <h3><span class="dot"></span>Links and search</h3>
-              <p>
-                Link notes and single paragraphs, see what links back, and find anything with
-                <kbd>Ctrl</kbd>+<kbd>K</kbd>.
-              </p>
-            </div>
-            <div class="feature">
               <h3><span class="dot"></span>Backup and restore</h3>
               <p>
                 Everything in one verified backup file, by hand or on a schedule. Restore keeps your
-                previous data. Export, import and Markdown export too.
+                previous data. Export and import, and a note as Markdown, HTML or PDF.
               </p>
             </div>
           </div>
@@ -471,8 +534,12 @@ infinity-notes    # or use the app menu</code></pre>
               <ul>
                 <li>No accounts, no sync, no telemetry and no network access.</li>
                 <li>
-                  Your notes, files, stickies and reminders live in one data folder on your
-                  computer; backups are files you own.
+                  Your notes, documents, files, stickies and reminders live in one data folder on
+                  your computer; backups are files you own.
+                </li>
+                <li>
+                  Macros and PDF scripts never run, and web pages open in a sandbox that loads
+                  nothing from the internet.
                 </li>
                 <li>Uninstalling never deletes your data folder.</li>
               </ul>
@@ -492,6 +559,29 @@ infinity-notes    # or use the app menu</code></pre>
                 <li>Reminder suggestions understand English only.</li>
                 <li>Markdown export leaves out reminders, tags, colors and fonts.</li>
                 <li>A forgotten password for a locked note cannot be recovered.</li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>Documents</h3>
+              <ul>
+                <li>
+                  Charts, SmartArt and animations in presentations, and charts and pivot tables in
+                  spreadsheets, are shown simplified or not at all. Spreadsheet parts the editor
+                  cannot keep are listed before the first save.
+                </li>
+                <li>
+                  In presentations, fonts, alignment and bullets are kept but cannot be changed yet,
+                  and presentation mode does not show speaker notes.
+                </li>
+                <li>
+                  Comments on PDFs, spreadsheets, presentations and web pages are kept in Infinity
+                  Notes, not written into the files. Word comments are written into the file.
+                </li>
+                <li>
+                  Documents cannot be locked or printed from the app yet; export a copy and print it
+                  from another program.
+                </li>
+                <li>Exported HTML and PDF show links as plain text.</li>
               </ul>
             </article>
           </div>
@@ -520,6 +610,11 @@ infinity-notes    # or use the app menu</code></pre>
                 Infinity Notes is freeware: free to download and use for personal and commercial
                 work. The source is public for transparency, but it is not open source; see the
                 <a href="https://github.com/emashiq/infinitynote/blob/main/LICENSE">license</a>.
+                Every component the app includes is free and open source and free for any use,
+                commercial included; their licenses are listed in
+                <a href="https://github.com/emashiq/infinitynote/blob/main/THIRD_PARTY_NOTICES.md"
+                  >THIRD_PARTY_NOTICES.md</a
+                >, which ships with every release.
                 Questions, ideas and bug reports are welcome on
                 <a href="https://github.com/emashiq/infinitynote/issues">GitHub Issues</a>.
               </p>
@@ -549,7 +644,7 @@ infinity-notes    # or use the app menu</code></pre>
       <div class="wrap">
         <span>
           Developed by <a href="https://github.com/emashiq">Ashiqur Rahman Emran</a>. © 2026.
-          Freeware: free to use, not open source.
+          Freeware: free to use, not open source. Built only on free, open-source components.
         </span>
         <span>
           <a href="https://github.com/emashiq/infinitynote">Source</a> ·

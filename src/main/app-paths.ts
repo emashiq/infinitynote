@@ -27,6 +27,8 @@ export interface DataPaths {
   /** A verified backup waiting to replace the live data at the next start (D-099). */
   restoreStagingDir: string;
   restorePendingFile: string;
+  /** Where earlier 0.3.0 builds wrote the page being printed or exported as PDF; removed at startup (D-176). */
+  leftoverPrintDir: string;
   logsDir: string;
 }
 
@@ -42,6 +44,7 @@ export function resolveDataPaths(userData: string): DataPaths {
     preMigrationDir: path.join(dataDir, 'pre-migration'),
     restoreStagingDir: path.join(dataDir, 'restore-staging'),
     restorePendingFile: path.join(dataDir, 'restore-pending.json'),
+    leftoverPrintDir: path.join(dataDir, 'export-tmp'),
     logsDir: path.join(userData, 'logs'),
   };
 }

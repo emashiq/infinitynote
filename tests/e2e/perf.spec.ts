@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { buildGraphModel } from '../../src/main/graph/graph-model';
+import { GraphLayout, LAYOUT_FRAME_BUDGET_MS } from '../../src/renderer/graph/graph-layout';
+import { syntheticGraph } from '../support/graph-fixture';
 import { FIXTURE_QUERIES, median, p95, seedLargeNotebook } from '../support/perf-fixture';
 import { makeNoisePng } from '../support/png';
 import { editor, focusEditorEnd, paste, seedClipboardHtml, waitSaved } from './editor-ui';
@@ -303,4 +306,31 @@ test('ten stickies and the widget opened and closed three times leave no windows
   const after = await memory(app);
   record('window-cleanup', { stickies: 10, widget: true, cycles, baseline, baseMb: baseMemory.totalMb, afterMb: after.totalMb });
   expect(after.renderers).toBe(baseMemory.renderers);
+});
+
+test('a 2,000-node, 5,000-edge graph builds and lays out in frame-sized steps (D-170, D-177)', () => {
+  // The graph code itself (the model in main, the layout in the renderer), run here on the same V8 and one at a time,
+  // outside the parallel unit run whose load made wall-clock bounds flaky.
+  const graph = syntheticGraph(2000, 5000);
+  const buildMs: number[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    const started = performance.now();
+    buildGraphModel({ ...graph, includeOrphans: true });
+    buildMs.push(performance.now() - started);
+  }
+  const layout = new GraphLayout(buildGraphModel({ ...graph, includeOrphans: true }));
+  const frameMs: number[] = [];
+  const tickMs: number[] = [];
+  for (let frame = 0; frame < 20 && !layout.settled; frame += 1) {
+    const started = performance.now();
+    const ticks = layout.step(LAYOUT_FRAME_BUDGET_MS);
+    const elapsed = performance.now() - started;
+    frameMs.push(elapsed);
+    tickMs.push(elapsed / ticks);
+  }
+  record('graph-2000', { nodes: 2000, edges: 5000, buildMs: summary(buildMs), frameMs: summary(frameMs), tickMs: summary(tickMs) });
+  // Regression bounds with room for CI runners: a build well under a quarter second, a tick of the whole graph short
+  // enough that a frame stays responsive (the step itself stops after the tick that crosses the budget, unit-tested).
+  expect(median(buildMs)).toBeLessThan(250);
+  expect(median(tickMs)).toBeLessThan(50);
 });

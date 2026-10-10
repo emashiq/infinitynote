@@ -65,6 +65,20 @@ export function commentLookMeta(state: EditorState, look: Partial<CommentLook>):
   return state.tr.setMeta(commentMarksKey, look).setMeta('addToHistory', false);
 }
 
+/** The key fields the comment shortcut reads (a DOM KeyboardEvent). */
+export type ShortcutKey = Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey' | 'getModifierState'>;
+
+/**
+ * Ctrl+Alt+M, the comment shortcut (D-165, D-181). The key's letter counts in either case (Caps Lock gives "M"), and so
+ * does the physical M key where the layout puts another letter on it (Bangla, Cyrillic, …) unless AltGr typed a
+ * character there. ProseMirror's keymap cannot be used for this: on Windows it never falls back to the physical key with
+ * Ctrl+Alt held, because Ctrl+Alt is also AltGr, so an upper-case or non-Latin "m" did nothing there.
+ */
+export function isCommentShortcut(e: ShortcutKey): boolean {
+  if (!e.ctrlKey || !e.altKey || e.shiftKey || e.metaKey) return false;
+  return e.key.toLowerCase() === 'm' || (e.code === 'KeyM' && !e.getModifierState('AltGraph'));
+}
+
 /**
  * The note tab's side of comments (D-165): highlights of the listed threads and of the text a comment is being written
  * for (decorations, never saved), and Ctrl+Alt+M to comment on the selection where the window offers it.
@@ -74,10 +88,6 @@ export const CommentMarks = Extension.create<{ start: (() => boolean) | null }>(
 
   addOptions() {
     return { start: null };
-  },
-
-  addKeyboardShortcuts() {
-    return { 'Mod-Alt-m': () => (this.editor.isEditable ? (this.options.start?.() ?? false) : false) };
   },
 
   addProseMirrorPlugins() {
@@ -98,6 +108,7 @@ export const CommentMarks = Extension.create<{ start: (() => boolean) | null }>(
         },
         props: {
           decorations: (state) => commentMarksKey.getState(state)?.decorations ?? DecorationSet.empty,
+          handleKeyDown: (_view, event) => isCommentShortcut(event) && this.editor.isEditable && (this.options.start?.() ?? false),
         },
       }),
     ];

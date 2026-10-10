@@ -6,7 +6,7 @@
     <title>How to use Infinity Notes</title>
     <meta
       name="description"
-      content="How to use Infinity Notes: notes and projects, formatting and tables, files, locked notes, stickies, reminders, search, backups, shortcuts and where your data lives."
+      content="How to use Infinity Notes: notes and projects, formatting and tables, diagrams and math, files, PDF, Word, PowerPoint, spreadsheet and web-page documents, locked notes and stickies, reminders, links, comments, the graph, backups, shortcuts and where your data lives."
     />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f7f8fc" media="(prefers-color-scheme: light)" />
@@ -41,11 +41,22 @@
           <li><a href="#tabs">Tabs</a></li>
           <li><a href="#formatting">Formatting</a></li>
           <li><a href="#tables">Tables</a></li>
+          <li><a href="#diagrams">Code, diagrams and math</a></li>
           <li><a href="#files">Files</a></li>
+          <li><a href="#documents">Documents</a></li>
+          <li><a href="#pdf">PDF documents</a></li>
+          <li><a href="#spreadsheets">Spreadsheets</a></li>
+          <li><a href="#word">Word documents</a></li>
+          <li><a href="#presentations">Presentations</a></li>
+          <li><a href="#web-pages">Web pages</a></li>
+          <li><a href="#versions">Document versions</a></li>
           <li><a href="#locked">Locked notes</a></li>
           <li><a href="#stickies">Stickies</a></li>
+          <li><a href="#locked-stickies">Locked stickies</a></li>
           <li><a href="#reminders">Reminders</a></li>
           <li><a href="#search">Search and links</a></li>
+          <li><a href="#comments">Comments</a></li>
+          <li><a href="#graph">Graph</a></li>
           <li><a href="#backup">Backup and restore</a></li>
           <li><a href="#shortcuts">Keyboard shortcuts</a></li>
           <li><a href="#data">Where your data lives</a></li>
@@ -89,16 +100,20 @@
               buttons. <kbd>Alt</kbd> opens the menus from the keyboard.
             </li>
             <li>
-              <strong>Rail</strong> on the left: Home, Notes, Stickies, Reminders, and Settings at
-              the bottom.
+              <strong>Rail</strong> on the left: Home, Notes, Stickies, Reminders, Graph, and
+              Settings at the bottom.
             </li>
             <li>
-              <strong>Notes tree:</strong> Common, your projects and their folders, and the Trash.
-              Toggle it with <kbd>Ctrl</kbd>+<kbd>\</kbd>.
+              <strong>Notes tree:</strong> Common, your projects and their folders with their notes
+              and documents, and the Trash. Toggle it with <kbd>Ctrl</kbd>+<kbd>\</kbd>.
             </li>
             <li>
-              <strong>Details panel:</strong> tags, links in and out, reminders and more for the open
-              note. Toggle it with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>\</kbd>.
+              <strong>Details panel:</strong> for a note, its info, the <strong>Outline</strong> of
+              its headings, <strong>Comments</strong>, reminders, links in and out and the
+              <strong>Local graph</strong>; for a document, its info, the notes that link to it,
+              comments and the local graph. Toggle it with
+              <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>\</kbd>. Under a note's text you see its word
+              count and reading time.
             </li>
             <li>
               <strong>Theme:</strong> View &gt; Light, Dark or System theme.
@@ -120,7 +135,12 @@
               <kbd>Shift</kbd>+<kbd>F10</kbd> opens the item menu.
             </li>
             <li>
-              Deleted notes go to the <strong>Trash</strong>, where you can restore them.
+              Documents sit in the same tree, next to your notes; see
+              <a href="#documents">Documents</a>.
+            </li>
+            <li>
+              Deleted notes and documents go to the <strong>Trash</strong>, where you can restore
+              them.
             </li>
             <li>
               Every note keeps a <strong>version history</strong> (right-click the text &gt; Version
@@ -159,12 +179,12 @@
             </li>
             <li>
               <strong>Insert menu:</strong> type <kbd>/</kbd> at the start of a line or after a space
-              for headings, lists, checklists, quotes, code, tables, images, files, note links and
-              reminders.
+              for headings, lists, checklists, quotes, code, diagrams, math, tables, images, files,
+              links and reminders.
             </li>
             <li>
               <strong>Note menu:</strong> right-click the text (or <kbd>Shift</kbd>+<kbd>F10</kbd>)
-              for insert, reminders, Find, Convert, Version history and Float as sticky.
+              for insert, reminders, Find, Convert, Version history, Lock note and Float as sticky.
             </li>
             <li>
               <strong>Images:</strong> paste, drop or insert them.
@@ -206,6 +226,31 @@
           </p>
         </section>
 
+        <section id="diagrams">
+          <h2>Code, diagrams and math</h2>
+          <ul>
+            <li>
+              <strong>Code:</strong> <kbd>/</kbd>code or three backticks make a code block. Pick its
+              language and the code is colored.
+            </li>
+            <li>
+              <strong>Diagrams:</strong> <kbd>/</kbd>diagram inserts a Mermaid diagram (flowcharts,
+              sequence diagrams, Gantt charts and more), in notes and stickies.
+              <strong>Edit</strong> shows the source with the drawing below it,
+              <strong>Preview</strong> the drawing only; a mistake in the source is explained under
+              it. <strong>Copy as SVG</strong> and <strong>Copy as PNG</strong> put the drawing on
+              the clipboard. Diagrams follow the light or dark theme.
+            </li>
+            <li>
+              <strong>Math:</strong> type <code>$x^2$</code> after a space for a formula in the text,
+              or <code>$$</code> and a space at the start of a line (or <kbd>/</kbd>math) for a
+              formula on its own line. Click a formula to edit its TeX; <kbd>Enter</kbd> (in a block
+              <kbd>Ctrl</kbd>+<kbd>Enter</kbd>) keeps it, <kbd>Escape</kbd> cancels.
+            </li>
+          </ul>
+          <p>Very long diagrams (over 20,000 characters) are not drawn.</p>
+        </section>
+
         <section id="files">
           <h2>Files</h2>
           <p>
@@ -239,6 +284,208 @@
           </p>
         </section>
 
+        <section id="documents">
+          <h2>Documents</h2>
+          <p>
+            PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx), CSV and HTML files live in Common,
+            projects and folders next to your notes. They open in tabs, can be moved, favorited,
+            trashed and restored, appear on Home, and their text is found by search.
+          </p>
+          <ul>
+            <li>
+              <strong>Add a file:</strong> <strong>Import file…</strong> in the File menu, Home,
+              <kbd>Ctrl</kbd>+<kbd>K</kbd> or the tree's right-click menu. Like any file, it is
+              copied into Infinity Notes or linked to the original (see <a href="#files">Files</a>).
+              On a PDF or Office file attached to a note, choose <strong>Open in Infinity
+              Notes</strong>.
+            </li>
+            <li>
+              <strong>Start a blank one:</strong> <strong>New Word document</strong>,
+              <strong>New spreadsheet</strong> or <strong>New presentation</strong> in the File menu,
+              the command palette or the tree's right-click menu.
+            </li>
+            <li>
+              <strong>Saving:</strong> edits stay in the tab until you <strong>Save</strong>
+              (<kbd>Ctrl</kbd>+<kbd>S</kbd>); the toolbar says <strong>Unsaved changes</strong> until
+              then, and leaving the tab, closing it or quitting saves first. Each save keeps the
+              previous version (see <a href="#versions">Document versions</a>).
+            </li>
+            <li>
+              <strong>Linked documents</strong> are saved back to the original file, safely, and
+              Infinity Notes warns you if that file changed on disk since you opened it.
+            </li>
+            <li>
+              Macros never run: macro-enabled files (.xlsm, .docm, .pptm) are not opened; use your
+              system app for them.
+            </li>
+          </ul>
+          <p class="note">
+            Documents cannot be locked, and cannot be printed from the app yet: use
+            <strong>Export a copy…</strong> and print it from another program.
+          </p>
+        </section>
+
+        <section id="pdf">
+          <h2>PDF documents</h2>
+          <ul>
+            <li>
+              <strong>Reading:</strong> pages scroll continuously. The toolbar has the page number
+              (type one and press <kbd>Enter</kbd>), zoom (<strong>Fit width</strong>,
+              <strong>Fit page</strong>, 50–400 %) and <strong>Rotate view</strong>, which does not
+              change the file. <strong>Pages and outline</strong> shows thumbnails and the PDF's
+              bookmarks. Select text and copy it with <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+            </li>
+            <li>
+              <strong>Find:</strong> <kbd>Ctrl</kbd>+<kbd>F</kbd> highlights matches as you type;
+              <kbd>Enter</kbd> and <kbd>Shift</kbd>+<kbd>Enter</kbd> go to the next and previous one.
+            </li>
+            <li>
+              <strong>Annotating:</strong> <strong>Highlight</strong>, <strong>Add text</strong>,
+              <strong>Draw</strong> and <strong>Add image</strong>, with a color button. Click a mark
+              to select it; <kbd>Delete</kbd> removes it. Annotations are saved into the PDF as
+              standard annotations, so other PDF readers show them.
+            </li>
+            <li>
+              <strong>Pages:</strong> select thumbnails, then use the <strong>Pages</strong> menu to
+              rotate, move (or drag them, or <kbd>Alt</kbd>+<kbd>Up</kbd>/<kbd>Down</kbd>), insert a
+              blank page, insert the pages of another PDF, extract them to a new PDF, or delete them.
+            </li>
+            <li>
+              <strong>Password-protected PDFs</strong> ask for the password, which is used to open
+              the file and never stored. Their pages cannot be rearranged, and their text is not
+              added to search.
+            </li>
+            <li>PDF forms can be filled in and saved; PDF scripts never run.</li>
+          </ul>
+        </section>
+
+        <section id="spreadsheets">
+          <h2>Spreadsheets</h2>
+          <ul>
+            <li>
+              <strong>Editing:</strong> click a cell and type; start with <kbd>=</kbd> for a formula.
+              The toolbar has number formats, fonts, colors, borders, merge, alignment, wrap, freeze
+              panes, filter and sort, cell notes and quick sums. Right-click a cell or header to
+              insert, delete, hide or resize rows and columns.
+            </li>
+            <li>
+              <strong>Sheets:</strong> the tabs at the bottom add, rename, copy, delete, color, hide
+              and reorder sheets.
+            </li>
+            <li>
+              <strong>Copy and paste:</strong> <kbd>Ctrl</kbd>+<kbd>C</kbd> copies cells into Excel,
+              LibreOffice or a note's table; <kbd>Ctrl</kbd>+<kbd>V</kbd> pastes tables from
+              spreadsheets or web pages, or tab-separated text.
+            </li>
+            <li>
+              <strong>What is kept:</strong> values, formulas, formatting, merges, sizes, hidden rows
+              and columns, frozen panes, filters, notes and sheet colors. Parts the editor cannot keep
+              (charts, pivot tables, pictures, conditional formatting and similar) are listed before
+              the first save, with <strong>Save without them</strong> or <strong>Cancel</strong>. To
+              keep them, use <strong>Open in system app</strong>.
+            </li>
+            <li>
+              <strong>CSV files</strong> keep values only, and keep their separator, text encoding
+              and line endings.
+            </li>
+            <li>
+              Files up to 25 MB, 64 sheets and 500,000 filled cells open in the editor; larger ones
+              open in your system app.
+            </li>
+          </ul>
+        </section>
+
+        <section id="word">
+          <h2>Word documents</h2>
+          <ul>
+            <li>
+              Word documents (.docx) open as pages. The toolbar has styles, font and size, bold,
+              italic, underline, colors, alignment, spacing, lists, tables, pictures, links and
+              comments. <strong>Page break</strong> (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>) starts a new
+              page.
+            </li>
+            <li>
+              The document's comments show beside the page: reply, resolve, or add your own
+              (right-click selected text, <strong>Add comment</strong>). They are written into the
+              file under the name “Infinity Notes”.
+            </li>
+            <li>
+              Saving writes your edits into the file and keeps everything else in it exactly as it
+              was, so it still opens in Word and LibreOffice.
+            </li>
+            <li>
+              A file with content Infinity Notes cannot write back unchanged opens as a read-only
+              preview that says why; edit it in your system app.
+            </li>
+          </ul>
+        </section>
+
+        <section id="presentations">
+          <h2>Presentations</h2>
+          <ul>
+            <li>
+              PowerPoint files (.pptx) open with the slides on the left, the slide in the middle and
+              its <strong>Speaker notes</strong> below.
+            </li>
+            <li>
+              <strong>Slides:</strong> <strong>New slide</strong>, <strong>Duplicate slide</strong>
+              (<kbd>Ctrl</kbd>+<kbd>D</kbd>) and <strong>Delete slide</strong>; drag a slide or press
+              <kbd>Alt</kbd>+<kbd>Up</kbd>/<kbd>Down</kbd> to move it.
+            </li>
+            <li>
+              <strong>Shapes:</strong> click to select, drag to move, drag the handles to resize.
+              Double-click a text box (or press <kbd>Enter</kbd>) to edit its text. Bold, italic,
+              underline, size and color format the selected text. <strong>Text box</strong> and
+              <strong>Picture</strong> add new ones.
+            </li>
+            <li>
+              <strong>Present</strong> (<kbd>F5</kbd>) shows the slides over the whole window; arrow
+              keys, <kbd>Space</kbd> and a click step through them, <kbd>Escape</kbd> ends the show.
+            </li>
+            <li>
+              Saving changes only the slides you changed and keeps the rest of the file exactly as
+              it was.
+            </li>
+          </ul>
+          <p class="note">
+            Charts, SmartArt and animations are shown simplified or not at all, but kept in the file.
+            Fonts, alignment and bullets are kept but cannot be changed yet, and presentation mode
+            does not show speaker notes.
+          </p>
+        </section>
+
+        <section id="web-pages">
+          <h2>Web pages</h2>
+          <p>
+            A saved web page (.html) opens read-only in its own tab, as it was saved, but nothing in
+            it runs: no scripts, no forms, and nothing is loaded from the internet. Links in the page
+            do not open; <strong>Links</strong> lists its web links to copy, and
+            <strong>Source</strong> shows its markup as text.
+          </p>
+        </section>
+
+        <section id="versions">
+          <h2>Document versions</h2>
+          <p>
+            PDF, Word, PowerPoint, Excel and CSV tabs have <strong>Versions</strong> in their header,
+            listing each earlier version with its time and size.
+          </p>
+          <ul>
+            <li><strong>Open</strong> shows a version read-only.</li>
+            <li>
+              <strong>Restore</strong> makes it the current version again; the version it replaces is
+              kept.
+            </li>
+            <li>
+              <strong>Save as copy</strong> adds it as a new document next to this one.
+            </li>
+            <li>
+              <strong>Export a copy…</strong> writes the saved file, or the version you are viewing,
+              anywhere you choose.
+            </li>
+          </ul>
+        </section>
+
         <section id="locked">
           <h2>Locked notes</h2>
           <p>
@@ -260,9 +507,18 @@
               <strong>Lock now</strong> or <strong>Lock all notes</strong> to lock at once.
             </li>
             <li>
-              Locked notes cannot float as stickies, reminders in them notify without showing their
-              text, and <strong>Export all notes</strong> leaves them out. Backups contain them
-              encrypted.
+              <strong>New locked note…</strong> and <strong>New locked sticky…</strong> (File menu,
+              command palette, Home, the tree's right-click menu and the Stickies page) ask for the
+              password first, so the text is never stored unencrypted, not even as a first save.
+            </li>
+            <li>
+              Comments on a locked note are encrypted with it. Reminders in it notify without
+              showing their text, and <strong>Export all notes</strong> leaves locked notes out.
+              Backups contain them encrypted.
+            </li>
+            <li>
+              A locked note can float as a sticky; see <a href="#locked-stickies">Locked
+              stickies</a>.
             </li>
           </ul>
           <p class="note danger">
@@ -311,6 +567,40 @@
           </ul>
         </section>
 
+        <section id="locked-stickies">
+          <h2>Locked stickies</h2>
+          <p>
+            A locked note can float as a sticky, and locking a floating sticky keeps it floating. A
+            locked sticky shows its title and color and a blurred panel instead of the text: the text
+            is not in the window at all until you show it.
+          </p>
+          <ul>
+            <li>
+              <strong>Show it</strong> with its PIN, the password or Windows Hello (where it is set
+              up for the note).
+            </li>
+            <li>
+              <strong>The PIN</strong> (4 to 8 digits) is set when you lock or create the sticky,
+              from its menu (<strong>Set PIN…</strong>) or in <strong>Lock settings…</strong>. It is
+              a quick way to show the sticky again while the note is unlocked for the session. After
+              a restart or when the note has locked again, the password or Windows Hello is needed.
+            </li>
+            <li>
+              <strong>It blurs again</strong> 1 minute after you last type, click, scroll or point at
+              it (30 seconds to 5 minutes under <strong>Blur locked stickies after</strong> in
+              Settings), at once with <strong>Blur now</strong>, and on screen lock, sleep or
+              <strong>Lock now</strong>. What you typed is saved, encrypted, first.
+            </li>
+            <li>
+              The Stickies page lists a locked sticky with a lock and never shows its text.
+            </li>
+          </ul>
+          <p class="note">
+            The PIN does not protect your files; the password does. After five wrong PINs in a row
+            only the password or Windows Hello shows the sticky.
+          </p>
+        </section>
+
         <section id="reminders">
           <h2>Reminders</h2>
           <ul>
@@ -350,16 +640,91 @@
           <h2>Search and links</h2>
           <ul>
             <li>
-              <kbd>Ctrl</kbd>+<kbd>K</kbd> searches note titles and text and runs commands. Filters
-              narrow it to a project or to tags.
+              <kbd>Ctrl</kbd>+<kbd>K</kbd> searches note titles and text, documents and their text,
+              and comments, and runs commands. Filters narrow it to a project or to tags.
             </li>
-            <li><kbd>Ctrl</kbd>+<kbd>F</kbd> finds text inside the open note or sticky.</li>
             <li>
-              Link to another note, or to a single paragraph, with <kbd>/</kbd>link or the note
-              menu's <strong>Link to note…</strong>. <kbd>Ctrl</kbd>+click opens a link.
+              <kbd>Ctrl</kbd>+<kbd>F</kbd> finds text inside the open note, sticky or document.
             </li>
-            <li>The details panel lists the links into and out of the open note.</li>
+            <li>
+              <strong>Link:</strong> type <kbd>[[</kbd> (or press
+              <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>, or use <kbd>/</kbd>link) and pick a note
+              or document by its title; the list matches loosely, so “mtg” finds “Meeting”. Link a
+              whole note, a paragraph or heading, a whole document, or a place in it: a PDF page, a
+              slide, a sheet or cell (<code>Budget!B2</code>) or a Word heading.
+            </li>
+            <li>
+              <strong>Create note “…”</strong> in that list makes a new note with the typed title.
+              Select text and press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> to turn it into a
+              link that keeps your text. Click a link to open it.
+            </li>
+            <li>
+              Renaming or moving the target keeps its links. The details panel lists the links into
+              and out of the open note, and the notes that link to a document.
+            </li>
             <li>Search does not look inside locked notes.</li>
+          </ul>
+        </section>
+
+        <section id="comments">
+          <h2>Comments</h2>
+          <ul>
+            <li>
+              <strong>On a note:</strong> select text (also inside a table cell) and choose
+              <strong>Comment</strong> in the formatting toolbar or press
+              <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>. Type the comment in the details panel;
+              <kbd>Ctrl</kbd>+<kbd>Enter</kbd> saves it. The commented text is highlighted. Comments
+              need a rich-text note.
+            </li>
+            <li>
+              <strong>Threads:</strong> <strong>Reply</strong>, <strong>Edit</strong>,
+              <strong>Resolve</strong> and <strong>Reopen</strong>, <strong>Delete</strong> a reply
+              or <strong>Delete thread</strong>. Click a thread to jump to its text; if the text was
+              deleted it shows <strong>Text removed</strong>.
+            </li>
+            <li>
+              <strong>On documents:</strong> select text on a PDF page (or comment on the page shown),
+              a spreadsheet cell, a slide or shape, a Word paragraph, or text in a web page's
+              <strong>Source</strong> view. Clicking the thread opens the document at that place.
+            </li>
+            <li>
+              Comments go to the Trash and come back with their note or document. Backups keep them;
+              Markdown, HTML and PDF exports of a note do not.
+            </li>
+          </ul>
+          <p class="note">
+            Comments on PDFs, spreadsheets, presentations and web pages are kept in Infinity Notes,
+            not written into the files. Comments on locked notes are encrypted with the note.
+          </p>
+        </section>
+
+        <section id="graph">
+          <h2>Graph</h2>
+          <p>
+            The <strong>Graph</strong> (the rail button, <strong>Open graph</strong> in the command
+            palette, or on Common, a project or a folder in the tree) shows your notes and documents
+            as dots and the links between them as lines. Notes are circles, documents are squares
+            colored by type, and items with more links are bigger. A locked note shows only its title.
+          </p>
+          <ul>
+            <li>
+              <strong>Show</strong> picks everything, Common, a project or a folder;
+              <strong>Notes</strong>, <strong>Documents</strong>, <strong>Tag</strong> and
+              <strong>Unlinked items</strong> filter it.
+            </li>
+            <li>
+              Scroll or press <kbd>+</kbd> and <kbd>-</kbd> to zoom, drag the background or use the
+              arrow keys to move, and press <kbd>0</kbd> to fit. Click a dot to open the item.
+            </li>
+            <li><strong>Search titles</strong> highlights matching items and dims the rest.</li>
+            <li>
+              <strong>List</strong> shows every item with what it is linked with, for the keyboard
+              and screen readers.
+            </li>
+            <li>
+              Each note and document has a <strong>Local graph</strong> in the details panel: what is
+              1, 2 or 3 links away.
+            </li>
           </ul>
         </section>
 
@@ -368,8 +733,8 @@
           <ul>
             <li>
               <strong>Back up:</strong> File &gt; <strong>Back up now…</strong> writes one
-              <code>.infinitybackup</code> file with every note, copied file, reminder and setting,
-              checked with SHA-256 hashes. It is safe to do while you work.
+              <code>.infinitybackup</code> file with every note, copied file and document, comment,
+              reminder and setting, checked with SHA-256 hashes. It is safe to do while you work.
             </li>
             <li>
               <strong>Automatic backups:</strong> Settings &gt; Backup can write a backup every 1,
@@ -388,6 +753,16 @@
             <li>
               <strong>One note as a document:</strong> File &gt; Export note as Markdown… or Export
               note as plain text…. Markdown export leaves out reminders, tags, colors and fonts.
+            </li>
+            <li>
+              <strong>Export or print a note:</strong> File &gt; Export note as HTML… or Export note
+              as PDF… writes one file with the note's text, images, diagrams and formulas; Print
+              note… opens the system print dialog. Nothing is loaded from the internet, links are
+              shown as plain text, and a locked note must be unlocked first.
+            </li>
+            <li>
+              <strong>A document:</strong> Export a copy… in its tab writes the file anywhere you
+              choose.
             </li>
           </ul>
           <p>Keep backups on another disk or computer.</p>
@@ -421,8 +796,28 @@
                   <td class="keys"><kbd>Ctrl</kbd>+<kbd>K</kbd></td>
                 </tr>
                 <tr>
-                  <td>Find in the note</td>
+                  <td>Find in the note or document</td>
                   <td class="keys"><kbd>Ctrl</kbd>+<kbd>F</kbd></td>
+                </tr>
+                <tr>
+                  <td>Link to a note or document</td>
+                  <td class="keys"><kbd>[[</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></td>
+                </tr>
+                <tr>
+                  <td>Turn selected text into a link</td>
+                  <td class="keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd></td>
+                </tr>
+                <tr>
+                  <td>Comment on selected text</td>
+                  <td class="keys"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd></td>
+                </tr>
+                <tr>
+                  <td>Save a document</td>
+                  <td class="keys"><kbd>Ctrl</kbd>+<kbd>S</kbd></td>
+                </tr>
+                <tr>
+                  <td>Start a presentation</td>
+                  <td class="keys"><kbd>F5</kbd></td>
                 </tr>
                 <tr>
                   <td>Next / previous tab</td>
@@ -493,8 +888,8 @@
         <section id="data">
           <h2>Where your data lives</h2>
           <p>
-            All your notes, copied files, reminders and settings are in one folder. The logs are in
-            its <code>logs</code> folder.
+            All your notes, documents, copied files, comments, reminders and settings are in one
+            folder. The logs are in its <code>logs</code> folder.
           </p>
           <div class="table-wrap">
             <table>
@@ -557,6 +952,13 @@
               version: the
               <a href="https://github.com/emashiq/infinitynote/blob/main/CHANGELOG.md">changelog</a>.
             </li>
+            <li>
+              Every component Infinity Notes includes is free and open source and free for any use,
+              commercial included. Their licenses are in
+              <a href="https://github.com/emashiq/infinitynote/blob/main/THIRD_PARTY_NOTICES.md"
+                >THIRD_PARTY_NOTICES.md</a
+              >, which also ships with every release.
+            </li>
           </ul>
         </section>
       </main>
@@ -566,7 +968,7 @@
       <div class="wrap">
         <span>
           Developed by <a href="https://github.com/emashiq">Ashiqur Rahman Emran</a>. © 2026.
-          Freeware: free to use, not open source.
+          Freeware: free to use, not open source. Built only on free, open-source components.
         </span>
         <span>
           <a href="https://github.com/emashiq/infinitynote">Source</a> ·

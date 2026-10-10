@@ -233,6 +233,16 @@ describe('Word viewer and editor (F4, D-142)', () => {
     expect(button(el, 'Save')?.disabled).toBe(true);
   });
 
+  it('a package out of bounds is refused from its zip directory before the editor unpacks it (D-178)', async () => {
+    const parts = unzipSync(rich());
+    // 8 MiB of zeros packs to a few kilobytes: the shape of a zip bomb, whatever the entry's name.
+    const { el } = await mount(zipSync({ ...parts, 'word/media/fill.bin': new Uint8Array(8 * 1024 * 1024) }));
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain(DOCX_IMPORT_MESSAGES['too-large']);
+    expect(el.querySelector('.docx-editor-sheet')).toBeNull();
+    expect(el.querySelector('.docx-preview')).toBeNull();
+    expect(button(el, 'Save')?.disabled).toBe(true);
+  });
+
   it('a Strict Open XML file opens read-only with the reason and a preview drawn in a shadow root (D-144)', async () => {
     const parts = unzipSync(documentFixture('sample.docx'));
     const xml = strFromU8(parts['word/document.xml']!).replace('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'http://purl.oclc.org/ooxml/wordprocessingml/main');

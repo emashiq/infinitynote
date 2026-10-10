@@ -1,37 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GraphModel, type GraphModelType } from '../../src/shared/contracts/graph';
-import { buildGraphModel, type GraphItem, type GraphLink } from '../../src/main/graph/graph-model';
+import { buildGraphModel, type GraphItem } from '../../src/main/graph/graph-model';
 import { fitView, MAX_ZOOM, MIN_ZOOM, toWorld, zoomAt } from '../../src/renderer/graph/graph-draw';
 import { GraphLayout, LAYOUT_FRAME_BUDGET_MS, nodeRadius } from '../../src/renderer/graph/graph-layout';
 import { matchNodes } from '../../src/renderer/graph/graph-search';
 import { FrameLoop } from '../../src/renderer/graph/frame-loop';
+import { graphId as id, graphNote as note, graphRef as ref, syntheticGraph as synthetic } from '../support/graph-fixture';
 
-const id = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
-const note = (n: number, title = `Note ${n}`): GraphItem => ({ kind: 'note', id: id(n), documentKind: null, title, locked: false, projectId: null, folderId: null });
 const doc = (n: number): GraphItem => ({ kind: 'document', id: id(n), documentKind: 'pdf', title: `Doc ${n}`, locked: false, projectId: null, folderId: null });
-const ref = (a: number, b: number, kind: GraphLink['kind'] = 'reference', toKind: GraphItem['kind'] = 'note'): GraphLink => ({
-  from: { kind: 'note', id: id(a) },
-  to: { kind: toKind, id: id(b) },
-  kind,
-});
-
-/** A synthetic graph: `nodes` notes, `edges` links between pseudo-random distinct pairs (deterministic). */
-function synthetic(nodes: number, edges: number): { items: GraphItem[]; links: GraphLink[] } {
-  const items = Array.from({ length: nodes }, (_, i) => note(i));
-  const links: GraphLink[] = [];
-  let seed = 7;
-  const next = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
-  const used = new Set<string>();
-  while (links.length < edges) {
-    const a = next() % nodes;
-    const b = next() % nodes;
-    const key = a < b ? `${a}-${b}` : `${b}-${a}`;
-    if (a === b || used.has(key)) continue;
-    used.add(key);
-    links.push(ref(a, b));
-  }
-  return { items, links };
-}
 
 describe('graph model builder (D-170)', () => {
   it('joins each pair once per kind whatever the direction, counts degrees and drops links to items outside', () => {
@@ -72,14 +48,12 @@ describe('graph model builder (D-170)', () => {
     expect(GraphModel.safeParse(fewer).success).toBe(true);
   });
 
-  it('builds a 2,000-node, 5,000-edge graph well within an interactive budget', () => {
-    const { items, links } = synthetic(2000, 5000);
-    const start = performance.now();
-    const model = buildGraphModel({ items, links, includeOrphans: true });
-    const elapsed = performance.now() - start;
+  // Its time on this size is measured in the E2E perf suite (D-177).
+  it('builds a 2,000-node, 5,000-edge graph whole', () => {
+    const model = buildGraphModel({ ...synthetic(2000, 5000), includeOrphans: true });
     expect(model.nodes).toHaveLength(2000);
     expect(model.edges).toHaveLength(5000);
-    expect(elapsed).toBeLessThan(250);
+    expect(model.truncated).toBe(false);
   });
 });
 
@@ -92,19 +66,47 @@ describe('graph layout (D-170)', () => {
     expect(nodeRadius(10_000)).toBe(18);
   });
 
-  it('a step keeps to its time budget on 2,000 nodes and 5,000 edges (one tick at most past it)', () => {
-    const layout = new GraphLayout(model(2000, 5000));
-    let tickCost = 0;
-    for (let frame = 0; frame < 5; frame += 1) {
-      const start = performance.now();
-      const ticks = layout.step(LAYOUT_FRAME_BUDGET_MS);
-      const elapsed = performance.now() - start;
-      expect(ticks).toBeGreaterThanOrEqual(1);
-      tickCost = Math.max(tickCost, elapsed / ticks);
-      expect(elapsed).toBeLessThan(LAYOUT_FRAME_BUDGET_MS + tickCost + 5);
+  /**
+   * A layout whose clock moves only when the simulation ticks, by `tickMs` each: the budget contract of `step` without
+   * wall-clock time (D-177; the real cost of a tick is measured in the E2E perf suite).
+   */
+  function timedLayout(m: GraphModelType, tickMs: number) {
+    const layout = new GraphLayout(m);
+    const simulation = layout['simulation'];
+    const tick = simulation.tick.bind(simulation);
+    let now = 0;
+    vi.spyOn(simulation, 'tick').mockImplementation((iterations) => {
+      now += tickMs;
+      return tick(iterations);
+    });
+    return { layout, clock: () => now };
+  }
+
+  it('a step ticks until its budget is used and stops after the tick that crosses it, on 2,000 nodes and 5,000 edges', () => {
+    const { layout, clock } = timedLayout(model(2000, 5000), 3);
+    for (let frame = 1; frame <= 4; frame += 1) {
+      // 0, 3 and 6 ms are inside the 8 ms budget; the tick that starts at 6 ends at 9, past it.
+      expect(layout.step(LAYOUT_FRAME_BUDGET_MS, clock)).toBe(3);
+      expect(clock()).toBe(frame * 9);
     }
-    // One tick of the full graph is cheap enough for frames to stay responsive.
-    expect(tickCost).toBeLessThan(50);
+  });
+
+  it('a tick slower than the whole budget still runs once per step, so the layout always moves on', () => {
+    const { layout, clock } = timedLayout(model(200, 400), 50);
+    expect(layout.step(LAYOUT_FRAME_BUDGET_MS, clock)).toBe(1);
+    expect(layout.step(LAYOUT_FRAME_BUDGET_MS, clock)).toBe(1);
+    expect(clock()).toBe(100);
+  });
+
+  it('a settled layout does not tick, and a reheated one ticks again', () => {
+    const { layout, clock } = timedLayout(model(60, 80), 1);
+    for (let i = 0; i < 2000 && !layout.settled; i += 1) layout.step(1000, clock);
+    expect(layout.settled).toBe(true);
+    const settledAt = clock();
+    expect(layout.step(LAYOUT_FRAME_BUDGET_MS, clock)).toBe(0);
+    expect(clock()).toBe(settledAt);
+    layout.reheat();
+    expect(layout.step(LAYOUT_FRAME_BUDGET_MS, clock)).toBe(LAYOUT_FRAME_BUDGET_MS);
   });
 
   it('settles: linked nodes end up nearer each other than the average pair', () => {

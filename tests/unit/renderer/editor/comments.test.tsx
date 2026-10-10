@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CommentsStore } from '../../../../src/renderer/comments/comments-store';
 import { createNoteCommentHost } from '../../../../src/renderer/comments/note-comment-host';
-import { addCommentMark, commentableSelection, commentMarksKey, markedThreads, removeCommentMark, threadRanges } from '../../../../src/renderer/editor/comments/comment-marks';
+import { addCommentMark, commentableSelection, commentMarksKey, isCommentShortcut, markedThreads, removeCommentMark, threadRanges, type ShortcutKey } from '../../../../src/renderer/editor/comments/comment-marks';
 import { EditorHandle } from '../../../../src/renderer/editor/editor-handle';
 import { CommentsSection, COMMENT_EMPTY, TEXT_REMOVED } from '../../../../src/renderer/panel/CommentsSection';
 import { createAppServices } from '../../../../src/renderer/state/app-services';
@@ -52,6 +52,43 @@ describe('comment marks in the editor (D-165)', () => {
     expect(markedThreads(editor.state.doc)).toEqual(new Set([T1]));
     removeCommentMark(editor, T1);
     expect(markedThreads(editor.state.doc).size).toBe(0);
+  });
+
+  it('Ctrl+Alt+M starts a comment in either case and on non-Latin layouts, never as AltGr or with other modifiers (D-181)', () => {
+    const key = (over: Partial<ShortcutKey> & { altGraph?: boolean }): ShortcutKey => ({
+      key: 'm',
+      code: 'KeyM',
+      ctrlKey: true,
+      altKey: true,
+      shiftKey: false,
+      metaKey: false,
+      getModifierState: (m: string) => m === 'AltGraph' && over.altGraph === true,
+      ...over,
+    });
+    expect(isCommentShortcut(key({}))).toBe(true);
+    // Caps Lock, and what Playwright's "Control+Alt+M" sends: the Windows CI failure of Run R.
+    expect(isCommentShortcut(key({ key: 'M' }))).toBe(true);
+    // A Bangla layout puts another letter on the M key.
+    expect(isCommentShortcut(key({ key: 'ম' }))).toBe(true);
+    // AltGr typing a character on that key (German µ) stays typing.
+    expect(isCommentShortcut(key({ key: 'µ', altGraph: true }))).toBe(false);
+    expect(isCommentShortcut(key({ shiftKey: true }))).toBe(false);
+    expect(isCommentShortcut(key({ metaKey: true }))).toBe(false);
+    expect(isCommentShortcut(key({ altKey: false }))).toBe(false);
+    expect(isCommentShortcut(key({ ctrlKey: false }))).toBe(false);
+    expect(isCommentShortcut(key({ key: 'n', code: 'KeyN' }))).toBe(false);
+
+    const starts = vi.fn(() => true);
+    const { editor } = makeEditor({ content, startComment: starts });
+    selectWord(editor, 'budget');
+    const press = (init: KeyboardEventInit) => editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ctrlKey: true, altKey: true, code: 'KeyM', ...init }));
+    expect(press({ key: 'M' })).toBe(false);
+    expect(starts).toHaveBeenCalledTimes(1);
+    press({ key: 'm', shiftKey: true });
+    expect(starts).toHaveBeenCalledTimes(1);
+    editor.setEditable(false);
+    press({ key: 'm' });
+    expect(starts).toHaveBeenCalledTimes(1);
   });
 
   it('needs selected text', () => {

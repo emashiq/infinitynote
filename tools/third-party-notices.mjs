@@ -22,6 +22,9 @@ const BUNDLED_INSIDE = [
   { host: 'pptx-glimpse', name: '@xmldom/xmldom', version: '0.9.12', license: 'MIT', file: 'xmldom-xmldom.txt' },
   { host: 'pptx-glimpse', name: 'rtf.js', version: '3.0.9', license: 'MIT', file: 'rtf.js.txt' },
 ];
+// Packages published without a license file although their source repository has one: the repository's LICENSE at the
+// shipped version's tag, kept under tools/vendored-licenses/ (FortuneSheet's monorepo at tag v1.0.4, MIT, D-180).
+const UPSTREAM_LICENSE_FILES = { '@fortune-sheet/core': 'fortune-sheet.txt', '@fortune-sheet/react': 'fortune-sheet.txt' };
 // Type declarations are erased at build time and never ship.
 const isTypesOnly = (name) => name.startsWith('@types/');
 const IMPORT_PATTERNS = [
@@ -82,6 +85,8 @@ function legacyLicense(key) {
   return types.length === 1 ? types[0] : `(${types.join(' OR ')})`;
 }
 
+const vendoredLicense = (file) => fs.readFileSync(path.join(repoRoot, 'tools', 'vendored-licenses', file), 'utf8').replace(/\r\n?/g, '\n').trim();
+
 function shippedPackages() {
   const lock = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8'));
   const seen = new Map();
@@ -96,7 +101,14 @@ function shippedPackages() {
     if (seen.has(key)) continue;
     const entry = lock.packages[key];
     const name = key.slice(key.lastIndexOf('node_modules/') + 'node_modules/'.length);
-    seen.set(key, { name, version: entry.version, license: entry.license ?? legacyLicense(key) ?? 'UNKNOWN', dir: path.join(repoRoot, key) });
+    const upstream = UPSTREAM_LICENSE_FILES[name];
+    seen.set(key, {
+      name,
+      version: entry.version,
+      license: entry.license ?? legacyLicense(key) ?? 'UNKNOWN',
+      dir: path.join(repoRoot, key),
+      ...(upstream ? { text: vendoredLicense(upstream) } : {}),
+    });
     if (LEAF_PACKAGES.has(name)) continue;
     const required = Object.keys(entry.dependencies ?? {});
     // Optional and peer dependencies ship only when they are installed.
@@ -111,8 +123,7 @@ function shippedPackages() {
   const shippedNames = new Set([...seen.values()].map((p) => p.name));
   for (const inner of BUNDLED_INSIDE) {
     if (!shippedNames.has(inner.host)) continue;
-    const text = fs.readFileSync(path.join(repoRoot, 'tools', 'vendored-licenses', inner.file), 'utf8');
-    seen.set(`bundled:${inner.name}`, { ...inner, text: text.replace(/\r\n?/g, '\n').trim() });
+    seen.set(`bundled:${inner.name}`, { ...inner, text: vendoredLicense(inner.file) });
   }
   return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 }

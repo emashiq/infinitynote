@@ -59,6 +59,7 @@ import { installTestHooks, testHooksEnabled } from './test-hooks';
 import { createAttachmentHandler } from './windows/attachment-protocol';
 import { createDocumentHandler, createHtmlDocumentHandler } from './windows/document-protocol';
 import { createElectronHtmlPrinter } from './windows/html-printer';
+import { removeLeftoverPrintPages } from './windows/print-pages';
 import { createElectronDisplayProvider } from './windows/display-provider';
 import { createElectronInspector } from './windows/electron-inspector';
 import { createRendererHandler } from './windows/renderer-protocol';
@@ -158,6 +159,10 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     logger: log,
   });
   const db = opened.ok ? opened.db : null;
+  // After a pending restore was applied, which may replace the data folder.
+  void removeLeftoverPrintPages(paths.leftoverPrintDir, log).then((removed) => {
+    if (removed > 0) log.info(`print: removed ${removed} leftover page file(s)`);
+  });
   protocol.handle(ATTACHMENT_SCHEME, createAttachmentHandler({ db, dataDir: paths.dataDir, logger: log }));
 
   const eventBus = createEventBus(registry);
@@ -213,7 +218,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
         }
       },
       restoreOutcome,
-      printer: createElectronHtmlPrinter({ tmpDir: path.join(paths.dataDir, 'export-tmp'), logger: log }),
+      printer: createElectronHtmlPrinter({ logger: log }),
       onSettingsChanged: (payload) => {
         if (payload.key === 'appearance.theme') applyNativeTheme(payload.value);
         eventBus.broadcast('settings:changed', payload);

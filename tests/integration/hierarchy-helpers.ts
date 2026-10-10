@@ -78,9 +78,12 @@ export async function setupServices(
   /** What the services handed to the OS shell; openPath answers with `shellError` (empty means success). */
   const shellCalls: Array<{ op: string; target: string }> = [];
   const shellResult = { error: '' };
-  /** Pages handed to the printer: "pdf" makes a small fake PDF, "print" answers `printResult` (D-163). */
+  /**
+   * Pages handed to the printer: "pdf" makes a small fake PDF, "print" answers `printResult.printed` (D-163), and
+   * `printResult.whilePrinting` runs while the printer holds the page (a print dialog that is open, D-176).
+   */
   const printed: Array<{ op: 'pdf' | 'print'; html: string }> = [];
-  const printResult = { printed: true };
+  const printResult: { printed: boolean; whilePrinting: (() => void) | null } = { printed: true, whilePrinting: null };
   const paths = resolveDataPaths(t.dir);
   const dataDir = path.join(t.dir, 'data');
   const services = createMainServices({
@@ -111,10 +114,12 @@ export async function setupServices(
     printer: {
       toPdf: async (html) => {
         printed.push({ op: 'pdf', html });
+        printResult.whilePrinting?.();
         return new TextEncoder().encode('%PDF-1.7 fake');
       },
       print: async (html) => {
         printed.push({ op: 'print', html });
+        printResult.whilePrinting?.();
         return printResult.printed;
       },
     },

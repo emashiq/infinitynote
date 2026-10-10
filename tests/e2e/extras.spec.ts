@@ -51,10 +51,33 @@ test('outline and counts follow the note; a heading in the outline moves the cur
   await expect(editor(page).getByRole('heading', { name: 'XSetup' })).toBeVisible();
 });
 
+/** The files under userData other than the database that hold `text` (the page printed must never be one, D-176). */
+function filesHolding(root: string, text: string): string[] {
+  const holds = (file: string) => {
+    try {
+      return fs.readFileSync(file).includes(text);
+    } catch (err) {
+      // Chromium keeps its lock files open exclusively on Windows, and removes journals meanwhile; neither holds a page.
+      if (['EBUSY', 'ENOENT'].includes((err as NodeJS.ErrnoException).code ?? '')) return false;
+      throw err;
+    }
+  };
+  return fs
+    .readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && !entry.name.startsWith('infinity-notes.sqlite3'))
+    .map((entry) => path.join(entry.parentPath, entry.name))
+    .filter(holds);
+}
+
 test('export as PDF writes a PDF made in a hidden window, and export as HTML a page without scripts', async () => {
+  // A page an earlier build left behind while printing is removed at startup (D-176).
+  const leftovers = path.join(h.userData, 'data', 'export-tmp');
+  fs.mkdirSync(leftovers, { recursive: true });
+  fs.writeFileSync(path.join(leftovers, `${randomUUID()}.html`), '<p>left behind</p>');
   const { app, page } = await h.start();
+  await expect.poll(() => fs.existsSync(leftovers)).toBe(false);
   const note = await createNote(page, COMMON, 'Report');
-  await saveDoc(page, note, { type: 'doc', content: [heading(1, 'Summary'), para('All good')] });
+  await saveDoc(page, note, { type: 'doc', content: [heading(1, 'Summary'), para('All good quokkaprintmarker')] });
   await reloadUi(page);
   await openByPalette(page, 'Report');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'infinity-export-'));
@@ -64,6 +87,9 @@ test('export as PDF writes a PDF made in a hidden window, and export as HTML a p
   await expect(toasts(page).filter({ hasText: 'Exported to Report.pdf' })).toBeVisible();
   expect(fs.readFileSync(pdf).subarray(0, 5).toString()).toBe('%PDF-');
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => w.isVisible()).length)).toBe(1);
+  // The hidden window read the page from memory: no file outside the database holds the note's text.
+  expect(filesHolding(h.userData, 'quokkaprintmarker')).toEqual([]);
+  expect(fs.existsSync(leftovers)).toBe(false);
 
   const html = path.join(dir, 'Report.html');
   await queueSave(app, html);
