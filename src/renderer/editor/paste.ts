@@ -3,6 +3,7 @@ import type { EditorView } from '@tiptap/pm/view';
 import { ATTACHMENT_MESSAGES } from '../../shared/attachments/limits';
 import { TABLE_PASTED_AS_TEXT_MESSAGE, TABLE_TOO_LARGE_MESSAGE } from '../../shared/editor/table-limits';
 import { textToDoc } from '../../shared/text/textarea-doc';
+import { fencedTextSlice } from './code-fences';
 import { sanitizePastedHtml } from './sanitize';
 import { tableClipboardText, tableSliceFromText } from './table-clipboard';
 import { fragmentTablesFit } from './table-size';
@@ -21,6 +22,8 @@ export const MAX_PASTE_CHARS = 8 * 1024 * 1024;
 /** From this size on, pending edits are saved before the paste is processed (D-060). */
 export const LARGE_PASTE_CHARS = 256 * 1024;
 export const PASTE_TOO_LARGE = 'This paste is too large (over 8 MB). Paste a smaller part.';
+/** HTML that carries code or a table itself, so it is pasted as HTML even when its text has code fences. */
+const CODE_OR_TABLE_HTML = /<(pre|code|table)[\s>]/i;
 
 /** Plain text as paragraphs, merged into the paragraphs around the cursor like a normal text paste. */
 function insertPlainText(view: EditorView, text: string, at?: number): void {
@@ -41,6 +44,12 @@ export function createPasteProps(deps: PasteDeps) {
   const { format, uploader, notify } = deps;
   /** True while a deferred large paste is handed back to ProseMirror. */
   let replaying = false;
+  /** Shift is down: Ctrl+Shift+V pastes as plain text (ProseMirror reads it the same way), so fences stay text. */
+  let shiftDown = false;
+  const trackShift = (event: KeyboardEvent): boolean => {
+    if (event.key === 'Shift') shiftDown = event.type === 'keydown';
+    return false;
+  };
 
   /** Runs a paste now, or after saving pending edits when it is large. */
   const runPaste = (view: EditorView, size: number, paste: () => void): void => {
@@ -89,6 +98,15 @@ export function createPasteProps(deps: PasteDeps) {
       runPaste(view, size, () => insertPlainText(view, text));
       return true;
     }
+    // Text editors (VS Code) also put Markdown on the clipboard as styled lines: when the text has a code fence and the
+    // HTML no code or table, the text's fences are what was meant (D-183). Inside a code block, and pasted as plain text,
+    // text stays text.
+    const fenced = html && !shiftDown && !CODE_OR_TABLE_HTML.test(html) && !view.state.selection.$from.parent.type.spec.code ? fencedTextSlice(text, view.state.schema) : null;
+    if (fenced) {
+      event.preventDefault();
+      runPaste(view, size, () => view.dispatch(view.state.tr.replaceSelection(fenced).scrollIntoView()));
+      return true;
+    }
     if (size <= LARGE_PASTE_CHARS) return false;
     event.preventDefault();
     runPaste(view, size, () => (html ? view.pasteHTML(html, event) : view.pasteText(text, event)));
@@ -97,6 +115,8 @@ export function createPasteProps(deps: PasteDeps) {
 
   return {
     handleDOMEvents: {
+      keydown: (_view: EditorView, event: KeyboardEvent) => trackShift(event),
+      keyup: (_view: EditorView, event: KeyboardEvent) => trackShift(event),
       paste: pasteFromEvent,
       drop(_view: EditorView, event: DragEvent): boolean {
         const data = event.dataTransfer;
@@ -137,14 +157,17 @@ export function createPasteProps(deps: PasteDeps) {
     },
 
     /**
-     * Tab-separated text with several rows and columns (a spreadsheet copy without HTML) becomes a table in rich notes;
-     * ProseMirror never asks inside code blocks. "Paste as plain text" keeps it text, except for a deferred large paste,
-     * which ProseMirror always marks as plain.
+     * Tab-separated text with several rows and columns (a spreadsheet copy without HTML) becomes a table in rich notes,
+     * and text with Markdown code fences gets code blocks (D-183); ProseMirror never asks inside code blocks. "Paste as
+     * plain text" keeps it text, except for a deferred large paste, which ProseMirror always marks as plain.
      */
     clipboardTextParser(text: string, _context: ResolvedPos, plain: boolean, view: EditorView): Slice {
-      const table = format === 'rich' && (!plain || replaying) ? tableSliceFromText(text, view.state.schema, () => notify(TABLE_PASTED_AS_TEXT_MESSAGE)) : null;
+      const structured =
+        format === 'rich' && (!plain || replaying)
+          ? (tableSliceFromText(text, view.state.schema, () => notify(TABLE_PASTED_AS_TEXT_MESSAGE)) ?? fencedTextSlice(text, view.state.schema))
+          : null;
       // Without a slice ProseMirror parses the text itself (its typing leaves out that a parser may return nothing).
-      return table as Slice;
+      return structured as Slice;
     },
 
     /** A copy holding table content also puts tab-separated text on the clipboard (spreadsheets paste it as cells). */

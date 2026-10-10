@@ -11,7 +11,7 @@ import { browserHideEvents, createCoreServices, type CoreServices } from '../sta
 import { WINDOW_KEPT_NOTICE, restoreNotice, trashedDraftNotice, unsavedFlushNotice } from '../state/notice-store';
 import { createStore, failOutcome, okOutcome, realTimers, uuidv4, type Outcome, type Store, type Timers } from '../state/store';
 import { browserThemeEnv, type ThemeEnv } from '../state/theme-store';
-import { createActivityReporter } from './activity-reporter';
+import { createActivityReporter } from '../state/activity-reporter';
 
 export type StickyPhase = 'loading' | 'ready' | 'invalid';
 

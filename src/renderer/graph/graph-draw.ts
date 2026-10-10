@@ -48,8 +48,9 @@ export function readGraphColors(el: Element): GraphColors {
   };
 }
 
+/** Locked notes and documents share the locked color (D-185); other documents have the color of their kind. */
 export const nodeColor = (node: GraphNodeType, colors: GraphColors): string =>
-  node.kind === 'document' && node.documentKind ? colors.documents[node.documentKind] : node.locked ? colors.locked : colors.note;
+  node.locked ? colors.locked : node.kind === 'document' && node.documentKind ? colors.documents[node.documentKind] : colors.note;
 
 export interface DrawState {
   /** Nodes to stand out (hover and its neighbors, or search matches); the rest are dimmed. Null: none dimmed. */

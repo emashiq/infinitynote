@@ -14,7 +14,7 @@ import type { TreeChangedEventType } from '../../shared/contracts/hierarchy';
 import { LOCK_MESSAGES } from '../../shared/contracts/locks';
 import type { Db } from '../db/driver';
 import { NotesRepo } from '../db/repositories/notes-repo';
-import type { NoteVault } from '../locks/note-vault';
+import type { LockVault } from '../locks/lock-vault';
 import { AppError, errorDetail } from '../services/app-error';
 import type { DocumentStore } from '../documents/document-store';
 import type { DocumentText } from '../documents/text/document-text';
@@ -58,7 +58,7 @@ export interface PortabilityServiceDeps {
   documentText: DocumentText;
   content: NoteContent;
   /** Exports a locked note only while it is unlocked (D-111). */
-  vault: NoteVault;
+  vault: LockVault;
   reminders: Pick<ReminderService, 'insertImported' | 'announceImported'>;
   onTreeChanged(event: TreeChangedEventType): void;
   /** Quits and starts the app again (after the usual flush), so a scheduled restore is applied. */

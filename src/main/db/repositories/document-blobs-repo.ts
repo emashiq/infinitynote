@@ -7,9 +7,11 @@ export interface DocumentBlobRow {
   size_bytes: number;
   created_at: number;
   unreferenced_since: number | null;
+  /** 1 for ciphertext of a locked document (D-185). */
+  sealed: number;
 }
 
-const COLUMNS = 'id, sha256, relative_path, size_bytes, created_at, unreferenced_since';
+const COLUMNS = 'id, sha256, relative_path, size_bytes, created_at, unreferenced_since, sealed';
 /** A blob is in use while a document (live or trashed) shows it or one of their versions keeps it. */
 const REFERENCED = 'id IN (SELECT blob_id FROM documents WHERE blob_id IS NOT NULL) OR id IN (SELECT blob_id FROM document_versions)';
 
@@ -26,12 +28,20 @@ export class DocumentBlobsRepo {
   }
 
   /** New rows start unreferenced until a document or version uses them. */
-  insert(b: { id: string; sha256: string; relativePath: string; sizeBytes: number; now: number }): void {
+  insert(b: { id: string; sha256: string; relativePath: string; sizeBytes: number; now: number; sealed?: boolean }): void {
     this.db
-      .prepare<[string, string, string, number, number, number]>(
-        'INSERT INTO document_blobs(id, sha256, relative_path, size_bytes, created_at, unreferenced_since) VALUES (?, ?, ?, ?, ?, ?)',
+      .prepare<[string, string, string, number, number, number, number]>(
+        'INSERT INTO document_blobs(id, sha256, relative_path, size_bytes, created_at, unreferenced_since, sealed) VALUES (?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(b.id, b.sha256, b.relativePath, b.sizeBytes, b.now, b.now);
+      .run(b.id, b.sha256, b.relativePath, b.sizeBytes, b.now, b.now, b.sealed ? 1 : 0);
+  }
+
+  /** The rows among `ids` that no document or version uses any more. */
+  unreferencedAmong(ids: readonly string[]): DocumentBlobRow[] {
+    if (ids.length === 0) return [];
+    return this.db
+      .prepare<[string], DocumentBlobRow>(`SELECT ${COLUMNS} FROM document_blobs WHERE id IN (SELECT value FROM json_each(?)) AND NOT (${REFERENCED})`)
+      .all(JSON.stringify(ids));
   }
 
   /** A row that is still unreferenced starts its grace period again at `now` (its bytes are about to be used). */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { REMINDER_MESSAGES } from '../../shared/contracts/reminders';
 import { createNoteCommentHost } from '../comments/note-comment-host';
 import { NoteEditor } from '../editor/NoteEditor';
@@ -7,6 +7,7 @@ import { ReminderChipBar } from '../reminders/ReminderChipBar';
 import { useServices, useStore } from '../state/use-store';
 import { useLiveNote } from './live-note';
 import { LockScreen } from './LockScreen';
+import { noteLockTarget } from './lock-target';
 import { NoteBanners } from './NoteBanners';
 import type { ActionResult, NoteController } from './note-controller';
 import { NoteDialogs, type NoteDialog } from './NoteDialogs';
@@ -40,6 +41,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
   const tab = session.tabs.find((t) => t.id === tabId);
   const savedScroll = tab?.kind === 'note' ? (tab.scrollTop ?? 0) : 0;
   const reopen = useCallback(() => void controller.reopen(), [controller]);
+  const lockTarget = useMemo(() => noteLockTarget(services.bridge, controller.noteId), [services.bridge, controller.noteId]);
   const locked = live?.locked ?? false;
 
   // The note's comments are in the Details panel while it is open here (D-165).
@@ -58,7 +60,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
     }
   }, [request, shown, controller.noteId, tabId, ui]);
   const findRequest = request?.target === 'noteFind' && request.noteId === controller.noteId ? request : null;
-  const referenceRequest = request?.target === 'noteReference' && request.noteId === controller.noteId ? request : null;
+  const insertRequest = request?.target === 'noteInsert' && request.noteId === controller.noteId ? request : null;
   // A reference to this note may have brought the user here: offer to look for what they meant (INF-REF-06).
   const searchButton = (
     <button type="button" className="btn" onClick={() => ui.openPalette(state.title)}>
@@ -115,7 +117,7 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
 
   if (state.status === 'locked') {
     // Mounted again when the lock changes elsewhere (removed in Lock settings), so it checks the note's state again.
-    return <LockScreen key={String(locked)} noteId={controller.noteId} title={liveTitle} bridge={services.bridge} onUnlocked={reopen} />;
+    return <LockScreen key={String(locked)} target={lockTarget} title={liveTitle} onUnlocked={reopen} />;
   }
 
   if (state.status === 'missing' || state.status === 'error' || state.content === null) {
@@ -179,8 +181,8 @@ export function NoteView({ controller, tabId }: { controller: NoteController; ta
         services={services.editor}
         findRequest={findRequest}
         onFindRequestHandled={() => ui.consumeFocus()}
-        referenceRequest={referenceRequest}
-        onReferenceRequestHandled={() => ui.consumeFocus()}
+        insertRequest={insertRequest}
+        onInsertRequestHandled={() => ui.consumeFocus()}
         handle={services.noteEditor}
         onConvert={(target) => (target === 'plain' ? setDialog({ kind: 'convert' }) : report(controller.convert('rich')))}
         onOpenVersions={() => setDialog({ kind: 'versions' })}

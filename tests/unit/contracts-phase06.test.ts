@@ -23,7 +23,7 @@ const input = { title: 'Have to submit this', zoneId: 'Asia/Dhaka', date: '2026-
 describe('Phase 06 catalogue (D-089)', () => {
   it('the four channels are appended after autostart:set in order, no new event', () => {
     expect(INVOKE_CHANNELS.slice(63, 68)).toEqual(['autostart:set', 'reminder:createFromSuggestion', 'reminder:updateFromSource', 'suggestion:dismiss', 'suggestion:listDismissed']);
-    expect(EVENT_CHANNELS).toHaveLength(14);
+    expect(EVENT_CHANNELS).toHaveLength(15);
   });
 
   it('stickies may add reminders and confirm or dismiss suggestions, never edit reminders; the widget gets nothing new', () => {

@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { maxBytes } from '../../../shared/attachments/limits';
 import type { DocumentOpenResponseType, DocumentReadWorkbookResponseType, DocumentSaveWorkbookRequestType } from '../../../shared/contracts/documents';
 import { MAX_WORKBOOK_FILE_MB, Workbook, WORKBOOK_FEATURES, WORKBOOK_LIMITS, type CsvFormatType } from '../../../shared/documents/workbook';
@@ -7,7 +6,7 @@ import { DOCUMENT_MESSAGES } from '../../../shared/documents/messages';
 import { AppError } from '../../services/app-error';
 import type { Logger } from '../../services/logger';
 import { isDocumentOfKind } from '../document-check';
-import type { ResolvedDocumentFile } from '../document-files';
+import { readAll, type ByteSource } from '../byte-source';
 import type { DocumentService } from '../document-service';
 import { bomEncoding, isUtf8 } from '../text-encoding';
 import { packageFeatures } from './workbook-package';
@@ -15,7 +14,7 @@ import type { WorkbookConverter } from './workbook-runner';
 import type { WorkbookReply, WorkbookTask } from './workbook-task';
 
 export interface SpreadsheetServiceDeps {
-  documents: Pick<DocumentService, 'fileOf' | 'save'>;
+  documents: Pick<DocumentService, 'sourceOf' | 'kindOf' | 'save'>;
   convert: WorkbookConverter;
   logger: Logger;
 }
@@ -45,14 +44,13 @@ export class SpreadsheetService {
   constructor(private readonly deps: SpreadsheetServiceDeps) {}
 
   async read(documentId: string, versionId?: string): Promise<DocumentReadWorkbookResponseType> {
-    const source = await this.deps.documents.fileOf(documentId, versionId);
-    if (source.kind !== 'xlsx' && source.kind !== 'csv') throw new AppError('UNSUPPORTED', DOCUMENT_MESSAGES.noViewer(source.kind));
-    if (source.sizeBytes > MAX_FILE_BYTES) throw new AppError('LIMIT_EXCEEDED', WORKBOOK_MESSAGES.tooLargeFile);
-    if (!(await isDocumentOfKind(source.kind, source.file))) throw new AppError('VALIDATION_FAILED', WORKBOOK_MESSAGES.unreadable);
+    // A locked document's bytes come decrypted in memory (D-185); they reach the worker as bytes, never as a file.
+    const { kind, source, sizeBytes } = await this.deps.documents.sourceOf(documentId, versionId);
+    if (kind !== 'xlsx' && kind !== 'csv') throw new AppError('UNSUPPORTED', DOCUMENT_MESSAGES.noViewer(kind));
+    if (sizeBytes > MAX_FILE_BYTES) throw new AppError('LIMIT_EXCEEDED', WORKBOOK_MESSAGES.tooLargeFile);
+    if (!(await isDocumentOfKind(kind, source))) throw new AppError('VALIDATION_FAILED', WORKBOOK_MESSAGES.unreadable);
     const task: WorkbookTask =
-      source.kind === 'xlsx'
-        ? { op: 'readXlsx', file: source.file, limits: WORKBOOK_LIMITS }
-        : { op: 'readCsv', file: source.file, limits: WORKBOOK_LIMITS, encoding: await csvEncoding(source) };
+      kind === 'xlsx' ? { op: 'readXlsx', source, limits: WORKBOOK_LIMITS } : { op: 'readCsv', source, limits: WORKBOOK_LIMITS, encoding: await csvEncoding(source) };
     const reply = await this.run(task, 'read');
     if (!('read' in reply)) throw new AppError('INTERNAL', WORKBOOK_MESSAGES.unreadable);
     const checked = Workbook.safeParse(reply.read.workbook);
@@ -60,13 +58,13 @@ export class SpreadsheetService {
       this.deps.logger.warn(`spreadsheets: model check failed at=${checked.error.issues[0]?.path.join('.') ?? ''}`);
       throw new AppError('VALIDATION_FAILED', WORKBOOK_MESSAGES.unreadable);
     }
-    const found = new Set([...reply.read.features, ...(source.kind === 'xlsx' ? await packageFeatures(source.file) : [])]);
+    const found = new Set([...reply.read.features, ...(kind === 'xlsx' ? await packageFeatures(source) : [])]);
     return { workbook: checked.data, simplified: WORKBOOK_FEATURES.filter((f) => found.has(f)), csv: reply.read.csv };
   }
 
   /** Writes the model in the document's own format and saves the bytes as its next revision. */
   async save(req: DocumentSaveWorkbookRequestType): Promise<DocumentOpenResponseType> {
-    const { kind } = await this.deps.documents.fileOf(req.documentId);
+    const kind = this.deps.documents.kindOf(req.documentId);
     if (kind !== 'xlsx' && kind !== 'csv') throw new AppError('UNSUPPORTED', DOCUMENT_MESSAGES.noViewer(kind));
     if (kind === 'csv' && !req.csv) throw new AppError('VALIDATION_FAILED', 'Invalid request: csv');
     const task: WorkbookTask = kind === 'xlsx' ? { op: 'writeXlsx', workbook: req.workbook } : { op: 'writeCsv', workbook: req.workbook, format: req.csv as CsvFormatType };
@@ -93,8 +91,8 @@ export class SpreadsheetService {
  * The encoding of a CSV file (D-135): its byte-order mark, else UTF-8 when the whole file is valid UTF-8, else
  * Windows-1252 (what spreadsheet apps write on Western Windows systems).
  */
-async function csvEncoding(source: ResolvedDocumentFile): Promise<Pick<CsvFormatType, 'encoding' | 'bom'>> {
-  const bytes = await fs.promises.readFile(source.file);
+async function csvEncoding(source: ByteSource): Promise<Pick<CsvFormatType, 'encoding' | 'bom'>> {
+  const bytes = await readAll(source);
   const bom = bomEncoding(bytes);
   if (bom) return { encoding: bom, bom: true };
   return { encoding: isUtf8(bytes) ? 'utf-8' : 'windows-1252', bom: false };

@@ -11,9 +11,9 @@ const RENDERER = 'infinity-app://renderer';
 
 async function setup() {
   const d = await setupDocuments();
-  const files = d.s.services.documentFiles;
-  const handler = createDocumentHandler({ files, allowedOrigins: [RENDERER], logger: memoryLogger() });
-  const html = createHtmlDocumentHandler({ files, logger: memoryLogger() });
+  const documents = d.s.services.documents;
+  const handler = createDocumentHandler({ documents, allowedOrigins: [RENDERER], logger: memoryLogger() });
+  const html = createHtmlDocumentHandler({ documents, logger: memoryLogger() });
   const get = (url: string, init: RequestInit = {}) => handler(new Request(url, init));
   return { ...d, handler, html, get };
 }
@@ -93,7 +93,7 @@ describe('infinity-document protocol (D-118)', () => {
   });
 
   it('with no database every request is 404', async () => {
-    const handler = createDocumentHandler({ files: null, allowedOrigins: [RENDERER] });
+    const handler = createDocumentHandler({ documents: null, allowedOrigins: [RENDERER] });
     expect((await handler(new Request(documentUrl(randomUUID(), 0)))).status).toBe(404);
   });
 });

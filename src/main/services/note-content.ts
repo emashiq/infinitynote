@@ -3,7 +3,7 @@ import { PLAIN_COMMENTS, sealedComments } from '../comments/comment-cipher';
 import { CommentQuotes } from '../comments/comment-quotes';
 import type { Db } from '../db/driver';
 import { NotesRepo } from '../db/repositories/notes-repo';
-import type { NoteVault } from '../locks/note-vault';
+import type { LockVault } from '../locks/lock-vault';
 import { AppError } from './app-error';
 import type { ContentIndexer } from './content-indexer';
 
@@ -49,7 +49,7 @@ export class NoteContent {
   constructor(
     db: Db,
     private readonly indexer: ContentIndexer,
-    private readonly vault: NoteVault,
+    private readonly vault: LockVault,
   ) {
     this.notes = new NotesRepo(db);
     this.quotes = new CommentQuotes(db);
@@ -57,9 +57,9 @@ export class NoteContent {
 
   write(w: ContentWrite): { revision: number; updatedAt: number } {
     const locked = this.notes.isLocked(w.noteId);
-    if (locked) this.vault.keyOf(w.noteId);
+    if (locked) this.vault.requireUnlocked(w.noteId);
     const { plainText } = this.indexer.index(w.noteId, w.format, w.content, w.now);
-    this.quotes.sync(w.noteId, w.format, w.content, () => (locked ? sealedComments(this.vault.keyOf(w.noteId), w.noteId) : PLAIN_COMMENTS));
+    this.quotes.sync(w.noteId, w.format, w.content, () => (locked ? sealedComments(this.vault.keyAccess(w.noteId), { kind: 'note', id: w.noteId }) : PLAIN_COMMENTS));
     const serialized = typeof w.content === 'string' ? w.content : JSON.stringify(w.content);
     const written = this.notes.writeContent({
       id: w.noteId,

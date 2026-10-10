@@ -13,6 +13,7 @@ import type {
   TrashRestoreResponseType,
 } from '../../shared/contracts/hierarchy';
 import type { BlankDocumentKind } from '../../shared/documents/kinds';
+import { checkRename } from '../../shared/names';
 import { buildPathIndex, pathOf } from '../../shared/tree/paths';
 import { ancestorsOf, buildTreeModel, locationOfNode, type NodeKey, type TreeModel } from '../../shared/tree/tree-model';
 import { closedTabsNotice, restoreNotice, type NoticeStore } from './notice-store';
@@ -226,6 +227,18 @@ export class TreeStore {
     if (!res.ok) return this.fail(res);
     await this.afterChange();
     return okOutcome(undefined);
+  }
+  /**
+   * A document's name as typed in a tab or the document header: checked like the tree's rename (D-182). Resolves to
+   * the message to show, or null when the name is saved or did not change.
+   */
+  async renameDocumentTyped(documentId: string, typed: string): Promise<string | null> {
+    const current = this.store.getState().snapshot.documents.find((d) => d.id === documentId)?.title ?? '';
+    const check = checkRename(typed, current, 'name');
+    if (check.status === 'invalid') return check.message;
+    if (check.status === 'unchanged') return null;
+    const res = await this.renameDocument(documentId, check.name);
+    return res.ok ? null : res.message;
   }
   async moveDocument(documentId: string, target: LocationType): Promise<Outcome> {
     const res = await this.deps.bridge.document.move({ documentId, target });

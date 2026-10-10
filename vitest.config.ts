@@ -1,13 +1,17 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 import { moduleAliases } from './aliases.config';
+import { fortuneSheetPatch } from './fortune-sheet-patch.config';
 
 export default defineConfig({
-  plugins: [react()],
+  // The spreadsheet viewer runs on FortuneSheet's core as the app builds it (patched, D-139, D-184).
+  plugins: [react(), fortuneSheetPatch()],
   resolve: { alias: moduleAliases(__dirname) },
   test: {
     // Main reads the design tokens as raw text (D-097); Vitest returns other CSS as empty modules.
     css: { include: [/shared[\\/]theme[\\/]tokens\.css/] },
+    // Transformed by Vite (not loaded as is by Node), so the patch above applies to it.
+    server: { deps: { inline: [/@fortune-sheet[\\/]core/] } },
     projects: [
       {
         extends: true,

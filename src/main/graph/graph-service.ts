@@ -56,7 +56,7 @@ export class GraphService {
       id: d.id,
       documentKind: d.kind,
       title: d.title,
-      locked: false,
+      locked: d.locked === 1,
       projectId: d.project_id,
       folderId: d.folder_id,
     }));

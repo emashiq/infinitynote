@@ -3,7 +3,9 @@ import { ReminderDialog } from '../reminders/ReminderDialog';
 import { SuggestionCard } from '../reminders/SuggestionCard';
 import { AboutDialog, ShortcutsDialog } from '../shell/HelpDialogs';
 import { MoveDialog } from '../tree/MoveDialog';
-import { CreateLockedDialog, LockNoteDialog, LockSettingsDialog } from '../notes/LockDialogs';
+import { useMemo } from 'react';
+import { CreateLockedDialog, LockDocumentDialog, LockNoteDialog, LockSettingsDialog } from '../notes/LockDialogs';
+import { documentLockTarget, noteLockTarget } from '../notes/lock-target';
 import { useServices, useStore } from '../state/use-store';
 import type { Outcome } from '../state/store';
 import { restoreConfirmBody } from '../state/portability-commands';
@@ -142,14 +144,39 @@ export function DialogHost() {
       const note = treeState.snapshot.notes.find((n) => n.id === dialog.noteId);
       if (!note) return null;
       const props = {
-        noteId: note.id,
-        title: note.title,
         bridge: services.bridge,
         flush: () => tabs.flushActive(),
         notify: (message: string) => notices.push(message, 'info'),
         onClose: close,
       };
-      return dialog.kind === 'lockNote' ? <LockNoteDialog {...props} sticky={note.sticky} /> : <LockSettingsDialog {...props} sticky={note.sticky} />;
+      return dialog.kind === 'lockNote' ? (
+        <LockNoteDialog {...props} noteId={note.id} title={note.title} sticky={note.sticky} />
+      ) : (
+        <NoteLockSettings {...props} noteId={note.id} title={note.title} sticky={note.sticky} />
+      );
+    }
+    case 'lockDocument':
+    case 'documentLockSettings': {
+      const document = treeState.snapshot.documents.find((d) => d.id === dialog.documentId);
+      if (!document) return null;
+      const props = {
+        bridge: services.bridge,
+        flush: () => tabs.flushActive(),
+        notify: (message: string) => notices.push(message, 'info'),
+        onClose: close,
+      };
+      return dialog.kind === 'lockDocument' ? (
+        <LockDocumentDialog
+          {...props}
+          documentId={document.id}
+          title={document.title}
+          linked={document.storage === 'linked'}
+          sizeBytes={document.sizeBytes}
+          copyLimitMb={services.attachmentPrefs.getState().documentMaxMb}
+        />
+      ) : (
+        <DocumentLockSettings {...props} documentId={document.id} title={document.title} />
+      );
     }
     case 'createLocked':
       return (
@@ -194,4 +221,22 @@ export function DialogHost() {
     default:
       return null;
   }
+}
+
+type LockSettingsProps = Omit<Parameters<typeof LockSettingsDialog>[0], 'target' | 'pin'>;
+
+/** The lock settings of a note, with the PIN of its sticky (D-173). */
+function NoteLockSettings({ noteId, sticky, ...props }: LockSettingsProps & { noteId: string; sticky: boolean }) {
+  const target = useMemo(() => noteLockTarget(props.bridge, noteId), [props.bridge, noteId]);
+  const pin = async (password: string, next: string | null) => {
+    const res = await props.bridge.lock.setPin({ noteId, password, pin: next });
+    return res.ok ? null : res.error.message;
+  };
+  return <LockSettingsDialog {...props} target={target} {...(sticky ? { pin } : {})} />;
+}
+
+/** The lock settings of a document (D-185). */
+function DocumentLockSettings({ documentId, ...props }: LockSettingsProps & { documentId: string }) {
+  const target = useMemo(() => documentLockTarget(props.bridge, documentId), [props.bridge, documentId]);
+  return <LockSettingsDialog {...props} target={target} />;
 }

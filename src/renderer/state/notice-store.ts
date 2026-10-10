@@ -69,8 +69,9 @@ export function restoreNotice(res: Pick<TrashRestoreResponseType, 'path' | 'relo
 /** A window kept open because its note could not be saved (D-072). */
 export const WINDOW_KEPT_NOTICE = STICKY_MESSAGES.notSaved;
 export const QUIT_CANCELED_NOTICE = 'Could not save this note, so Infinity Notes did not quit. Quit again to quit without saving it.';
+export const LOCK_UNSAVED_NOTICE = 'Some edits could not be saved before the document locked again.';
 
-/** What a window says when main asked it to save before closing or quitting and the save failed. */
+/** What a window says when main asked it to save before closing, quitting or locking a document and the save failed. */
 export function unsavedFlushNotice(reason: FlushReasonType): string {
-  return reason === 'quit' ? QUIT_CANCELED_NOTICE : WINDOW_KEPT_NOTICE;
+  return { quit: QUIT_CANCELED_NOTICE, close: WINDOW_KEPT_NOTICE, lock: LOCK_UNSAVED_NOTICE }[reason];
 }

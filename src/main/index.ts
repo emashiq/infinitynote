@@ -19,6 +19,7 @@ import type { NoteRevisionEventType } from '../shared/contracts/notes';
 import type { ReminderAlertEventType, ReminderChangedEventType } from '../shared/contracts/reminders';
 import { ThemeSetting } from '../shared/contracts/settings';
 import { LAUNCHED_AT_LOGIN_ARG } from '../shared/contracts/widget';
+import { dateOrderOf } from '../shared/time/typed-date';
 import { assertNotInstallDir, ensureDataDirs, resolveDataPaths, resolveUserDataOverride } from './app-paths';
 import { LATEST } from './db/migrations';
 import { openDatabase } from './db/open-database';
@@ -235,7 +236,14 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       onNoteRevision: emitRevision,
       sendCollab: (webContentsId, channel, payload) => void eventBus.sendTo(webContentsId, channel, payload),
       sendStickyLock: (webContentsId, state) => void eventBus.sendTo(webContentsId, 'sticky:lockState', state),
+      // A document tab keeps its edits until saved: they are saved (sealed) before its document locks again (D-185).
+      saveOpenDocumentEdits: async () => {
+        const id = desktop?.mainWindow.webContentsId();
+        if (id != null) await flush([id], 'lock');
+      },
+      onDocumentLocked: (documentId) => eventBus.broadcast('lock:documentLocked', { documentId }),
       reminderClock,
+      lockClock: hooks?.lockClock,
       zones,
       onReminderChanged: reminderChanged,
       onRemindersWritten: () => wakeReminders('write'),
@@ -266,6 +274,8 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   }
 
   const startup: StartupStateType = opened.ok ? { status: 'ok' } : { status: 'error', code: opened.code };
+  // Typed dates follow the computer's regional date order (D-184): Windows' and Linux's format locale, not the UI language.
+  const dateOrder = dateOrderOf(hooks?.systemLocale ?? app.getSystemLocale());
   const getInfo = (): AppInfoType => ({
     name: PRODUCT_NAME,
     version: APP_VERSION,
@@ -279,6 +289,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       : null,
     schemaVersion: opened.ok ? opened.schemaVersion : null,
     startup,
+    dateOrder,
   });
 
   const router = createIpcRouter({
@@ -372,10 +383,10 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     },
   });
   // Document bytes for the viewers, by document ID only (D-118); readable from the renderer origin.
-  const documentFiles = services?.documentFiles ?? null;
+  const documents = services?.documents ?? null;
   const rendererOrigins = [`${RENDERER_SCHEME}://${RENDERER_HOST}`, ...(devOrigin ? [devOrigin] : [])];
-  protocol.handle(DOCUMENT_SCHEME, createDocumentHandler({ files: documentFiles, allowedOrigins: rendererOrigins, logger: log }));
-  protocol.handle(HTML_DOCUMENT_SCHEME, createHtmlDocumentHandler({ files: documentFiles, logger: log }));
+  protocol.handle(DOCUMENT_SCHEME, createDocumentHandler({ documents, allowedOrigins: rendererOrigins, logger: log }));
+  protocol.handle(HTML_DOCUMENT_SCHEME, createHtmlDocumentHandler({ documents, logger: log }));
   hooks?.attachDesktop({ desktop: windowsSide, registry, services, inspector: createElectronInspector() });
   shortcut?.start();
 

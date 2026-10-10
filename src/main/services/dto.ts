@@ -48,6 +48,7 @@ export const toDocumentDto = (r: DocumentRow): DocumentDtoType => ({
   title: r.title,
   kind: r.kind,
   storage: r.storage,
+  locked: r.locked === 1,
   sizeBytes: r.size_bytes,
   revision: r.revision,
   favorite: r.favorite === 1,

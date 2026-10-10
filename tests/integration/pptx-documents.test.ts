@@ -1,3 +1,4 @@
+import { readAll } from '../../src/main/documents/byte-source';
 import fs from 'node:fs';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { JSDOM } from 'jsdom';
@@ -35,7 +36,7 @@ function changed(before: Uint8Array, after: Uint8Array): string[] {
     .sort();
 }
 
-const storedBytes = async (s: Awaited<ReturnType<typeof setupDocuments>>['s'], id: string, versionId?: string) => new Uint8Array(fs.readFileSync((await s.documents.fileOf(id, versionId)).file));
+const storedBytes = async (s: Awaited<ReturnType<typeof setupDocuments>>['s'], id: string, versionId?: string) => new Uint8Array(await readAll((await s.documents.sourceOf(id, versionId)).source));
 
 describe('PowerPoint documents saved from the editor (F5, D-149, D-150)', () => {
   it('an edited text run changes only its slide; every other part keeps its bytes', async () => {

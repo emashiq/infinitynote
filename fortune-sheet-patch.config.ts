@@ -2,11 +2,15 @@ import fs from 'node:fs';
 import type { Plugin } from 'vite';
 
 /**
- * FortuneSheet 1.0.4 inserts copied rows with `new Function("d", "return d.splice(…)")` (D-123), which the app's CSP
- * blocks (no `unsafe-eval`), so inserting rows would fail. This build step replaces those three statements with a call
- * of `insertRowsAt` (MIT allows the change), for the production bundle (a Vite transform) and for the development
- * server's dependency bundle (an esbuild plugin). It fails the build when the code it expects is not there, so an
- * upgrade cannot silently bring the eval back (D-139).
+ * Build-time changes to FortuneSheet 1.0.4's core module (MIT allows them), for the production bundle (a Vite
+ * transform), the development server's dependency bundle (an esbuild plugin) and the unit tests. Each fails the build
+ * when the code it expects is not there, so an upgrade cannot silently undo it.
+ *
+ * 1. Copied rows are inserted with `new Function("d", "return d.splice(…)")` (D-123), which the app's CSP blocks (no
+ *    `unsafe-eval`); those three statements become a call of `insertRowsAt` (D-139).
+ * 2. Typed text is read as a number, date or text by `genarate`, which knows only `yyyy-mm-dd` and `yyyy/mm/dd` dates
+ *    (D-184). A hook goes in front of it: `setTextValueParser(parse)` lets the app read the text first (as a date in the
+ *    computer's date order); `parse` returns FortuneSheet's `[shown, cellType, value]`, or null to leave the text to it.
  */
 
 /**
@@ -27,10 +31,32 @@ const REPLACEMENTS: ReadonlyArray<{ from: string; to: string }> = [
   { from: 'new Function("d", "return d.splice(".concat(index + 1, ", 0, ").concat(arr.join(","), ")"))(d);', to: `${HELPER}(d, index + 1, arr);` },
 ];
 
-/** The FortuneSheet core module this patches, by file path. */
+/** FortuneSheet's own text reader, renamed so the hooked `genarate` can call it. */
+const GENARATE = 'function genarate(value) {';
+const ORIGINAL_GENARATE = '__infinityFortuneGenarate';
+
+/** The hooked `genarate` and the setter of its parser; every caller inside the module (and its export) gets this one. */
+const TEXT_VALUE_HOOK = `
+var __infinityTextValue = null;
+function genarate(value) {
+  var own = __infinityTextValue !== null && typeof value === "string" ? __infinityTextValue(value) : null;
+  return own !== null ? own : ${ORIGINAL_GENARATE}(value);
+}
+function __infinitySetTextValueParser(parse) {
+  __infinityTextValue = parse;
+}
+`;
+
+/** The core module this patches, by file path. */
 export const FORTUNE_SHEET_CORE = /[\\/]@fortune-sheet[\\/]core[\\/]dist[\\/]index(\.esm)?\.js$/;
 
-/** FortuneSheet's core module with every `new Function` replaced; throws when the module is not the expected one. */
+function replaceOnce(code: string, from: string, to: string): string {
+  const at = code.indexOf(from);
+  if (at < 0 || code.indexOf(from, at + from.length) >= 0) throw new Error(`fortune-sheet patch: expected code once: ${from}`);
+  return code.slice(0, at) + to + code.slice(at + from.length);
+}
+
+/** FortuneSheet's core module with every `new Function` replaced and the text hook added; throws for another module. */
 export function patchFortuneSheetCore(code: string): string {
   let patched = code;
   for (const { from, to } of REPLACEMENTS) {
@@ -38,7 +64,12 @@ export function patchFortuneSheetCore(code: string): string {
     patched = patched.replaceAll(from, to);
   }
   if (/new Function\s*\(/.test(patched)) throw new Error('fortune-sheet patch: the core module still creates functions from strings');
-  return `${patched}\nfunction ${HELPER}${insertRowsAt.toString().replace(/^function\s*\w*/, '')}\n`;
+  patched = replaceOnce(patched, GENARATE, `function ${ORIGINAL_GENARATE}(value) {`);
+  const esm = /^export \{/m.test(patched);
+  const exportHook = esm
+    ? 'export { __infinitySetTextValueParser as setTextValueParser };'
+    : 'exports.setTextValueParser = __infinitySetTextValueParser;';
+  return `${patched}\nfunction ${HELPER}${insertRowsAt.toString().replace(/^function\s*\w*/, '')}\n${TEXT_VALUE_HOOK}${exportHook}\n`;
 }
 
 /** Applies the patch in the renderer build and in the development server's pre-bundled dependencies. */

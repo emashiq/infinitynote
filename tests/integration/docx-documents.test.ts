@@ -1,3 +1,4 @@
+import { readAll } from '../../src/main/documents/byte-source';
 import fs from 'node:fs';
 import { exportDocx, importDocx } from '@portone/docx-editor/core';
 import { EditorState } from '@tiptap/pm/state';
@@ -38,7 +39,7 @@ describe('Word documents saved from the editor (F4, D-142)', () => {
     const saved = await s.documents.save({ documentId: doc.id, baseRevision: 0, bytes: editAndExport(opened, 'Edited ') });
     expect(saved.document.revision).toBe(1);
 
-    const stored = new Uint8Array(fs.readFileSync((await s.documents.fileOf(doc.id)).file));
+    const stored = new Uint8Array(await readAll((await s.documents.sourceOf(doc.id)).source));
     const before = parts(opened);
     const after = parts(stored);
     const changed = Object.keys(before).filter((name) => !Buffer.from(after[name]!).equals(Buffer.from(before[name]!)));
@@ -63,11 +64,11 @@ describe('Word documents saved from the editor (F4, D-142)', () => {
 
     const [version] = s.documents.versionsOf(doc.id).versions;
     expect(version).toMatchObject({ revision: 0, reason: 'save' });
-    const old = new Uint8Array(fs.readFileSync((await s.documents.fileOf(doc.id, version!.id)).file));
+    const old = new Uint8Array(await readAll((await s.documents.sourceOf(doc.id, version!.id)).source));
     expect(firstParagraph(old)).toBe('Project handbook');
 
     await s.documents.restoreVersion({ documentId: doc.id, versionId: version!.id, baseRevision: 1 });
-    const current = new Uint8Array(fs.readFileSync((await s.documents.fileOf(doc.id)).file));
+    const current = new Uint8Array(await readAll((await s.documents.sourceOf(doc.id)).source));
     expect(firstParagraph(current)).toBe('Project handbook');
     expect(s.search.query({ query: 'zephyrine' }).documents).toEqual([]);
     expect(s.documents.versionsOf(doc.id).versions.map((v) => [v.revision, v.reason])).toEqual([

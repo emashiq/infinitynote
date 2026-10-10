@@ -3,13 +3,14 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from
 import type { NoteColorType } from '../../shared/contracts/hierarchy';
 import type { DocumentKind } from '../../shared/documents/kinds';
 import { displayTitle } from '../../shared/names';
-import { NoteTitleField, type TitleEditEnd } from '../notes/NoteTitleField';
+import { NoteTitleField } from '../notes/NoteTitleField';
 import type { TabType } from '../../shared/contracts/session';
 import type { AppServices } from '../state/app-services';
 import { useServices, useStore } from '../state/use-store';
 import { ColorDot } from '../ui/ColorDot';
 import { DocumentKindIcon } from '../ui/DocumentKindIcon';
 import { LockMark } from '../ui/LockMark';
+import { RenameInput } from '../ui/RenameInput';
 import { IconButton } from '../ui/IconButton';
 import { scrollBehavior } from '../ui/motion';
 import { AllTabsMenu } from './AllTabsMenu';
@@ -40,7 +41,7 @@ export function tabViews(services: AppServices, tabs: TabType[]): TabView[] {
         return { tab, label: 'Graph', sticky: false, color: null, locked: false };
       case 'document': {
         const document = documents.find((d) => d.id === tab.documentId);
-        return { tab, label: document?.title ?? 'Document', sticky: false, color: null, locked: false, documentKind: document?.kind };
+        return { tab, label: document?.title ?? 'Document', sticky: false, color: null, locked: !!document?.locked, documentKind: document?.kind };
       }
       default: {
         const note = notes.find((n) => n.id === tab.noteId);
@@ -64,7 +65,12 @@ function TabIcon({ view }: { view: TabView }) {
     case 'graph':
       return <Waypoints {...props} />;
     case 'document':
-      return view.documentKind ? <DocumentKindIcon kind={view.documentKind} size={14} /> : <FileText {...props} />;
+      return (
+        <>
+          {view.documentKind ? <DocumentKindIcon kind={view.documentKind} size={14} /> : <FileText {...props} />}
+          {view.locked ? <LockMark /> : null}
+        </>
+      );
     default:
       return (
         <>
@@ -108,16 +114,19 @@ export function TabStrip() {
     document.getElementById(`tab-${id}`)?.focus();
   };
 
-  // A note tab is the note's title (D-102): double-click or F2 renames it once its note is open in the tab.
+  // Double-click or F2 renames a note tab (the note's title, D-102) once its note is open in the tab, and a document
+  // tab with the tree's name rules (D-182).
   const rename = (tab: TabType) => {
-    if (tab.kind !== 'note') return;
-    void tabsStore.activate(tab.id).then(() => ui.requestFocus({ target: 'noteTitle', noteId: tab.noteId }));
+    if (tab.kind === 'note') void tabsStore.activate(tab.id).then(() => ui.requestFocus({ target: 'noteTitle', noteId: tab.noteId }));
+    else if (tab.kind === 'document') void tabsStore.activate(tab.id).then(() => ui.startTabRename(tab.id));
   };
-  const endRename = (tabId: string, how: TitleEditEnd) => {
+  /** Ends a tab rename; the focus goes back to the tab after Escape (and Enter in a document tab's field). */
+  const endRename = (tabId: string, refocus: boolean) => {
     ui.endTabRename();
-    if (how === 'escape') focusTab(tabId);
+    if (refocus) focusTab(tabId);
   };
   const renameField = (tab: TabType) => {
+    if (tab.kind === 'document') return tab.id === renamingTab ? documentRenameField(tab.id, tab.documentId) : null;
     const controller = tabsStore.activeController();
     if (tab.kind !== 'note' || tab.id !== renamingTab || tab.id !== session.activeTabId || controllerNoteId !== tab.noteId || !controller) return null;
     const live = services.tree.store.getState().snapshot.notes.find((n) => n.id === tab.noteId);
@@ -128,7 +137,24 @@ export function TabStrip() {
         className="tab-rename"
         editor={services.noteEditor}
         autoFocus
-        onDone={(how) => endRename(tab.id, how)}
+        onDone={(how) => endRename(tab.id, how === 'escape')}
+      />
+    );
+  };
+
+  const documentRenameField = (tabId: string, documentId: string) => {
+    const title = services.tree.store.getState().snapshot.documents.find((d) => d.id === documentId)?.title ?? '';
+    return (
+      <RenameInput
+        initial={title}
+        className="tab-rename"
+        onCommit={async (value, how) => {
+          const message = await services.tree.renameDocumentTyped(documentId, value);
+          if (message === null) endRename(tabId, how === 'enter');
+          return message;
+        }}
+        onCancel={() => endRename(tabId, true)}
+        onError={(message) => services.notices.push(message, 'error')}
       />
     );
   };

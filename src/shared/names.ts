@@ -29,6 +29,20 @@ export function validateTitle(s: string): string | null {
   return null;
 }
 
+/** What an inline rename asks for: nothing (the name did not change), an error to show, or the new name to save. */
+export type RenameCheck = { status: 'unchanged' } | { status: 'invalid'; message: string } | { status: 'changed'; name: string };
+
+/**
+ * Checks a typed name against the current one: normalized, then validated as a name (projects, folders, documents:
+ * required) or a title (notes: may be empty).
+ */
+export function checkRename(raw: string, current: string, rule: 'name' | 'title'): RenameCheck {
+  const name = normalizeName(raw);
+  const message = rule === 'title' ? validateTitle(name) : validateName(name);
+  if (message) return { status: 'invalid', message };
+  return name === current ? { status: 'unchanged' } : { status: 'changed', name };
+}
+
 export function displayTitle(title: string): string {
   return title.length > 0 ? title : 'Untitled';
 }

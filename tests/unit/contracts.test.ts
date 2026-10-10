@@ -83,6 +83,7 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
       'collab:reset',
       'collab:status',
       'sticky:lockState',
+      'lock:documentLocked',
     ];
     expect([...EVENT_CHANNELS]).toEqual(events);
     expect(Object.keys(EVENT_SCHEMAS)).toEqual(events);
@@ -198,9 +199,19 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
       'sticky:activity',
       'sticky:blur',
       'sticky:setPin',
+      // Locked documents (D-185).
+      'lock:documentStatus',
+      'lock:documentSet',
+      'lock:documentUnlock',
+      'lock:documentUnlockHello',
+      'lock:documentLockNow',
+      'lock:documentChangePassword',
+      'lock:documentSetHello',
+      'lock:documentRemove',
+      'lock:documentActivity',
     ]);
-    expect(INVOKE_CHANNELS).toHaveLength(150);
-    expect(EVENT_CHANNELS).toHaveLength(14);
+    expect(INVOKE_CHANNELS).toHaveLength(159);
+    expect(EVENT_CHANNELS).toHaveLength(15);
     const all: string[] = [...INVOKE_CHANNELS, ...EVENT_CHANNELS];
     for (const name of ['note:trashed', 'sticky:removeSticky', 'attachment:importImageBytes']) {
       expect(all, name).not.toContain(name);

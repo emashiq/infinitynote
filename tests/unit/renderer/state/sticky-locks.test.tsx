@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createActivityReporter } from '../../../../src/renderer/stickies/activity-reporter';
+import { createActivityReporter } from '../../../../src/renderer/state/activity-reporter';
 import { createStickyServices } from '../../../../src/renderer/stickies/sticky-services';
 import { STICKY_LOCK_TEXT, StickyLockPanel } from '../../../../src/renderer/stickies/StickyLockPanel';
 import { LOCK_MESSAGES, type StickyLockStateType } from '../../../../src/shared/contracts/locks';

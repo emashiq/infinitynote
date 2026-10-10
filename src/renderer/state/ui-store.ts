@@ -22,6 +22,9 @@ export type DialogState =
   /** "Lock note…" and the lock settings of a locked note (D-111). */
   | { kind: 'lockNote'; noteId: string }
   | { kind: 'lockSettings'; noteId: string }
+  /** "Lock…" and the lock settings of a locked document (D-185). */
+  | { kind: 'lockDocument'; documentId: string }
+  | { kind: 'documentLockSettings'; documentId: string }
   /** "New locked note" and "New locked sticky": the password first (D-171). */
   | { kind: 'createLocked'; location: LocationType; sticky: boolean }
   /** "Add file" for files picked to import as documents while "When adding files" is Ask (D-118). */
@@ -29,12 +32,15 @@ export type DialogState =
   /** The confirmation of a checked backup before the app restarts to restore it (D-099). */
   | { kind: 'restoreBackup'; summary: BackupSummaryType };
 
+/** What the palette can insert into the open note. */
+export type NoteInsertItem = 'reference' | 'diagram';
+
 export type FocusRequest =
   /** Renames the note in its tab (a new note, a double-click or F2 on the tab; D-102). */
   | { target: 'noteTitle'; noteId: string }
   | { target: 'noteFind'; noteId: string }
-  /** Opens the reference picker of the note's editor (palette "Link to note or document…"). */
-  | { target: 'noteReference'; noteId: string }
+  /** Inserts into the note's editor from the palette: the reference picker ("Link to note or document…") or a diagram. */
+  | { target: 'noteInsert'; noteId: string; item: NoteInsertItem }
   | { target: 'treeRename'; key: string }
   | { target: 'tree' };
 

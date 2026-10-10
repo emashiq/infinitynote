@@ -2,6 +2,24 @@
 
 All notable changes to Infinity Notes. Versions follow [Semantic Versioning](https://semver.org/); each release's section is also its GitHub release notes.
 
+## [Unreleased]
+
+### New
+
+- **Locked documents.** Lock a PDF, Word document, presentation, spreadsheet or web page with a password (and Windows Hello where available), from the tree's right-click menu or the document's header. The file is encrypted on your computer; while unlocked it opens at once and locks again after the same idle time as notes, on screen lock, sleep, quit, Lock now and Lock all. Locking deletes its earlier versions and search text; a linked file is copied into Infinity Notes to be locked.
+- **Rename documents** from their tab (double-click or F2) and their header, as well as from the tree.
+- **Diagrams are easier to find:** Insert diagram in the note menu and the command palette, a Diagram button in the formatting toolbar, ```` ```mermaid ```` then Enter, and pasted Markdown with a mermaid block.
+- **Dates in spreadsheets** typed as 25-10-2026, 25.10.2026, 10/25/2026 or 2026-10-25 become real dates, shown as typed; the day/month order follows your computer's regional settings.
+
+### Fixed
+
+- **Rename** in the tree's right-click menu closed its field at once, so nothing could be renamed that way.
+
+### Known limitations
+
+- Documents can now be locked; the 0.3.0 limitation "Documents cannot be locked" no longer applies. As with locked notes, backups made before locking, exports and copies attached to notes are not changed, and the original of a linked file stays unencrypted where it is.
+- Documents cannot be printed from the app yet; use Export a copy and print from another program. The other limitations of 0.3.0 still apply.
+
 ## [0.3.0] - 2026-10-10
 
 Documents in your projects (PDF, Word, PowerPoint, spreadsheets and web pages), Mermaid diagrams, links, comments, a relation graph and locked stickies. Free to use (see [LICENSE](https://github.com/emashiq/infinitynote/blob/main/LICENSE)). Developed by [Ashiqur Rahman Emran](https://github.com/emashiq).

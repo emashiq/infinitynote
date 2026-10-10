@@ -1,9 +1,10 @@
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Link2, Pin, Star, StickyNote, Trash } from 'lucide-react';
-import { useRef, useState, type MouseEvent } from 'react';
+import type { MouseEvent } from 'react';
 import type { TreeNode, VisibleRow } from '../../shared/tree/tree-model';
 import { ColorDot } from '../ui/ColorDot';
 import { DocumentKindIcon } from '../ui/DocumentKindIcon';
 import { LockMark } from '../ui/LockMark';
+import { RenameInput } from '../ui/RenameInput';
 
 function NodeIcon({ node, expanded }: { node: TreeNode; expanded: boolean }) {
   const props = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
@@ -25,63 +26,6 @@ function NodeIcon({ node, expanded }: { node: TreeNode; expanded: boolean }) {
     default:
       return <Folder {...props} />;
   }
-}
-
-export function RenameInput({
-  initial,
-  onCommit,
-  onCancel,
-}: {
-  initial: string;
-  /** Resolves to an error message to keep the input open, or null when committed. */
-  onCommit: (value: string) => Promise<string | null>;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initial);
-  const [error, setError] = useState<string | null>(null);
-  const done = useRef(false);
-  const commit = async () => {
-    if (done.current) return;
-    const message = await onCommit(value);
-    if (message) setError(message);
-    else done.current = true;
-  };
-  return (
-    <>
-      <input
-        className="rename-input"
-        aria-label="Rename"
-        value={value}
-        autoFocus
-        ref={(el) => {
-          if (el && !el.dataset.selected) {
-            el.dataset.selected = '1';
-            el.focus();
-            el.select();
-          }
-        }}
-        onChange={(e) => setValue(e.target.value)}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            void commit();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            done.current = true;
-            onCancel();
-          }
-        }}
-        onBlur={() => void commit()}
-      />
-      {error ? (
-        <span role="alert" className="rename-error">
-          {error}
-        </span>
-      ) : null}
-    </>
-  );
 }
 
 export function TreeRow({

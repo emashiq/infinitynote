@@ -1,9 +1,10 @@
 import { createCipheriv, createDecipheriv, randomBytes, scrypt, type ScryptOptions } from 'node:crypto';
 
 /**
- * The cryptography of locked notes (D-111), main process only. Every secret is a Buffer the caller zeroes when done.
+ * The cryptography of locked notes and documents (D-111, D-185), main process only. Every secret is a Buffer the caller zeroes when done.
  *
- * - Data key: 32 random bytes per note; it encrypts the note's content, sealed drafts and its comments (D-165).
+ * - Data key: 32 random bytes per locked note or document; it encrypts the note's content, sealed drafts and comments
+ *   (D-165), or the document's stored bytes and comments (D-185). The ID bound into each seal is the note's or document's.
  * - Sealed value: AES-256-GCM with a random 96-bit IV per write and a purpose string bound as additional data (the note
  *   ID and what the value is), stored as `version(1) | iv(12) | tag(16) | ciphertext`. The tag is checked on open, so
  *   a changed byte, a value of another note or another purpose fails instead of decrypting to garbage.
@@ -42,7 +43,7 @@ export class SealError extends Error {
 }
 
 /** What a sealed value is, bound into its tag: a value sealed for one purpose or note never opens as another. */
-export type SealPurpose = 'content' | 'draft' | 'key' | 'comment' | 'quote';
+export type SealPurpose = 'content' | 'draft' | 'key' | 'comment' | 'quote' | 'anchor' | 'document';
 
 const additionalData = (purpose: SealPurpose, noteId: string): Buffer => Buffer.from(`infinity-notes/v1/${purpose}/${noteId}`, 'utf8');
 

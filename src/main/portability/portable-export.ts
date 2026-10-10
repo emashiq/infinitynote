@@ -33,8 +33,8 @@ const archivedPath = (managedPath: string): string => `attachments/${path.posix.
 /**
  * Writes the portable export (INF-PORT-04): live projects, folders and notes with their content, tags, reminders and
  * attachment files, live documents (the bytes of managed ones), the records of linked files (not the files) and the
- * comment threads of all of these (D-165). Locked notes and their comments are left out (an export would hold their text
- * in the clear; D-111) and counted. Reads run in one transaction so the document is consistent.
+ * comment threads of all of these (D-165). Locked notes and documents and their comments are left out (an export would
+ * hold them in the clear; D-111, D-185) and counted. Reads run in one transaction so the document is consistent.
  */
 export async function writePortableExport(deps: PortableExportDeps, destFile: string): Promise<{ counts: PortableCountsType; skippedLocked: number }> {
   const hierarchy = new HierarchyRepo(deps.db);
@@ -96,7 +96,7 @@ export async function writePortableExport(deps: PortableExportDeps, destFile: st
       }),
       comments: exportableThreads(deps.db),
     };
-    return { doc, attachmentRows, documentRows, skippedLocked: repo.countLockedNotes() };
+    return { doc, attachmentRows, documentRows, skippedLocked: repo.countLocked() };
   });
 
   const files: ArchiveItem[] = [];

@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { readAll } from '../byte-source';
 import { csvToWorkbook, detectDelimiter, encodeCsv, lineFormat, workbookToCsv } from './csv';
 import { WorkbookLimitError, type WorkbookReply, type WorkbookTask } from './workbook-task';
 import { readXlsx } from './xlsx-read';
@@ -15,11 +15,11 @@ export async function runWorkbookTask(task: WorkbookTask): Promise<WorkbookReply
   try {
     switch (task.op) {
       case 'readXlsx': {
-        const { workbook, features } = await readXlsx(await fs.promises.readFile(task.file), task.limits);
+        const { workbook, features } = await readXlsx(await readAll(task.source), task.limits);
         return { ok: true, read: { workbook, features, csv: null } };
       }
       case 'readCsv': {
-        const bytes = await fs.promises.readFile(task.file);
+        const bytes = await readAll(task.source);
         const { encoding, bom } = task.encoding;
         const text = new TextDecoder(encoding, { ignoreBOM: true }).decode(bytes.subarray(bom ? BOM_BYTES[encoding] : 0));
         const delimiter = detectDelimiter(text);

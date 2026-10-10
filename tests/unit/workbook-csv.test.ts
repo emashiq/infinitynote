@@ -22,7 +22,7 @@ const temp = (bytes: Uint8Array, ext = 'csv') => {
 
 type Read = Extract<WorkbookReply, { read: unknown }>['read'];
 async function readCsv(bytes: Uint8Array, encoding: Pick<CsvFormatType, 'encoding' | 'bom'>): Promise<Read> {
-  const reply = await runWorkbookTask({ op: 'readCsv', file: temp(bytes), limits: WORKBOOK_LIMITS, encoding });
+  const reply = await runWorkbookTask({ op: 'readCsv', source: temp(bytes), limits: WORKBOOK_LIMITS, encoding });
   if (!reply.ok || !('read' in reply)) throw new Error(JSON.stringify(reply));
   return reply.read;
 }

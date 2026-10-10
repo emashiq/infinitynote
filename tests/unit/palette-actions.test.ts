@@ -27,6 +27,7 @@ describe('palette actions', () => {
       ['Previous tab', 'Ctrl+Shift+Tab'],
       ['Find in note', 'Ctrl+F'],
       ['Link to note or document…', null],
+      ['Insert diagram', null],
       ['Add comment', 'Ctrl+Alt+M'],
       ['Float current note', null],
       ['Export note as Markdown…', null],
@@ -35,7 +36,7 @@ describe('palette actions', () => {
       ['Print note…', null],
       ['Lock note…', null],
       ['Lock note now', null],
-      ['Lock all notes', null],
+      ['Lock all notes and documents', null],
       ['Back up now…', null],
       ['Keyboard shortcuts', 'Ctrl+/'],
     ]);

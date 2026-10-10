@@ -322,7 +322,7 @@ describe('locking again (D-111)', () => {
     expect(s.collabEvents.filter((e) => e.channel === 'collab:reset' && e.webContentsId === 7)).toHaveLength(1);
     expect(s.collab.documentOf(a.id)).toBeNull();
     expect(s.locks.status(b.id).unlocked).toBe(true);
-    expect(s.locks.lockAll()).toBe(1);
+    expect(await s.locks.lockAll()).toBe(1);
 
     for (const event of ['lock-screen', 'suspend'] as const) {
       await unlockBoth();
@@ -338,7 +338,7 @@ describe('locking again (D-111)', () => {
     s.clock.advance(50_000);
     s.reader.open(b.id);
     s.clock.advance(20_000);
-    expect(s.locks.sweep()).toBe(1);
+    expect(await s.locks.sweep()).toBe(1);
     expect([s.locks.status(a.id).unlocked, s.locks.status(b.id).unlocked]).toEqual([false, true]);
     expect(SWEEP_INTERVAL_MS).toBeLessThanOrEqual(60_000);
   });

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DOCUMENT_KIND_INFO, type DocumentKind } from '../../shared/documents/kinds';
@@ -52,6 +52,45 @@ export class DocumentStore {
     const temp = this.tempFile();
     await copyNewFileDurably(file, temp);
     return this.commit(kind, temp);
+  }
+
+  /**
+   * Stores a locked document's bytes (D-185): checked in memory to be a document of the kind, then sealed by `seal` and
+   * written as ciphertext only. The blob is never shared (its hash is that of the ciphertext, which a random IV makes
+   * unique), so it goes with its document.
+   */
+  async putSealed(kind: DocumentKind, plaintext: Uint8Array, seal: (bytes: Uint8Array) => Buffer): Promise<DocumentBlobRow> {
+    if (!(await isDocumentOfKind(kind, plaintext))) throw new AppError('VALIDATION_FAILED', DOCUMENT_MESSAGES.damaged(kind));
+    const sealed = seal(plaintext);
+    const temp = this.tempFile();
+    try {
+      await writeNewFileDurably(temp, sealed);
+      const id = this.deps.ids.uuid();
+      const relativePath = `documents/${id.slice(0, 2)}/${id}.sealed`;
+      await moveIntoPlace(temp, path.join(this.deps.dataDir, relativePath));
+      const sha256 = createHash('sha256').update(sealed).digest('hex');
+      this.deps.db.transaction(() => this.blobs.insert({ id, sha256, relativePath, sizeBytes: sealed.byteLength, now: this.deps.clock.now(), sealed: true }), 'immediate');
+      return this.blobs.get(id)!;
+    } finally {
+      await fs.promises.rm(temp, { force: true });
+    }
+  }
+
+  /**
+   * Deletes at once the blobs among `ids` that nothing uses any more, without the grace period: the plaintext a lock
+   * replaced, or the ciphertext a removed lock left (D-185). Bytes another document or version uses stay.
+   */
+  async removeUnused(ids: readonly string[]): Promise<number> {
+    const rows = this.deps.db.transaction(() => {
+      const unused = this.blobs.unreferencedAmong(ids);
+      this.blobs.deleteRows(unused.map((r) => r.id));
+      return unused;
+    }, 'immediate');
+    for (const row of rows) {
+      const file = await this.fileOf(row);
+      if (file) await fs.promises.rm(file, { force: true });
+    }
+    return rows.length;
   }
 
   /** The real path of a stored blob, or null when it is gone or breaks containment. */

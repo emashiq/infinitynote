@@ -22,7 +22,16 @@ import type {
 } from '../../../../src/shared/contracts/hierarchy';
 import type { HomeScopeType } from '../../../../src/shared/contracts/home';
 import { COMMENT_MESSAGES, type CommentThreadDtoType } from '../../../../src/shared/contracts/comments';
-import { LOCK_MESSAGES, PIN_RE, PIN_STRIKES, type LockStatusType, type OsKeyAvailabilityType, type StickyLockStateType } from '../../../../src/shared/contracts/locks';
+import {
+  DOCUMENT_LOCK_MESSAGES,
+  LOCK_MESSAGES,
+  PIN_RE,
+  PIN_STRIKES,
+  type DocumentLockStatusType,
+  type LockStatusType,
+  type OsKeyAvailabilityType,
+  type StickyLockStateType,
+} from '../../../../src/shared/contracts/locks';
 import { DEFAULT_SESSION, type TabSessionType } from '../../../../src/shared/contracts/session';
 import { SETTINGS, type SettingKey } from '../../../../src/shared/contracts/settings';
 import type { ContentOpBaseType, DraftsResolveResponseType, NoteContentResponseType } from '../../../../src/shared/contracts/notes';
@@ -114,7 +123,7 @@ export interface FakeDocument extends DocumentDtoType {
 export interface FakeBridgeOptions {
   /** Emit tree:changed after each mutation, like the real main process. Default true. */
   autoEvents?: boolean;
-  info?: Partial<{ version: string }>;
+  info?: Partial<{ version: string; dateOrder: 'day-first' | 'month-first' }>;
 }
 
 /** A rich document with an ID on every block type that carries one. */
@@ -229,13 +238,21 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     const lock = lockData.locks.get(noteId);
     return lock && !lock.unlocked ? fail('FORBIDDEN', LOCK_MESSAGES.locked, { locked: true }) : null;
   };
-  const relock = (noteId: string) => {
-    const lock = lockData.locks.get(noteId);
+  /** Locks a note or document again; a document's tab hears it through lock:documentLocked (D-185). */
+  const relock = (id: string) => {
+    const lock = lockData.locks.get(id);
     if (!lock?.unlocked) return false;
     lock.unlocked = false;
-    resetSession(noteId);
-    blurSticky(noteId);
+    if (documents.some((d) => d.id === id)) emit('lock:documentLocked', { documentId: id });
+    else {
+      resetSession(id);
+      blurSticky(id);
+    }
     return true;
+  };
+  const documentLockStatus = (documentId: string): DocumentLockStatusType => {
+    const lock = lockData.locks.get(documentId);
+    return { documentId, locked: !!lock, unlocked: !!lock?.unlocked, hello: !!lock?.hello, retryInSeconds: 0 };
   };
 
   const setPin = (req: { noteId: string; password: string; pin: string | null }): Result<LockStatusType> => {
@@ -307,7 +324,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const documentSummary = (d: FakeDocument) => ({ ...documentDto(d), path: pathOf(pathIndex(), { projectId: d.projectId, folderId: d.folderId }) });
   const addDocument = (fields: Pick<DocumentDtoType, 'projectId' | 'folderId' | 'title' | 'kind' | 'storage' | 'sizeBytes'>, file: DocumentFileInfoType | null = null): FakeDocument => {
     clock += 1;
-    const d: FakeDocument = { id: uid(), ...fields, revision: 0, favorite: false, createdAt: clock, updatedAt: clock, deletedAt: null, batch: null, file, saves: [], versions: [], workbook: null, workbookSaves: [] };
+    const d: FakeDocument = { id: uid(), ...fields, revision: 0, favorite: false, locked: false, createdAt: clock, updatedAt: clock, deletedAt: null, batch: null, file, saves: [], versions: [], workbook: null, workbookSaves: [] };
     documents.push(d);
     treeChanged('create');
     return d;
@@ -506,6 +523,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
             sqlite: { driver: 'fake', version: '3.0.0', fts5: true, json: true },
             schemaVersion: 4,
             startup: { status: 'ok' as const },
+            dateOrder: options.info?.dateOrder ?? ('day-first' as const),
           }),
         ),
       showDataFolder: () => handle('app:showDataFolder', {}, () => ok({ opened: true as const })),
@@ -633,6 +651,63 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
           return ok({ note: dto(n) });
         }),
       setPin: (req) => handle('lock:setPin', req, () => setPin(req)),
+      documentStatus: (req) => handle('lock:documentStatus', req, () => ok(documentLockStatus(req.documentId))),
+      documentSet: (req) =>
+        handle('lock:documentSet', req, () => {
+          const d = liveDocuments().find((x) => x.id === req.documentId);
+          if (!d) return fail('NOT_FOUND', 'That item no longer exists.');
+          if (lockData.locks.has(d.id)) return fail('VALIDATION_FAILED', DOCUMENT_LOCK_MESSAGES.alreadyLocked);
+          if (d.storage === 'linked' && !req.copyIn) return fail('VALIDATION_FAILED', DOCUMENT_LOCK_MESSAGES.linkedNeedsCopy);
+          if (req.password.length < 8) return fail('VALIDATION_FAILED', LOCK_MESSAGES.tooShort);
+          lockData.locks.set(d.id, { password: req.password, unlocked: false, hello: req.hello, pin: null });
+          Object.assign(d, { locked: true, storage: 'managed', file: null });
+          treeChanged('lock');
+          return ok(documentLockStatus(d.id));
+        }),
+      documentUnlock: (req) =>
+        handle('lock:documentUnlock', req, () => {
+          const lock = checkedLock(req.documentId, req.password);
+          if (isFailure(lock)) return lock;
+          lock.unlocked = true;
+          return ok(documentLockStatus(req.documentId));
+        }),
+      documentUnlockHello: (req) =>
+        handle('lock:documentUnlockHello', req, () => {
+          const lock = lockData.locks.get(req.documentId);
+          if (!lock?.hello) return fail('VALIDATION_FAILED', LOCK_MESSAGES.helloOff);
+          lock.unlocked = true;
+          return ok(documentLockStatus(req.documentId));
+        }),
+      documentLockNow: (req) =>
+        handle('lock:documentLockNow', req, () => {
+          relock(req.documentId);
+          return ok(documentLockStatus(req.documentId));
+        }),
+      documentChangePassword: (req) =>
+        handle('lock:documentChangePassword', req, () => {
+          const lock = checkedLock(req.documentId, req.currentPassword);
+          if (isFailure(lock)) return lock;
+          lock.password = req.newPassword;
+          return ok(documentLockStatus(req.documentId));
+        }),
+      documentSetHello: (req) =>
+        handle('lock:documentSetHello', req, () => {
+          const lock = checkedLock(req.documentId, req.password);
+          if (isFailure(lock)) return lock;
+          lock.hello = req.enabled;
+          return ok(documentLockStatus(req.documentId));
+        }),
+      documentRemove: (req) =>
+        handle('lock:documentRemove', req, () => {
+          const lock = checkedLock(req.documentId, req.password);
+          if (isFailure(lock)) return lock;
+          lockData.locks.delete(req.documentId);
+          const d = documents.find((x) => x.id === req.documentId);
+          if (d) d.locked = false;
+          treeChanged('lock');
+          return ok(documentLockStatus(req.documentId));
+        }),
+      documentActivity: (req) => handle('lock:documentActivity', req, () => ok({})),
     },
     fileLink: {
       // jsdom files are never on disk, like a File made by page script (D-115).

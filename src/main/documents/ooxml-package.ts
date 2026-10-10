@@ -1,4 +1,5 @@
 import type { DocumentKind } from '../../shared/documents/kinds';
+import type { ByteSource } from './byte-source';
 import { openArchive, type ArchiveLimits, type OpenedArchive } from '../portability/zip-archive';
 
 export type OoxmlKind = Extract<DocumentKind, 'docx' | 'pptx' | 'xlsx'>;
@@ -26,7 +27,7 @@ export const MAIN_PART: Readonly<Record<OoxmlKind, string>> = {
  * Opens an Office package after the zip preflight. Null when the file is not a zip within the bounds, or lacks the
  * content types or the main part of its kind. The caller closes the archive.
  */
-export async function openOoxml(file: string, kind: OoxmlKind): Promise<OpenedArchive | null> {
+export async function openOoxml(file: ByteSource, kind: OoxmlKind): Promise<OpenedArchive | null> {
   let archive: OpenedArchive;
   try {
     archive = await openArchive(file, OOXML_LIMITS);

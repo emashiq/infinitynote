@@ -5,9 +5,11 @@ import { DocumentKindIcon } from '../ui/DocumentKindIcon';
 import { neighborsOf } from './GraphCanvas';
 import { labelOf } from './graph-draw';
 
+/** A locked note or document shows a lock (D-111, D-185); otherwise a document its kind. */
 function ItemIcon({ node }: { node: GraphNodeType }) {
+  if (node.locked) return <Lock size={14} strokeWidth={1.75} aria-hidden />;
   if (node.kind === 'document' && node.documentKind) return <DocumentKindIcon kind={node.documentKind} size={14} />;
-  return node.locked ? <Lock size={14} strokeWidth={1.75} aria-hidden /> : <FileText size={14} strokeWidth={1.75} aria-hidden />;
+  return <FileText size={14} strokeWidth={1.75} aria-hidden />;
 }
 
 /**

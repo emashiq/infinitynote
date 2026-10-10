@@ -130,3 +130,47 @@ export const StickyLockState = z.strictObject({
 export type StickyLockStateType = z.infer<typeof StickyLockState>;
 
 export const LockAllResponse = z.strictObject({ locked: z.number().int().nonnegative() });
+
+// Locked documents (v0.3.1, D-185): the same lock as notes, on a document's stored bytes. -----------------------------
+
+export const DOCUMENT_LOCK_MESSAGES = {
+  locked: 'This document is locked',
+  notLocked: 'This document is not locked.',
+  alreadyLocked: 'This document is already locked.',
+  busy: 'Another lock change of this document is still running.',
+  linkedNeedsCopy: 'A linked file cannot be encrypted where it is. Copy it into Infinity Notes to lock it.',
+  linkedTooLarge: (limitMb: number) =>
+    `This file is larger than ${limitMb} MB, the most Infinity Notes copies, so it cannot be locked. Files over that size stay linked and unencrypted.`,
+  noSystemApp: 'A locked document opens only in Infinity Notes. Use Export a copy to open it elsewhere.',
+  noCopyInside: 'A locked document cannot be copied into a new document. Use Export a copy instead.',
+  lockedDuringSave: 'The document locked again before your edits were saved. Unlock it to save them.',
+  heldEdits: 'Edits made just before the document locked again were not saved.',
+  heldEditsLocked: 'Edits made just before the document locked again were not saved. Unlock it to save them.',
+} as const;
+
+export const DocumentLockRequest = z.strictObject({ documentId: Uuid });
+export const DocumentLockSetRequest = z.strictObject({
+  documentId: Uuid,
+  password: Password,
+  hello: z.boolean(),
+  acknowledged: z.literal(true),
+  /** A linked document is copied into Infinity Notes (within the copy limit) and the copy is locked. */
+  copyIn: z.boolean(),
+});
+export const DocumentLockUnlockRequest = z.strictObject({ documentId: Uuid, password: Password });
+export const DocumentLockChangePasswordRequest = z.strictObject({ documentId: Uuid, currentPassword: Password, newPassword: Password });
+export const DocumentLockSetHelloRequest = z.strictObject({ documentId: Uuid, password: Password, enabled: z.boolean() });
+export const DocumentLockRemoveRequest = z.strictObject({ documentId: Uuid, password: Password });
+
+export const DocumentLockStatus = z.strictObject({
+  documentId: Uuid,
+  locked: z.boolean(),
+  /** Unlocked for this session (the document's key is in main's memory). */
+  unlocked: z.boolean(),
+  hello: z.boolean(),
+  retryInSeconds: z.number().int().nonnegative(),
+});
+export type DocumentLockStatusType = z.infer<typeof DocumentLockStatus>;
+
+/** Sent to the main window when a document locks again (idle, Lock now, Lock all, screen lock, suspend). */
+export const DocumentLockedEvent = z.strictObject({ documentId: Uuid });

@@ -3,11 +3,14 @@ import type { DocumentReadWorkbookResponseType } from '../../shared/contracts/do
 import type { DocumentDtoType } from '../../shared/contracts/hierarchy';
 import type { CsvFormatType, WorkbookType } from '../../shared/documents/workbook';
 import type { DocumentKind } from '../../shared/documents/kinds';
+import type { DateOrder } from '../../shared/time/typed-date';
 import type { ViewerCommentAnchors } from '../comments/document-comment-host';
 import type { DocumentTargetRequest } from '../state/tabs-store';
 
 /** What a viewer may ask of the document tab around it. */
 export interface DocumentViewerHost {
+  /** The computer's date order, for dates typed as numbers (D-184). */
+  dateOrder: DateOrder;
   notify(message: string, tone?: 'info' | 'error'): void;
   /** Copies text to the clipboard; false when the system refused. */
   copyText(text: string): Promise<boolean>;

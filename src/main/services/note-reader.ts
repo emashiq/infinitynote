@@ -2,7 +2,7 @@ import type { NoteOpenResponseType } from '../../shared/contracts/notes';
 import type { Db } from '../db/driver';
 import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
-import type { NoteVault } from '../locks/note-vault';
+import type { LockVault } from '../locks/lock-vault';
 import { AppError } from './app-error';
 import { livePathIndex, toNoteSummary } from './dto';
 import { MSG } from './messages';
@@ -13,7 +13,7 @@ export class NoteReader {
 
   constructor(
     db: Db,
-    private readonly vault: NoteVault,
+    private readonly vault: LockVault,
   ) {
     this.repo = new HierarchyRepo(db);
     this.notes = new NotesRepo(db);

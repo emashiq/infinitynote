@@ -15,9 +15,13 @@ import type { WorkbookConverter } from './documents/spreadsheet/workbook-runner'
 import { DocumentText, documentTextExtractors } from './documents/text/document-text';
 import { GraphService } from './graph/graph-service';
 import { createPdfTextExtractor, type PdfTextWorkerOptions } from './documents/text/pdf-text-runner';
+import { DocumentLocks } from './locks/document-locks';
+import { KeyedQueue } from './services/keyed-queue';
+import { LockKeys } from './locks/lock-keys';
+import { DatabaseScrubber } from './locks/lock-purge';
 import { LockService } from './locks/lock-service';
 import type { KdfParams } from './locks/note-crypto';
-import { NoteVault } from './locks/note-vault';
+import { LockVault } from './locks/lock-vault';
 import { OS_KEY_MESSAGES, unsupportedVerifier, type KeyProtector, type OsKeyVerifier } from './locks/os-key';
 import type { PinKdf } from './locks/pin-verifier';
 import { StickyLockService } from './locks/sticky-locks';
@@ -94,6 +98,7 @@ export interface MainServices {
   content: NoteContent;
   /** Locked notes (D-111..D-113). */
   locks: LockService;
+  documentLocks: DocumentLocks;
   /** Locked stickies: blur, reveal and PIN (D-172, D-173). */
   stickyLocks: StickyLockService;
   /** Documents (D-118): the service, the store of managed copies and the file lookup the protocols share. */
@@ -135,8 +140,14 @@ export interface MainServicesDeps {
   sendCollab: <C extends 'collab:steps' | 'collab:reset' | 'collab:status'>(webContentsId: number, channel: C, payload: EventPayload<C>) => void;
   /** Sends the lock state of a locked sticky to its window (D-172). */
   sendStickyLock: (webContentsId: number, state: EventPayload<'sticky:lockState'>) => void;
+  /** Saves the edits open in the main window's document tab (an acknowledged flush) before a document locks again (D-185). */
+  saveOpenDocumentEdits: () => Promise<void>;
+  /** A locked document locked again: the main window shows its lock screen. */
+  onDocumentLocked: (documentId: string) => void;
   /** The reminder subsystem's clock (a frozen test clock under the E2E hooks, D-084); defaults to `clock`. */
   reminderClock?: Clock;
+  /** The clock of the lock session's idle time (an advanceable test clock under the E2E hooks, D-185); defaults to `clock`. */
+  lockClock?: Clock;
   /** The computer's time zone as reminders see it. */
   zones: SystemZoneProvider;
   /** `reminder:changed` after a committed reminder change, including anchor changes from content writes. */
@@ -168,7 +179,8 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
   const autoVersionPolicy = () => ({ maxAgeDays: settings.getInternal('retention.autoVersionDays'), maxCount: settings.getInternal('retention.autoVersionMax') });
   const reminderClock = deps.reminderClock ?? clock;
   const anchors = new ReminderAnchors(db, { clock: reminderClock, logger });
-  const vault = new NoteVault(db, clock);
+  const lockClock = deps.lockClock ?? clock;
+  const vault = new LockVault(db, lockClock);
   const content = new NoteContent(db, new ContentIndexer(db, logger, anchors), vault);
   // A write outside a note's live-sync session starts it over (D-103). A content write that changed a reminder anchor
   // is followed by reminder:changed after its revision event (D-080).
@@ -212,6 +224,33 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
   const documentStore = new DocumentStore({ db, clock, ids, logger, dataDir: deps.dataDir });
   const documentFiles = new DocumentFiles(db, deps.dataDir);
   const documentText = new DocumentText(documentTextExtractors(createPdfTextExtractor(deps.pdfText)), logger);
+  // Notes and documents share the key handling and the database scrub of locks (D-185).
+  const lockKeys = new LockKeys({
+    clock: lockClock,
+    logger,
+    verifier: deps.locks?.verifier ?? unsupportedVerifier(OS_KEY_MESSAGES.otherOs),
+    protector: deps.locks?.protector ?? null,
+    windowHandle: deps.locks?.windowHandle ?? (() => null),
+    kdf: deps.locks?.kdf,
+  });
+  const scrubber = new DatabaseScrubber(db, logger);
+  const documentWrites = new KeyedQueue();
+  const documentLocks = new DocumentLocks({
+    db,
+    clock,
+    logger,
+    vault,
+    keys: lockKeys,
+    store: documentStore,
+    files: documentFiles,
+    text: documentText,
+    settings,
+    scrubber,
+    writes: documentWrites,
+    saveOpenEdits: deps.saveOpenDocumentEdits,
+    onTreeChanged: deps.onTreeChanged,
+    onLocked: deps.onDocumentLocked,
+  });
   const documents = new DocumentService({
     db,
     clock,
@@ -222,6 +261,8 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     store: documentStore,
     files: documentFiles,
     text: documentText,
+    locks: documentLocks,
+    writes: documentWrites,
     links,
     picker,
     dialog: deps.dialog,
@@ -253,19 +294,18 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
   const hierarchy = new HierarchyService({ db, clock, ids, logger, onChange: deps.onTreeChanged });
   const locks = new LockService({
     db,
-    clock,
+    clock: lockClock,
     logger,
     vault,
     collab,
     settings,
     hierarchy,
-    verifier: deps.locks?.verifier ?? unsupportedVerifier(OS_KEY_MESSAGES.otherOs),
-    protector: deps.locks?.protector ?? null,
-    windowHandle: deps.locks?.windowHandle ?? (() => null),
+    keys: lockKeys,
+    scrubber,
+    documents: documentLocks,
     onTreeChanged: deps.onTreeChanged,
     onReminderChanged: deps.onReminderChanged,
     power: deps.locks?.power,
-    kdf: deps.locks?.kdf,
     pinKdf: deps.locks?.pinKdf,
   });
   // The blur timer runs on the reminder clock, so the E2E fake clock moves it (D-172).
@@ -273,6 +313,7 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
   return {
     content,
     locks,
+    documentLocks,
     stickyLocks,
     settings,
     hierarchy,

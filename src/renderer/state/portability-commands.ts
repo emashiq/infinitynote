@@ -85,7 +85,7 @@ export function createPortabilityCommands(deps: {
       await deps.flushActive();
       await report(bridge.export.portable(), (r) => {
         if (r.canceled) return null;
-        const locked = r.skippedLocked > 0 ? `. ${plural(r.skippedLocked, 'locked note was', 'locked notes were')} not included` : '';
+        const locked = r.skippedLocked > 0 ? `. ${plural(r.skippedLocked, 'locked note or document was', 'locked notes and documents were')} not included` : '';
         return `Exported ${plural(r.counts.notes, 'note', 'notes')} to ${fileName(r.file)}${locked}`;
       });
     },

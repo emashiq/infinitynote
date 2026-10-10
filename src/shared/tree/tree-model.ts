@@ -16,7 +16,7 @@ export interface TreeNode {
   label: string;
   sticky?: boolean;
   color?: NoteColorType | null;
-  /** A locked note (D-111). */
+  /** A locked note (D-111) or document (D-185). */
   locked?: boolean;
   /** A document's kind, and whether its bytes stay in a linked file (D-118). */
   documentKind?: DocumentKind;
@@ -143,6 +143,7 @@ export function buildTreeModel(snapshot: TreeSnapshotType, trashItems: readonly 
       label: d.title,
       documentKind: d.kind,
       linked: d.storage === 'linked',
+      locked: d.locked,
       favorite: d.favorite,
       parentKey,
       location: { projectId: d.projectId, folderId: d.folderId },

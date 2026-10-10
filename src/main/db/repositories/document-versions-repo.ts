@@ -43,6 +43,11 @@ export class DocumentVersionsRepo {
       .map((r) => r.document_id);
   }
 
+  /** Points a version at other stored bytes (a lock or its removal re-encodes every version). */
+  setBlob(id: string, blobId: string): void {
+    this.db.prepare<[string, string]>('UPDATE document_versions SET blob_id = ? WHERE id = ?').run(blobId, id);
+  }
+
   deleteIds(ids: readonly string[]): void {
     if (ids.length === 0) return;
     this.db.prepare<[string]>('DELETE FROM document_versions WHERE id IN (SELECT value FROM json_each(?))').run(JSON.stringify(ids));

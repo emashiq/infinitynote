@@ -1,4 +1,5 @@
 import type { WorkbookFeature } from '../../../shared/documents/workbook';
+import type { ByteSource } from '../byte-source';
 import { openOoxml } from '../ooxml-package';
 
 /** Package parts that hold what the workbook model does not carry (D-136); ExcelJS drops them on save. */
@@ -13,7 +14,7 @@ const PART_FEATURES: ReadonlyArray<{ part: RegExp; feature: WorkbookFeature }> =
 ];
 
 /** The features an xlsx package shows by its part names; the worker adds the ones inside sheets. */
-export async function packageFeatures(file: string): Promise<WorkbookFeature[]> {
+export async function packageFeatures(file: ByteSource): Promise<WorkbookFeature[]> {
   const archive = await openOoxml(file, 'xlsx');
   if (!archive) return [];
   try {

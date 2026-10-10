@@ -10,7 +10,7 @@ import type { SettingsService } from '../services/settings-service';
 import { realTimers, type Timers } from '../services/timers';
 import { AttemptBackoff, SerialAttempts } from './attempt-backoff';
 import type { LockService } from './lock-service';
-import type { NoteVault } from './note-vault';
+import type { LockVault } from './lock-vault';
 import { isPinFormat, verifyPin } from './pin-verifier';
 import { RevealTimers } from './reveal-timers';
 
@@ -27,7 +27,7 @@ export interface StickyLockDeps {
   /** The reminder clock: the frozen test clock under the E2E hooks, so a spec can move past the blur time. */
   clock: Clock;
   logger: Logger;
-  vault: NoteVault;
+  vault: LockVault;
   locks: Pick<LockService, 'status' | 'unlock' | 'unlockWithHello' | 'setPin'>;
   collab: Pick<CollabHub, 'release'>;
   settings: Pick<SettingsService, 'getInternal'>;
@@ -66,7 +66,10 @@ export class StickyLockService {
 
   // Lifecycle --------------------------------------------------------------------------------------------------------
   start(): void {
-    this.unsubscribe = this.deps.vault.onKeyChange((noteId, held) => this.keyChanged(noteId, held));
+    // Only note keys matter here; the vault also holds locked documents' keys (D-185).
+    this.unsubscribe = this.deps.vault.onKeyChange((id, held, kind) => {
+      if (kind === 'note') this.keyChanged(id, held);
+    });
     this.scheduleCheck();
   }
 

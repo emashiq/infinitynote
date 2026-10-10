@@ -90,10 +90,11 @@ function checkEntry(entry: yauzl.Entry, limits: ArchiveLimits): void {
  * attributes, encryption, compression method, the declared total and each entry's compression ratio. yauzl also
  * enforces that each entry's data matches its declared size, so the declared total bounds what can be extracted.
  */
-export async function openArchive(file: string, limits: ArchiveLimits = DEFAULT_ARCHIVE_LIMITS): Promise<OpenedArchive> {
+export async function openArchive(file: string | Uint8Array, limits: ArchiveLimits = DEFAULT_ARCHIVE_LIMITS): Promise<OpenedArchive> {
   let zip: yauzl.ZipFile;
+  const options = { lazyEntries: true, autoClose: false, decodeStrings: true, validateEntrySizes: true, strictFileNames: true };
   try {
-    zip = await yauzl.openPromise(file, { lazyEntries: true, autoClose: false, decodeStrings: true, validateEntrySizes: true, strictFileNames: true });
+    zip = await (typeof file === 'string' ? yauzl.openPromise(file, options) : yauzl.fromBufferPromise(Buffer.from(file.buffer, file.byteOffset, file.byteLength), options));
   } catch (err) {
     throw new ArchiveRefused('notArchive', String(err));
   }

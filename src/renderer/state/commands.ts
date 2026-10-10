@@ -7,6 +7,7 @@ export type CommandId =
   | 'note.newPlain'
   | 'note.find'
   | 'note.insertReference'
+  | 'note.insertDiagram'
   | 'note.float'
   | 'sticky.new'
   | 'note.newLocked'
@@ -57,7 +58,11 @@ export interface CommandRunner {
   openLock(noteId: string): void;
   /** Locks an unlocked note again; its open tab is saved first. */
   lockNow(noteId: string): Promise<void>;
-  /** Locks every unlocked note again. */
+  /** "Lock…" of a document, or the lock settings of a locked one (D-185). */
+  openDocumentLock(documentId: string): void;
+  /** Locks an unlocked document again; its open edits are saved first. */
+  lockDocumentNow(documentId: string): Promise<void>;
+  /** Locks every unlocked note and document again. */
   lockAll(): Promise<void>;
 }
 
@@ -134,7 +139,18 @@ export function createCommandRunner(
     await tabs.flushActive();
     const res = await bridge.lock.lockAll();
     if (!res.ok) notices.push(res.error.message, 'error');
-    else notices.push(res.data.locked === 0 ? 'No note was unlocked' : `Locked ${res.data.locked === 1 ? '1 note' : `${res.data.locked} notes`} again`, 'info');
+    else notices.push(res.data.locked === 0 ? 'Nothing was unlocked' : `Locked ${res.data.locked === 1 ? '1 item' : `${res.data.locked} items`} again`, 'info');
+  };
+
+  const openDocumentLock = (documentId: string): void => {
+    const locked = tree.store.getState().snapshot.documents.find((d) => d.id === documentId)?.locked ?? false;
+    ui.openDialog({ kind: locked ? 'documentLockSettings' : 'lockDocument', documentId });
+  };
+
+  const lockDocumentNow = async (documentId: string): Promise<void> => {
+    await tabs.flushActive();
+    const res = await bridge.lock.documentLockNow({ documentId });
+    if (!res.ok) notices.push(res.error.message, 'error');
   };
 
   return {
@@ -143,6 +159,8 @@ export function createCommandRunner(
     newSticky,
     newLocked,
     openLock,
+    openDocumentLock,
+    lockDocumentNow,
     lockNow,
     lockAll,
     async run(id) {
@@ -158,9 +176,10 @@ export function createCommandRunner(
           else if (active?.kind === 'document') ui.requestDocumentFind(active.documentId);
           return;
         }
-        case 'note.insertReference': {
+        case 'note.insertReference':
+        case 'note.insertDiagram': {
           const noteId = activeNoteId();
-          if (noteId) ui.requestFocus({ target: 'noteReference', noteId });
+          if (noteId) ui.requestFocus({ target: 'noteInsert', noteId, item: id === 'note.insertDiagram' ? 'diagram' : 'reference' });
           return;
         }
         case 'note.float': {

@@ -12,6 +12,7 @@ import documentsSql from './011_documents.sql?raw';
 import documentReferencesSql from './012_document_references.sql?raw';
 import commentsSql from './013_comments.sql?raw';
 import stickyPinsSql from './014_sticky_pins.sql?raw';
+import documentLocksSql from './015_document_locks.sql?raw';
 
 export interface Migration {
   version: number;
@@ -34,6 +35,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 12, name: 'document_references', sql: documentReferencesSql },
   { version: 13, name: 'comments', sql: commentsSql },
   { version: 14, name: 'sticky_pins', sql: stickyPinsSql },
+  { version: 15, name: 'document_locks', sql: documentLocksSql },
 ];
 
 export const LATEST = MIGRATIONS[MIGRATIONS.length - 1]!.version;

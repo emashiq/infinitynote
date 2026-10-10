@@ -1,17 +1,18 @@
 import type { Timers } from '../state/store';
 
-/** At most one activity report per this many milliseconds (the shortest blur setting is 30 s; D-172). */
+/** At most one activity report per this many milliseconds (the shortest blur setting is 30 s; D-172, D-185). */
 export const ACTIVITY_REPORT_MS = 5_000;
 
 export interface ActivityReporter {
-  /** Interaction happened (a key, click, scroll or pointer move in the sticky's text). */
+  /** Interaction happened (a key, click, scroll or pointer move in a revealed sticky or an unlocked document). */
   report(): void;
   dispose(): void;
 }
 
 /**
- * Throttles a revealed locked sticky's interaction reports to main: the first one goes at once, later ones within the
- * interval are folded into one sent when it ends. Main owns the blur timer; this only keeps the IPC rate low.
+ * Throttles interaction reports to main (a revealed locked sticky, D-172; an unlocked locked document, D-185): the first
+ * one goes at once, later ones within the interval are folded into one sent when it ends. Main owns the blur and idle
+ * timers; this only keeps the IPC rate low.
  */
 export function createActivityReporter(send: () => void, deps: { timers: Timers; now: () => number; intervalMs?: number }): ActivityReporter {
   const interval = deps.intervalMs ?? ACTIVITY_REPORT_MS;

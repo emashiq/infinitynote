@@ -83,8 +83,13 @@ export function TreeContextMenu() {
       rename();
       add('move', 'Move to…', () => ui.openDialog({ kind: 'move', key }));
       favoriteToggle('document');
-      if (target.documentKind !== 'html') add('external', 'Open in system app', () => run(() => services.bridge.document.openExternal({ documentId })));
-      add('show', 'Show in folder', () => run(() => services.bridge.document.showInFolder({ documentId })));
+      if (target.documentKind !== 'html') add('external', 'Open in system app', () => run(() => services.bridge.document.openExternal({ documentId })), target.locked);
+      add('show', 'Show in folder', () => run(() => services.bridge.document.showInFolder({ documentId })), target.locked);
+      // Locked documents (D-185): like a note's lock items.
+      if (target.locked) {
+        add('lockNow', 'Lock now', () => void services.commands.lockDocumentNow(documentId));
+        add('lockSettings', 'Lock settings…', () => services.commands.openDocumentLock(documentId));
+      } else add('lock', 'Lock…', () => services.commands.openDocumentLock(documentId));
       trash();
       break;
     }

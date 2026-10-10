@@ -2,10 +2,11 @@ import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'reac
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import type { Result } from '../../shared/contracts/envelope';
 import type { LocationType, NoteDtoType } from '../../shared/contracts/hierarchy';
-import { LOCK_MESSAGES, MAX_PIN_DIGITS, type LockStatusType, type OsKeyAvailabilityType } from '../../shared/contracts/locks';
+import { DOCUMENT_LOCK_MESSAGES, LOCK_MESSAGES, MAX_PIN_DIGITS, type OsKeyAvailabilityType } from '../../shared/contracts/locks';
 import { displayTitle } from '../../shared/names';
 import { Dialog } from '../ui/Dialog';
-import { CREATE_LOCKED_POINTS, LOCK_DIALOG_POINTS, newPasswordProblem, newPinProblem, NO_RECOVERY, PIN_EXPLANATION } from './lock-form';
+import { CREATE_LOCKED_POINTS, DOCUMENT_LOCK_POINTS, LINKED_COPY_POINT, LOCK_DIALOG_POINTS, newPasswordProblem, newPinProblem, NO_RECOVERY, PIN_EXPLANATION } from './lock-form';
+import type { LockTarget, LockTargetStatus } from './lock-target';
 
 type LockBridge = Pick<InfinityBridge, 'lock'>;
 
@@ -49,7 +50,7 @@ export function ErrorLine({ error }: { error: string | null }) {
 }
 
 /** Runs a lock call and turns its failure into the message to show; the password fields are cleared by the caller. */
-async function attempt(call: () => Promise<Result<LockStatusType>>): Promise<string | null> {
+async function attempt(call: () => Promise<Result<unknown>>): Promise<string | null> {
   const res = await call();
   return res.ok ? null : res.error.message;
 }
@@ -309,19 +310,106 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** "Lock settings…" of a locked note: lock now, change the password, Windows Hello on or off, the sticky PIN, remove the lock. */
-export function LockSettingsDialog({ noteId, title, sticky, bridge, flush, notify, onClose }: LockDialogProps & { sticky: boolean }) {
-  const [status, setStatus] = useState<LockStatusType | null>(null);
+/**
+ * "Lock…" of a document (D-185): what locking keeps and destroys, then the new lock. A linked file is copied into
+ * Infinity Notes to be locked; one over the copy limit cannot be, and the dialog says why instead of offering it.
+ */
+export function LockDocumentDialog({
+  documentId,
+  title,
+  linked,
+  copyLimitMb,
+  sizeBytes,
+  bridge,
+  flush,
+  notify,
+  onClose,
+}: {
+  documentId: string;
+  title: string;
+  linked: boolean;
+  /** The "copy into Infinity Notes" limit (Settings), which a linked file must fit to be locked. */
+  copyLimitMb: number;
+  sizeBytes: number;
+  bridge: LockBridge;
+  /** Saves the open document's edits first, so nothing is left out of the lock. */
+  flush: () => Promise<unknown>;
+  notify: (message: string) => void;
+  onClose: () => void;
+}) {
+  const tooLarge = linked && sizeBytes > copyLimitMb * 1024 * 1024;
+  const submit = async ({ password, hello }: NewLockChoice) => {
+    await flush();
+    const failed = await attempt(() => bridge.lock.documentSet({ documentId, password, hello, acknowledged: true, copyIn: linked }));
+    if (failed) return failed;
+    notify('Document locked');
+    onClose();
+    return null;
+  };
+  return (
+    <Dialog title={`Lock “${displayTitle(title)}”`} onClose={onClose}>
+      {tooLarge ? (
+        <div className="lock-form">
+          <p role="alert">{DOCUMENT_LOCK_MESSAGES.linkedTooLarge(copyLimitMb)}</p>
+          <div className="dialog-actions">
+            <button type="button" className="btn" data-autofocus="" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : (
+        <NewLockForm
+          points={linked ? [LINKED_COPY_POINT, ...DOCUMENT_LOCK_POINTS] : DOCUMENT_LOCK_POINTS}
+          offerPin={false}
+          submitLabel={linked ? 'Copy in and lock' : 'Lock document'}
+          busyLabel="Locking…"
+          bridge={bridge}
+          submit={submit}
+          onClose={onClose}
+        />
+      )}
+    </Dialog>
+  );
+}
+
+/**
+ * "Lock settings…" of a locked note or document: lock now, change the password, Windows Hello on or off, the sticky PIN
+ * (when `pin` is given: a sticky), remove the lock.
+ */
+export function LockSettingsDialog({
+  target,
+  title,
+  bridge,
+  flush,
+  notify,
+  onClose,
+  pin,
+}: {
+  target: LockTarget;
+  title: string;
+  bridge: LockBridge;
+  /** Saves the open item first, so nothing typed is lost when it locks or its lock is removed. */
+  flush: () => Promise<unknown>;
+  notify: (message: string) => void;
+  onClose: () => void;
+  /** Sets or clears a sticky's PIN (D-173); resolves with the message to show when main refused. */
+  pin?: (password: string, pin: string | null) => Promise<string | null>;
+}) {
+  const [status, setStatus] = useState<LockTargetStatus | null>(null);
   const osKey = useOsKey(bridge);
+  const noun = target.noun;
+  const Noun = noun === 'note' ? 'Note' : 'Document';
+  // Read again after a PIN change (a new count).
+  const [statusReads, setStatusReads] = useState(0);
   useEffect(() => {
     let live = true;
-    void bridge.lock.status({ noteId }).then((res) => {
+    void target.status().then((res) => {
       if (live && res.ok) setStatus(res.data);
     });
     return () => {
       live = false;
     };
-  }, [bridge, noteId]);
+  }, [target, statusReads]);
   const done = (message: string) => {
     notify(message);
     onClose();
@@ -331,35 +419,40 @@ export function LockSettingsDialog({ noteId, title, sticky, bridge, flush, notif
       <div className="lock-form">
         {status?.unlocked ? (
           <Section title="Lock now">
-            <p className="muted">The note is unlocked until you lock it, after the idle time in Settings, or when the computer locks or sleeps.</p>
+            <p className="muted">The {noun} is unlocked until you lock it, after the idle time in Settings, or when the computer locks or sleeps.</p>
             <button
               type="button"
               className="btn"
               onClick={() =>
                 void flush()
-                  .then(() => bridge.lock.lockNow({ noteId }))
-                  .then((res) => (res.ok ? done('Note locked') : notify(res.error.message)))
+                  .then(() => target.lockNow())
+                  .then((res) => (res.ok ? done(`${Noun} locked`) : notify(res.error.message)))
               }
             >
               Lock now
             </button>
           </Section>
         ) : null}
-        <ChangePassword noteId={noteId} bridge={bridge} onDone={() => done('Password changed')} />
-        <HelloSetting noteId={noteId} bridge={bridge} enabled={status?.hello ?? false} osKey={osKey} onDone={(on) => done(on ? 'Windows Hello can unlock this note' : 'Windows Hello no longer unlocks this note')} />
-        {sticky ? (
+        <ChangePassword target={target} onDone={() => done('Password changed')} />
+        <HelloSetting
+          target={target}
+          enabled={status?.hello ?? false}
+          osKey={osKey}
+          onDone={(on) => done(on ? `Windows Hello can unlock this ${noun}` : `Windows Hello no longer unlocks this ${noun}`)}
+        />
+        {pin ? (
           <PinSection
             pinSet={status?.pin ?? false}
-            save={async (password, pin) => {
-              const res = await bridge.lock.setPin({ noteId, password, pin });
-              if (!res.ok) return res.error.message;
-              setStatus(res.data);
-              notify(pin === null ? 'PIN removed' : 'PIN set');
+            save={async (password, next) => {
+              const failed = await pin(password, next);
+              if (failed) return failed;
+              setStatusReads((n) => n + 1);
+              notify(next === null ? 'PIN removed' : 'PIN set');
               return null;
             }}
           />
         ) : null}
-        <RemoveLock noteId={noteId} bridge={bridge} flush={flush} onDone={() => done('Lock removed')} />
+        <RemoveLock target={target} flush={flush} onDone={() => done('Lock removed')} />
         <div className="dialog-actions">
           <button type="button" className="btn" onClick={onClose}>
             Close
@@ -370,7 +463,7 @@ export function LockSettingsDialog({ noteId, title, sticky, bridge, flush, notif
   );
 }
 
-function ChangePassword({ noteId, bridge, onDone }: { noteId: string; bridge: LockBridge; onDone: () => void }) {
+function ChangePassword({ target, onDone }: { target: LockTarget; onDone: () => void }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -379,7 +472,7 @@ function ChangePassword({ noteId, bridge, onDone }: { noteId: string; bridge: Lo
     e.preventDefault();
     const problem = newPasswordProblem(next, confirm);
     if (problem) return setError(problem);
-    const failed = await attempt(() => bridge.lock.changePassword({ noteId, currentPassword: current, newPassword: next }));
+    const failed = await attempt(() => target.changePassword(current, next));
     if (failed) {
       setCurrent('');
       return setError(failed);
@@ -401,19 +494,7 @@ function ChangePassword({ noteId, bridge, onDone }: { noteId: string; bridge: Lo
   );
 }
 
-function HelloSetting({
-  noteId,
-  bridge,
-  enabled,
-  osKey,
-  onDone,
-}: {
-  noteId: string;
-  bridge: LockBridge;
-  enabled: boolean;
-  osKey: OsKeyAvailabilityType | null;
-  onDone: (enabled: boolean) => void;
-}) {
+function HelloSetting({ target, enabled, osKey, onDone }: { target: LockTarget; enabled: boolean; osKey: OsKeyAvailabilityType | null; onDone: (enabled: boolean) => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   if (!enabled && osKey?.status !== 'available') {
@@ -425,7 +506,7 @@ function HelloSetting({
   }
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const failed = await attempt(() => bridge.lock.setHello({ noteId, password, enabled: !enabled }));
+    const failed = await attempt(() => target.setHello(password, !enabled));
     if (failed) {
       setPassword('');
       return setError(failed);
@@ -434,7 +515,7 @@ function HelloSetting({
   };
   return (
     <Section title="Windows Hello">
-      <p className="muted">{enabled ? 'Windows Hello can unlock this note.' : 'Unlock this note with Windows Hello as well as the password.'}</p>
+      <p className="muted">{enabled ? `Windows Hello can unlock this ${target.noun}.` : `Unlock this ${target.noun} with Windows Hello as well as the password.`}</p>
       <form onSubmit={(e) => void submit(e)}>
         <PasswordField label="Password" value={password} onChange={setPassword} autoComplete="current-password" />
         <ErrorLine error={error} />
@@ -446,13 +527,19 @@ function HelloSetting({
   );
 }
 
-function RemoveLock({ noteId, bridge, flush, onDone }: { noteId: string; bridge: LockBridge; flush: () => Promise<unknown>; onDone: () => void }) {
+/** What stays gone when a lock is removed, by kind. */
+const REMOVED_LOCK_TEXT = {
+  note: 'The text is stored unencrypted again from now on. Version history deleted when the note was locked stays deleted.',
+  document: 'The file is stored unencrypted again from now on and its text is searchable again. Versions deleted when the document was locked stay deleted.',
+} as const;
+
+function RemoveLock({ target, flush, onDone }: { target: LockTarget; flush: () => Promise<unknown>; onDone: () => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     await flush();
-    const failed = await attempt(() => bridge.lock.remove({ noteId, password }));
+    const failed = await attempt(() => target.remove(password));
     if (failed) {
       setPassword('');
       return setError(failed);
@@ -461,7 +548,7 @@ function RemoveLock({ noteId, bridge, flush, onDone }: { noteId: string; bridge:
   };
   return (
     <Section title="Remove lock">
-      <p className="muted">The text is stored unencrypted again from now on. Version history deleted when the note was locked stays deleted.</p>
+      <p className="muted">{REMOVED_LOCK_TEXT[target.noun]}</p>
       <form onSubmit={(e) => void submit(e)}>
         <PasswordField label="Password" value={password} onChange={setPassword} autoComplete="current-password" />
         <ErrorLine error={error} />

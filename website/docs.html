@@ -51,6 +51,7 @@
           <li><a href="#web-pages">Web pages</a></li>
           <li><a href="#versions">Document versions</a></li>
           <li><a href="#locked">Locked notes</a></li>
+          <li><a href="#locked-documents">Locked documents</a></li>
           <li><a href="#stickies">Stickies</a></li>
           <li><a href="#locked-stickies">Locked stickies</a></li>
           <li><a href="#reminders">Reminders</a></li>
@@ -234,12 +235,11 @@
               language and the code is colored.
             </li>
             <li>
-              <strong>Diagrams:</strong> <kbd>/</kbd>diagram inserts a Mermaid diagram (flowcharts,
-              sequence diagrams, Gantt charts and more), in notes and stickies.
-              <strong>Edit</strong> shows the source with the drawing below it,
-              <strong>Preview</strong> the drawing only; a mistake in the source is explained under
-              it. <strong>Copy as SVG</strong> and <strong>Copy as PNG</strong> put the drawing on
-              the clipboard. Diagrams follow the light or dark theme.
+              <strong>Diagrams:</strong> Mermaid diagrams (flowcharts, sequence diagrams, Gantt
+              charts and more), in notes and stickies. <strong>Edit</strong> shows the source with
+              the drawing below it, <strong>Preview</strong> the drawing only; a mistake in the source
+              is explained under it. <strong>Copy as SVG</strong> and <strong>Copy as PNG</strong>
+              put the drawing on the clipboard. Diagrams follow the light or dark theme.
             </li>
             <li>
               <strong>Math:</strong> type <code>$x^2$</code> after a space for a formula in the text,
@@ -248,7 +248,24 @@
               <kbd>Ctrl</kbd>+<kbd>Enter</kbd>) keeps it, <kbd>Escape</kbd> cancels.
             </li>
           </ul>
-          <p>Very long diagrams (over 20,000 characters) are not drawn.</p>
+          <h3>Making a diagram</h3>
+          <ul>
+            <li>Right-click in the text (or <kbd>Shift</kbd>+<kbd>F10</kbd>) and choose <strong>Insert diagram</strong>.</li>
+            <li>Select text and press <strong>Diagram</strong> in the formatting toolbar; on an empty line it starts a small flowchart.</li>
+            <li>Type <kbd>/</kbd>diagram, or run <strong>Insert diagram</strong> from the command palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>).</li>
+            <li>Type <code>```mermaid</code> at the start of a line and press <kbd>Enter</kbd> or <kbd>Space</kbd>.</li>
+            <li>Paste Markdown with a <code>```mermaid</code> block, for example from a text editor or a chat answer.</li>
+          </ul>
+          <p>For example, this source:</p>
+          <pre><code>flowchart TD
+  Idea --&gt; Draft --&gt; Review
+  Review --&gt;|changes| Draft
+  Review --&gt;|approved| Publish</code></pre>
+          <p>
+            draws a flowchart. Very long diagrams (over 20,000 characters) are not drawn. The
+            <a href="https://mermaid.js.org/intro/">Mermaid documentation</a> describes every
+            diagram type.
+          </p>
         </section>
 
         <section id="files">
@@ -298,6 +315,11 @@
               copied into Infinity Notes or linked to the original (see <a href="#files">Files</a>).
               On a PDF or Office file attached to a note, choose <strong>Open in Infinity
               Notes</strong>.
+            </li>
+            <li>
+              <strong>Rename:</strong> press <kbd>F2</kbd> on its row in the tree or choose
+              <strong>Rename</strong> in the tree's right-click menu, double-click its tab, or click its
+              name in the document's header.
             </li>
             <li>
               <strong>Start a blank one:</strong> <strong>New Word document</strong>,
@@ -383,6 +405,12 @@
               (charts, pivot tables, pictures, conditional formatting and similar) are listed before
               the first save, with <strong>Save without them</strong> or <strong>Cancel</strong>. To
               keep them, use <strong>Open in system app</strong>.
+            </li>
+            <li>
+              <strong>Dates:</strong> type <code>25-10-2026</code>, <code>25.10.2026</code>,
+              <code>10/25/2026</code> or <code>2026-10-25</code> (optionally with a time) and the cell
+              becomes a real date, shown as you typed it. When day and month could be either way round,
+              your computer's regional date order decides; a number over 12 is always the day.
             </li>
             <li>
               <strong>CSV files</strong> keep values only, and keep their separator, text encoding
@@ -504,7 +532,7 @@
             <li>
               An unlocked note locks itself again after 5 idle minutes (change this in Settings),
               when you lock the screen (Windows) or the computer sleeps, and when you quit. Use
-              <strong>Lock now</strong> or <strong>Lock all notes</strong> to lock at once.
+              <strong>Lock now</strong> or <strong>Lock all notes and documents</strong> to lock at once.
             </li>
             <li>
               <strong>New locked note…</strong> and <strong>New locked sticky…</strong> (File menu,
@@ -532,6 +560,38 @@
           <p class="note">
             Attached and linked files are not encrypted. Keep confidential files out of locked notes
             or protect them separately.
+          </p>
+        </section>
+
+        <section id="locked-documents">
+          <h2>Locked documents</h2>
+          <p>
+            Lock a PDF, Word document, presentation, spreadsheet or web page with
+            <strong>Lock…</strong> in the tree's right-click menu or the document's header. It uses the
+            same password (and Windows Hello where available) and the same rules as
+            <a href="#locked">locked notes</a>.
+          </p>
+          <ul>
+            <li>The file is encrypted on this computer. Its name stays visible in the tree, tabs, links, the graph and search.</li>
+            <li>
+              Once unlocked it opens at once, also after closing its tab, until it locks again: after
+              5 idle minutes (change this in Settings), when the computer locks or sleeps, when you
+              quit, or with <strong>Lock now</strong> and <strong>Lock all notes and documents</strong>.
+              Unsaved edits are saved first.
+            </li>
+            <li>
+              While unlocked it opens only inside Infinity Notes. <strong>Export a copy…</strong> writes
+              an unencrypted copy where you choose.
+            </li>
+            <li>
+              A linked file cannot be encrypted where it is: locking copies it into Infinity Notes and
+              locks the copy. Files over the 25 MB copy limit cannot be locked.
+            </li>
+          </ul>
+          <p class="note danger">
+            <strong>Locking cannot be taken back for what was saved before.</strong> Its earlier
+            versions and search text are deleted. Backups made before locking, exports and copies
+            attached to notes are not changed. <strong>A forgotten password cannot be recovered.</strong>
           </p>
         </section>
 

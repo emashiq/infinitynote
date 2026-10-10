@@ -170,9 +170,9 @@ describe('xlsx to the workbook model (D-134)', () => {
   });
 
   it('answers through the worker task with codes only', async () => {
-    const reply = await runWorkbookTask({ op: 'readXlsx', file: temp(new TextEncoder().encode('nope')), limits: WORKBOOK_LIMITS });
+    const reply = await runWorkbookTask({ op: 'readXlsx', source: temp(new TextEncoder().encode('nope')), limits: WORKBOOK_LIMITS });
     expect(reply).toEqual({ ok: false, error: 'unreadable' });
-    const ok = (await runWorkbookTask({ op: 'readXlsx', file: path.resolve('tests/fixtures/documents/sample.xlsx'), limits: WORKBOOK_LIMITS })) as Extract<WorkbookReply, { read: unknown }>;
+    const ok = (await runWorkbookTask({ op: 'readXlsx', source: path.resolve('tests/fixtures/documents/sample.xlsx'), limits: WORKBOOK_LIMITS })) as Extract<WorkbookReply, { read: unknown }>;
     expect(ok.ok).toBe(true);
     expect(ok.read.csv).toBeNull();
     expect(Workbook.safeParse(ok.read.workbook).success).toBe(true);

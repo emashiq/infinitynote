@@ -8,6 +8,8 @@ export interface NoteActions {
   insertAttachment(kind: AttachmentKindType): void;
   /** "Insert table…" (editable rich notes). */
   insertTable?: () => void;
+  /** "Insert diagram" (editable rich notes; D-183). */
+  insertDiagram?: () => void;
   /** "Link to note or document…" (editable rich notes in the main window; D-098, D-157). */
   insertReference?: () => void;
   /** "Add reminder…" (main window). */
@@ -42,6 +44,7 @@ export function noteMenuItems(actions: NoteActions, opts: { format: 'rich' | 'pl
           { id: 'image', label: 'Insert image', disabled: off, onSelect: () => actions.insertAttachment('image') },
           { id: 'file', label: 'Attach file', disabled: off, onSelect: () => actions.insertAttachment('document') },
           ...(actions.insertTable ? [{ id: 'table', label: 'Insert table…', onSelect: actions.insertTable }] : []),
+          ...(actions.insertDiagram ? [{ id: 'diagram', label: 'Insert diagram', onSelect: actions.insertDiagram }] : []),
           ...(actions.insertReference ? [{ id: 'reference', label: 'Link to note or document…', onSelect: actions.insertReference }] : []),
         ]
       : [];
@@ -73,7 +76,28 @@ function lockItems(lock: NoteActions['lock']): MenuItem[] {
 /** A new Mermaid block with a small flowchart to start from (D-158). */
 export const DIAGRAM_STARTER = 'flowchart TD\n  A[Start] --> B{Decide}\n  B -->|Yes| C[Do it]\n  B -->|No| D[Skip]';
 
-const diagramBlock = () => ({ type: 'codeBlock', attrs: { language: MERMAID }, content: [{ type: 'text', text: DIAGRAM_STARTER }] });
+/** Inserts a diagram block with the starter flowchart at the selection, with the focus in the text. */
+export function insertDiagram(editor: Editor): void {
+  editor
+    .chain()
+    .focus()
+    .insertContent({ type: 'codeBlock', attrs: { language: MERMAID }, content: [{ type: 'text', text: DIAGRAM_STARTER }] })
+    .run();
+}
+
+/**
+ * The formatting toolbar's Diagram button: a diagram turns back into text; on an empty line a starter diagram goes in;
+ * otherwise the selected lines (or a code block) become the diagram's Mermaid source.
+ */
+export function toggleDiagram(editor: Editor): void {
+  if (editor.isActive('codeBlock', { language: MERMAID })) {
+    editor.chain().focus().toggleCodeBlock().run();
+    return;
+  }
+  const { selection } = editor.state;
+  if (selection.empty && selection.$from.parent.textContent === '') insertDiagram(editor);
+  else editor.chain().focus().setCodeBlock({ language: MERMAID }).run();
+}
 
 /** One entry of the insert menu that "/" opens in a rich note. */
 export interface InsertItem {
@@ -92,7 +116,7 @@ export function insertItems(editor: Editor, actions: NoteActions): InsertItem[] 
     { id: 'numbers', label: 'Numbered list', keywords: 'ol', run: () => void chain().toggleOrderedList().run() },
     { id: 'checklist', label: 'Checklist', keywords: 'todo task', run: () => void chain().toggleTaskList().run() },
     { id: 'codeBlock', label: 'Code block', keywords: 'code snippet', run: () => void chain().toggleCodeBlock().run() },
-    { id: 'diagram', label: 'Diagram', keywords: 'mermaid chart flowchart', run: () => void chain().insertContent(diagramBlock()).run() },
+    ...(actions.insertDiagram ? [{ id: 'diagram', label: 'Diagram', keywords: 'mermaid chart flowchart sequence gantt', run: actions.insertDiagram }] : []),
     { id: 'mathBlock', label: 'Math block', keywords: 'formula equation latex tex katex', run: () => void chain().insertContent({ type: 'mathBlock', attrs: { latex: '' } }).run() },
     { id: 'mathInline', label: 'Inline math', keywords: 'formula equation latex tex katex', run: () => void chain().insertContent({ type: 'mathInline', attrs: { latex: '' } }).run() },
     ...(actions.insertTable ? [{ id: 'table', label: 'Table', keywords: 'grid rows columns', run: actions.insertTable }] : []),

@@ -38,7 +38,7 @@ import type { PathIndex } from '../../shared/tree/paths';
 import type { Db } from '../db/driver';
 import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
 import { NotesRepo, type ContentRow } from '../db/repositories/notes-repo';
-import type { NoteVault } from '../locks/note-vault';
+import type { LockVault } from '../locks/lock-vault';
 import { ReminderSourcesRepo, type ReminderSourceRow, type SourceFields } from '../db/repositories/reminder-sources-repo';
 import { RemindersRepo, type OccurrenceItemRow, type ReminderRow, type ViewBounds } from '../db/repositories/reminders-repo';
 import { AppError } from './app-error';
@@ -67,7 +67,7 @@ export interface ReminderServiceDeps {
   zones: SystemZoneProvider;
   settings: Pick<SettingsService, 'getInternal'>;
   /** Reads the content of locked notes while they are unlocked (block anchors; D-111). */
-  vault: NoteVault;
+  vault: LockVault;
   /** After every committed change: the `reminder:changed` broadcast. */
   emit(event: ReminderChangedEventType): void;
   /** After every committed write: wakes the scheduler. */

@@ -14,7 +14,10 @@ export interface MenuItem {
   onSelect: () => void;
 }
 
-/** Popover menu positioned at a point. Focus goes to the first enabled item and returns to the invoker on close. */
+/**
+ * Popover menu positioned at a point. Focus goes to the first enabled item and returns to the invoker on close, unless
+ * the chosen item put it somewhere else.
+ */
 export function Menu({
   items,
   anchor,
@@ -45,7 +48,11 @@ export function Menu({
     document.addEventListener('mousedown', onDown, true);
     return () => {
       document.removeEventListener('mousedown', onDown, true);
-      if (previous && previous.isConnected) previous.focus();
+      // An item that moved the focus on purpose (an inline rename field, an editor) keeps it; otherwise the focus,
+      // lost with the menu, goes back to where the menu was opened.
+      const active = document.activeElement;
+      const lost = active === null || active === document.body || (root?.contains(active) ?? false);
+      if (lost && previous && previous.isConnected) previous.focus();
     };
   }, []);
 

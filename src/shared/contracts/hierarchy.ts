@@ -66,6 +66,8 @@ export const DocumentDto = z.strictObject({
   sizeBytes: z.number().int().min(0),
   revision: z.number().int().min(0),
   favorite: z.boolean(),
+  /** Locked with a password (D-185): its bytes are encrypted at rest and readable only while it is unlocked. */
+  locked: z.boolean(),
   createdAt: Ms,
   updatedAt: Ms,
 });

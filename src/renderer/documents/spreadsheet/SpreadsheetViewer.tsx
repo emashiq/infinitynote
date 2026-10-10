@@ -15,6 +15,7 @@ import { fromGridSheets, GRID_FONTS, toGridSheets } from './fortune-model';
 
 // New cells and font 0 of the font menu use the app's sans font, not Times New Roman (D-164).
 locale({ lang: 'en' } as Context).fontarray.splice(0, GRID_FONTS.length, ...GRID_FONTS);
+import { csvDatesAsText, csvDatesFromText, readTypedDates } from './sheet-dates';
 import { findInSheets, stepMatch, type SheetMatch } from './sheet-find';
 import { gridMenus, modelProblem } from './spreadsheet-config';
 
@@ -47,18 +48,22 @@ export default function SpreadsheetViewer({ document, host, target, findRequests
   const dirty = edits !== savedEdits;
   const ready = loaded.status === 'ready';
 
+  // Dates typed as numbers follow the computer's date order (D-184).
+  useEffect(() => readTypedDates(host.dateOrder), [host.dateOrder]);
+
   useEffect(() => {
     let live = true;
     void host.readWorkbook().then((res) => {
       if (!live) return;
       if (!res.ok) return setLoaded({ status: 'error', message: res.message });
       setSimplified(res.data.simplified);
-      setLoaded({ status: 'ready', read: res.data, sheets: toGridSheets(res.data.workbook, WORKBOOK_LIMITS.maxGridCells) });
+      const workbook = csv ? csvDatesFromText(res.data.workbook, host.dateOrder) : res.data.workbook;
+      setLoaded({ status: 'ready', read: res.data, sheets: toGridSheets(workbook, WORKBOOK_LIMITS.maxGridCells) });
     });
     return () => {
       live = false;
     };
-  }, [host]);
+  }, [host, csv]);
 
   // Formulas saved without a result (by other apps) are calculated once the grid exists.
   useEffect(() => {
@@ -110,7 +115,8 @@ export default function SpreadsheetViewer({ document, host, target, findRequests
     if (!api || loaded.status !== 'ready' || readOnly) return false;
     if (simplified.length > 0 && !(await askSimplify())) return false;
     const at = editCount.current;
-    const checked = Workbook.safeParse(fromGridSheets(api.getAllSheets()));
+    const edited = fromGridSheets(api.getAllSheets());
+    const checked = Workbook.safeParse(csv ? csvDatesAsText(edited) : edited);
     if (!checked.success) {
       host.notify(modelProblem(checked.error), 'error');
       return false;
@@ -124,7 +130,7 @@ export default function SpreadsheetViewer({ document, host, target, findRequests
     } finally {
       setSaving(false);
     }
-  }, [loaded, readOnly, simplified, askSimplify, host]);
+  }, [loaded, readOnly, simplified, askSimplify, host, csv]);
 
   useEffect(() => {
     host.setUnsaved(dirty && !readOnly ? save : null);

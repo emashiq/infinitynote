@@ -32,6 +32,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: 'tab.prev', label: 'Previous tab', shortcut: 'Ctrl+Shift+Tab' },
   { id: 'note.find', label: 'Find in note', shortcut: 'Ctrl+F' },
   { id: 'note.insertReference', label: 'Link to note or document…' },
+  { id: 'note.insertDiagram', label: 'Insert diagram', keywords: 'mermaid flowchart chart sequence gantt' },
   { id: 'comment.add', label: 'Add comment', keywords: 'comment annotate note selection', shortcut: 'Ctrl+Alt+M' },
   { id: 'note.float', label: 'Float current note' },
   { id: 'note.exportMarkdown', label: 'Export note as Markdown…' },
@@ -40,7 +41,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: 'note.print', label: 'Print note…' },
   { id: 'note.lock', label: 'Lock note…', keywords: 'password encrypt windows hello lock settings' },
   { id: 'note.lockNow', label: 'Lock note now' },
-  { id: 'notes.lockAll', label: 'Lock all notes' },
+  { id: 'notes.lockAll', label: 'Lock all notes and documents', keywords: 'locked files password' },
   { id: 'backup.create', label: 'Back up now…' },
   { id: 'help.shortcuts', label: 'Keyboard shortcuts', shortcut: 'Ctrl+/' },
 ];

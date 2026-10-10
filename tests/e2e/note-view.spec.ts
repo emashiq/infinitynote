@@ -130,6 +130,7 @@ test('the note view is only the text, its tab is the title, with formatting, ins
     'Insert image',
     'Attach file',
     'Insert table…',
+    'Insert diagram',
     'Link to note or document…',
     'Add reminder…',
     'Create reminder from text',

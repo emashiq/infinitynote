@@ -21,7 +21,14 @@ export interface DocumentViewState {
   conflict: { reason: DocumentConflictReasonType; message: string } | null;
   /** Counts the times the document was read from main; a viewer is mounted again when it changes. */
   loads: number;
+  /** A save refused because the document locked again meanwhile (D-185): its edits are kept until saved or discarded. */
+  heldEdits: boolean;
 }
+
+type SaveCall = (base: { documentId: string; baseRevision: number; expectedFile?: ExpectedFileType }) => Promise<Result<DocumentOpenResponseType>>;
+
+/** A save main refused because the document's key was gone (it locked again while the save was under way). */
+const lockedOut = (error: ErrorEnvelope): boolean => error.code === 'FORBIDDEN' && (error.details as { locked?: unknown } | undefined)?.locked === true;
 
 const CONFLICT_REASONS: ReadonlySet<string> = new Set(['revision', 'changedOnDisk', 'inUse']);
 
@@ -44,7 +51,10 @@ export class DocumentController {
     saving: false,
     conflict: null,
     loads: 0,
+    heldEdits: false,
   });
+  /** The refused save of `heldEdits`, run again by saveHeld. */
+  private held: SaveCall | null = null;
 
   constructor(
     private readonly bridge: Pick<InfinityBridge, 'document'>,
@@ -90,9 +100,22 @@ export class DocumentController {
    * Runs one save with the revision it starts from and, for a linked document, the original's state when it was
    * opened, so main refuses a save over changes made elsewhere.
    */
-  private async saving(
-    call: (base: { documentId: string; baseRevision: number; expectedFile?: ExpectedFileType }) => Promise<Result<DocumentOpenResponseType>>,
-  ): Promise<FlushResult> {
+  /** Saves the edits of a save refused while the document was locked (now unlocked again); the viewer then shows them. */
+  async saveHeld(): Promise<FlushResult> {
+    const call = this.held;
+    if (!call) return { ok: true };
+    this.discardHeld();
+    const res = await this.saving(call);
+    if (res.ok) this.store.setState({ loads: this.store.getState().loads + 1 });
+    return res;
+  }
+
+  discardHeld(): void {
+    this.held = null;
+    if (this.store.getState().heldEdits) this.store.setState({ heldEdits: false });
+  }
+
+  private async saving(call: SaveCall): Promise<FlushResult> {
     const { document, file } = this.store.getState();
     if (!document) return { ok: false, code: 'NOT_FOUND', message: DOCUMENT_MESSAGES.missing };
     this.store.setState({ saving: true });
@@ -105,6 +128,10 @@ export class DocumentController {
     }
     const reason = conflictReason(res.error);
     if (reason) this.store.setState({ conflict: { reason, message: res.error.message } });
+    if (lockedOut(res.error)) {
+      this.held = call;
+      this.store.setState({ heldEdits: true });
+    }
     return { ok: false, code: res.error.code, message: res.error.message, details: res.error.details };
   }
 

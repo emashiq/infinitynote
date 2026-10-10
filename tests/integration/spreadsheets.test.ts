@@ -145,7 +145,7 @@ describe('spreadsheet documents in main (D-134)', () => {
     const read = await s.spreadsheets.read(doc.id);
     await s.spreadsheets.save({ documentId: doc.id, baseRevision: 0, workbook: edit(read.workbook, 'x') });
     const [version] = s.documents.versionsOf(doc.id).versions;
-    const handler = createDocumentHandler({ files: s.documentFiles, allowedOrigins: [] });
+    const handler = createDocumentHandler({ documents: s.documents, allowedOrigins: [] });
     const res = await handler(new Request(documentVersionUrl(doc.id, version!.id)));
     expect(res.status).toBe(200);
     expect(Buffer.from(await res.arrayBuffer()).byteLength).toBe(version!.sizeBytes);

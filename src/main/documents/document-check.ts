@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { OOXML_KINDS, type DocumentKind } from '../../shared/documents/kinds';
+import type { ByteSource } from './byte-source';
 import { CONTENT_TYPES, openOoxml, type OoxmlKind } from './ooxml-package';
 import { looksLikeText } from './text-encoding';
 
@@ -18,9 +19,10 @@ const MACRO_CONTENT_TYPE = /macroEnabled|vbaProject/i;
 /** Content types parts are a few KiB; a larger one is not read and the package is refused. */
 const MAX_CONTENT_TYPES_BYTES = 1024 * 1024;
 
-/** The first `count` bytes of a file (fewer for a shorter file). */
-export async function readHead(file: string, count: number): Promise<Buffer> {
-  const handle = await fs.promises.open(file, 'r');
+/** The first `count` bytes of a file or of bytes in memory (fewer for a shorter one). */
+export async function readHead(source: ByteSource, count: number): Promise<Buffer> {
+  if (typeof source !== 'string') return Buffer.from(source.buffer, source.byteOffset, Math.min(count, source.byteLength));
+  const handle = await fs.promises.open(source, 'r');
   try {
     const buffer = Buffer.alloc(count);
     const { bytesRead } = await handle.read(buffer, 0, count, 0);
@@ -36,7 +38,7 @@ export async function readHead(file: string, count: number): Promise<Buffer> {
  * content type, or text for CSV and HTML. Checked
  * when a file is imported and again for every save before the bytes replace anything.
  */
-export async function isDocumentOfKind(kind: DocumentKind, file: string): Promise<boolean> {
+export async function isDocumentOfKind(kind: DocumentKind, file: ByteSource): Promise<boolean> {
   try {
     if (OOXML_KINDS.has(kind)) {
       const archive = await openOoxml(file, kind as OoxmlKind);

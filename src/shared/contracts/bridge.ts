@@ -57,6 +57,15 @@ export interface InfinityBridge {
     remove: Call<'lock:remove'>;
     create: Call<'lock:create'>;
     setPin: Call<'lock:setPin'>;
+    documentStatus: Call<'lock:documentStatus'>;
+    documentSet: Call<'lock:documentSet'>;
+    documentUnlock: Call<'lock:documentUnlock'>;
+    documentUnlockHello: Call<'lock:documentUnlockHello'>;
+    documentLockNow: Call<'lock:documentLockNow'>;
+    documentChangePassword: Call<'lock:documentChangePassword'>;
+    documentSetHello: Call<'lock:documentSetHello'>;
+    documentRemove: Call<'lock:documentRemove'>;
+    documentActivity: Call<'lock:documentActivity'>;
   };
   /** Documents (D-118): main window only; bytes are read through the document protocol, never through IPC. */
   readonly document: {

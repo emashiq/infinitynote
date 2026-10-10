@@ -64,6 +64,9 @@ export async function setupServices(
   const collabEvents: Array<{ webContentsId: number; channel: string; payload: unknown }> = [];
   /** Lock states main sent to sticky windows (D-172). */
   const stickyLockEvents: Array<{ webContentsId: number; state: StickyLockStateType }> = [];
+  /** Documents that locked again, and the open-edit saves asked first (D-185). */
+  const documentLocked: string[] = [];
+  const documentEditSaves = { count: 0 };
   /** Each dialog call takes the next entry; null or an empty queue means the user canceled. */
   const dialogQueue: Array<string[] | null> = [];
   const dialogCalls: OpenFilesRequest[] = [];
@@ -143,6 +146,10 @@ export async function setupServices(
     onNoteRevision: (e) => revisions.push(e),
     sendCollab: (webContentsId, channel, payload) => collabEvents.push({ webContentsId, channel, payload }),
     sendStickyLock: (webContentsId, state) => stickyLockEvents.push({ webContentsId, state }),
+    saveOpenDocumentEdits: async () => {
+      documentEditSaves.count += 1;
+    },
+    onDocumentLocked: (documentId) => documentLocked.push(documentId),
     zones,
     onReminderChanged: (e) => reminderEvents.push(e),
     onRemindersWritten: () => {
@@ -191,6 +198,8 @@ export async function setupServices(
     revisions,
     collabEvents,
     stickyLockEvents,
+    documentLocked,
+    documentEditSaves,
     zones,
     reminderEvents,
     reminderWrites,

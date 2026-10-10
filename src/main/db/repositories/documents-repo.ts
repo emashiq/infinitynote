@@ -17,6 +17,8 @@ export interface DocumentRow {
   size_bytes: number;
   source_modified_at: number | null;
   favorite: number;
+  /** 1 while a document_locks row exists (D-185). */
+  locked: number;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -24,7 +26,7 @@ export interface DocumentRow {
 }
 
 export const DOCUMENT_COLS =
-  'id, project_id, folder_id, title, kind, storage, blob_id, linked_file_id, source_attachment_id, revision, size_bytes, source_modified_at, favorite, created_at, updated_at, deleted_at, trash_batch_id';
+  'id, project_id, folder_id, title, kind, storage, blob_id, linked_file_id, source_attachment_id, revision, size_bytes, source_modified_at, favorite, locked, created_at, updated_at, deleted_at, trash_batch_id';
 
 export interface DocumentInput {
   id: string;
@@ -115,6 +117,18 @@ export class DocumentsRepo {
         )
         .run(c.blobId, c.sizeBytes, c.sourceModifiedAt, c.bodyText, c.now, c.id, c.expectedRevision).changes === 1
     );
+  }
+
+  /**
+   * The document's bytes become a stored blob it alone uses (a lock seals them, removing it opens them): a linked document
+   * becomes managed, and the search text is set (empty while locked).
+   */
+  replaceContent(id: string, blobId: string, sizeBytes: number, bodyText: string, now: number): void {
+    this.db
+      .prepare<[string, number, string, number, string]>(
+        "UPDATE documents SET storage = 'managed', blob_id = ?, linked_file_id = NULL, source_modified_at = NULL, size_bytes = ?, body_text = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(blobId, sizeBytes, bodyText, now, id);
   }
 
   /** A linked original changed outside the app: its size and text follow it, without a new revision. */

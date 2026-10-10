@@ -10,7 +10,7 @@ import { AppError } from './services/app-error';
 import type { CloseChoice, CloseDialogOptions } from './services/close-dialog';
 import type { DialogAdapter } from './services/dialog-adapter';
 import type { FlushOutcome } from './services/flush-coordinator';
-import { createFakeClock, type Clock, type FakeClock } from './services/clock';
+import { createFakeClock, systemClock, type Clock, type FakeClock } from './services/clock';
 import { createFakeNotificationAdapter, type FakeNotificationAdapter, type FakeNotifyMode, type ShownNotification } from './services/notification-adapter';
 import { createFakePowerEvents, type PowerEvent } from './services/power-events';
 import type { ReminderScheduler } from './services/reminder-scheduler';
@@ -81,6 +81,8 @@ export interface TestState {
   /** The computer zone as reminders see it (INFINITY_NOTES_TEST_ZONE); a change wakes the scheduler. */
   zone: { set(zone: string | null): Promise<void> } | null;
   power: { emit(event: PowerEvent): Promise<void> };
+  /** Moves the lock session's clock on and runs the idle check, as if that much time passed without use (D-185). */
+  locks: { idle(ms: number): Promise<number> };
   scheduler: { timer(): { armed: boolean; delayMs: number | null }; ticks(): number; idle(): Promise<void> } | null;
   /** The reminder widget window as main sees it (a fresh task), or null while it is hidden. */
   widget(): Promise<(Partial<NativeWindowInfo> & { webContentsId: number }) | null>;
@@ -147,6 +149,10 @@ export interface TestHooks {
   restart(quit: () => void): void;
   /** The fake Windows Hello and a key protector bound to this process (never DPAPI or a real prompt in tests). */
   osKey: { verifier: OsKeyVerifier; protector: KeyProtector };
+  /** The computer's regional locale as the app sees it (INFINITY_NOTES_TEST_LOCALE), or null for the real one. */
+  systemLocale: string | null;
+  /** The lock session's clock: the system time plus what `locks.idle` advanced it by (D-185). */
+  lockClock: Clock;
   /** Exposes the scheduler once it exists (storage is up). */
   attachReminders(deps: { scheduler: ReminderScheduler; db: Db }): void;
 }
@@ -234,6 +240,7 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     notifications: null,
     zone: null,
     power: { emit: async (event) => reminderSeams.power.emit(event) },
+    locks: { idle: async () => 0 },
     scheduler: null,
     widget: async () => null,
     autostart: { enabled: false, calls: [] },
@@ -241,9 +248,13 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     hello: hello.state,
   };
   globalThis.__infinityTest = state;
+  let lockOffsetMs = 0;
+  const lockClock: Clock = { now: () => systemClock.now() + lockOffsetMs, monotonicNow: () => systemClock.monotonicNow() + lockOffsetMs };
   return {
     state,
+    lockClock,
     osKey: { verifier: hello.verifier, protector: createMemoryKeyProtector() },
+    systemLocale: env.INFINITY_NOTES_TEST_LOCALE || null,
     shell: {
       openPath: async (p) => {
         state.shellCalls.push({ op: 'openPath', path: p });
@@ -292,6 +303,13 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
       state.externalWrite = createExternalWrite(deps);
       state.maintenance = () => onFreshTask(() => deps.services.maintenance.run());
       state.autoBackup = () => onFreshTask(() => deps.services.portability.runAutoBackup());
+      state.locks = {
+        idle: (ms) =>
+          onFreshTask(() => {
+            lockOffsetMs += ms;
+            return deps.services.locks.sweep();
+          }),
+      };
     },
     displays,
     attachDesktop({ desktop, registry, services, inspector }) {

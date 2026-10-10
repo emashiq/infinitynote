@@ -8,7 +8,7 @@ import type { Db } from '../db/driver';
 import { AttachmentsRepo } from '../db/repositories/attachments-repo';
 import { LinkedFilesRepo } from '../db/repositories/linked-files-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
-import type { NoteVault } from '../locks/note-vault';
+import type { LockVault } from '../locks/lock-vault';
 import { AppError } from '../services/app-error';
 import { containedAttachmentFile } from '../services/attachment-files';
 import { isUsableLinkPath } from '../services/linked-file';
@@ -20,7 +20,7 @@ export interface NoteExportDeps {
   db: Db;
   dataDir: string;
   logger: Logger;
-  vault: NoteVault;
+  vault: LockVault;
 }
 
 /** The folder next to an exported Markdown file that holds its images and files: "<name> files". */

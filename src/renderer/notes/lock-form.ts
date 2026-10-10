@@ -16,7 +16,19 @@ export const LOCK_DIALOG_POINTS = [
   'Reminders keep working. Reminder titles are not encrypted and stay visible in the Reminders page; notifications do not show them.',
 ] as const;
 
-export const NO_RECOVERY = 'I understand a forgotten password cannot be recovered';
+/** What the lock dialog says before a document is locked (D-185). */
+export const DOCUMENT_LOCK_POINTS = [
+  'The file is encrypted on this computer. The document name is not encrypted: it stays visible in the tree, tabs, Home, links and search.',
+  'Its earlier versions and its search text are deleted now and cannot be restored. Comments on it are encrypted with it.',
+  'While it is unlocked it opens only in Infinity Notes. Export a copy writes an unencrypted file where you choose.',
+  'Backups made before now still contain the file. Copies elsewhere (exports, attachments in notes) are not changed.',
+] as const;
+
+/** Said for a linked document, which is copied in to be locked (D-185). */
+export const LINKED_COPY_POINT =
+  'This document is linked to a file outside Infinity Notes, which cannot be encrypted where it is. Locking copies it into Infinity Notes and locks the copy; the original file stays where it is, unencrypted.';
+
+export const NO_RECOVERY ='I understand a forgotten password cannot be recovered';
 
 /** What the dialog of "New locked note" and "New locked sticky" says (D-171). */
 export const CREATE_LOCKED_POINTS = [

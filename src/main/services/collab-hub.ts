@@ -16,7 +16,7 @@ import { docToText, textToDoc } from '../../shared/text/textarea-doc';
 import type { Db } from '../db/driver';
 import { DraftsRepo } from '../db/repositories/drafts-repo';
 import { NotesRepo, type ContentRow } from '../db/repositories/notes-repo';
-import type { NoteVault } from '../locks/note-vault';
+import type { LockVault } from '../locks/lock-vault';
 import { AppError, errorDetail } from './app-error';
 import type { Clock } from './clock';
 import type { IdGenerator } from './ids';
@@ -49,7 +49,7 @@ export interface CollabHubDeps {
   content: NoteContent;
   versions: VersionService;
   /** Opens and seals the content of locked notes (D-111). */
-  vault: NoteVault;
+  vault: LockVault;
   emitRevision: (event: NoteRevisionEventType) => void;
   send: <C extends CollabEvent>(webContentsId: number, channel: C, payload: EventPayload<C>) => void;
   faults?: SaveFaults;

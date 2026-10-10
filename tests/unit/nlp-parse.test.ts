@@ -400,3 +400,18 @@ describe('PRODUCT_SPEC section 6 local and deterministic parsing (INF-NLP-01)', 
     expect(now).not.toHaveBeenCalled();
   });
 });
+
+describe('day-first and dotted numeric dates (v0.3.1 report)', () => {
+  it('reads d-m-yyyy, d.m.yyyy and m/d/yyyy; a day over 12 decides the order', () => {
+    expect(at('pay rent 25-10-2026').date).toBe('2026-10-25');
+    expect(at('pay rent 25.10.2026').date).toBe('2026-10-25');
+    expect(at('pay rent 10/25/2026').date).toBe('2026-10-25');
+    expect(at('pay rent 10-10-2026').date).toBe('2026-10-10');
+  });
+
+  it('a date already gone is ready and marked past, so the card can say so and the date can be changed', () => {
+    const r = ready('pay rent 10-10-2026', { ref: Date.parse('2026-10-11T06:00:00Z') });
+    expect(r.date).toBe('2026-10-10');
+    expect(r.past).toBe(true);
+  });
+});

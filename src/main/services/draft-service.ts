@@ -9,7 +9,7 @@ import { extractPlainText } from '../../shared/text/plain-text';
 import type { Db } from '../db/driver';
 import { DraftsRepo, type DraftRow } from '../db/repositories/drafts-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
-import type { NoteVault } from '../locks/note-vault';
+import type { LockVault } from '../locks/lock-vault';
 import { AppError } from './app-error';
 import type { Clock } from './clock';
 import type { ContentOps } from './content-ops';
@@ -24,7 +24,7 @@ export class DraftService {
   private readonly drafts: DraftsRepo;
   private readonly notes: NotesRepo;
 
-  constructor(private readonly deps: { db: Db; clock: Clock; ops: ContentOps; versions: VersionService; vault: NoteVault }) {
+  constructor(private readonly deps: { db: Db; clock: Clock; ops: ContentOps; versions: VersionService; vault: LockVault }) {
     this.drafts = new DraftsRepo(deps.db);
     this.notes = new NotesRepo(deps.db);
   }

@@ -1,6 +1,6 @@
 import { FolderPlus } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { normalizeName, validateName, validateTitle } from '../../shared/names';
+import { checkRename } from '../../shared/names';
 import { flattenVisible, treeKeyAction, type TreeNode } from '../../shared/tree/tree-model';
 import { useServices, useStore } from '../state/use-store';
 import { IconButton } from '../ui/IconButton';
@@ -147,23 +147,19 @@ export function TreePane() {
     const real = state.model.nodes.get(effectiveKey(node)) ?? node;
     const id = real.id;
     if (!id) return null;
-    const next = normalizeName(value);
-    const message = real.kind === 'note' ? validateTitle(next) : validateName(next);
-    if (message) return message;
-    if (next === initialName(real)) {
-      setRenamingKey(null);
-      focusKey(node.key);
-      return null;
+    const check = checkRename(value, initialName(real), real.kind === 'note' ? 'title' : 'name');
+    if (check.status === 'invalid') return check.message;
+    if (check.status === 'changed') {
+      const res =
+        real.kind === 'project'
+          ? await tree.renameProject(id, check.name)
+          : real.kind === 'folder'
+            ? await tree.renameFolder(id, check.name)
+            : real.kind === 'document'
+              ? await tree.renameDocument(id, check.name)
+              : await tree.renameNote(id, check.name);
+      if (!res.ok) return res.message;
     }
-    const res =
-      real.kind === 'project'
-        ? await tree.renameProject(id, next)
-        : real.kind === 'folder'
-          ? await tree.renameFolder(id, next)
-          : real.kind === 'document'
-            ? await tree.renameDocument(id, next)
-            : await tree.renameNote(id, next);
-    if (!res.ok) return res.message;
     setRenamingKey(null);
     focusKey(node.key);
     return null;

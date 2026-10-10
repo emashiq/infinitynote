@@ -7,11 +7,12 @@ import {
   type CommentTargetType,
   type CommentThreadDtoType,
 } from '../../shared/contracts/comments';
+import { DOCUMENT_LOCK_MESSAGES, LOCK_MESSAGES } from '../../shared/contracts/locks';
 import type { Db } from '../db/driver';
 import { CommentsRepo, type CommentRow, type ThreadRow } from '../db/repositories/comments-repo';
 import { DocumentsRepo } from '../db/repositories/documents-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
-import type { NoteVault } from '../locks/note-vault';
+import type { LockVault } from '../locks/lock-vault';
 import { AppError } from '../services/app-error';
 import type { Clock } from '../services/clock';
 import type { IdGenerator } from '../services/ids';
@@ -24,7 +25,7 @@ export interface CommentServiceDeps {
   clock: Clock;
   ids: IdGenerator;
   logger: Logger;
-  vault: NoteVault;
+  vault: LockVault;
 }
 
 const missing = (): AppError => new AppError('NOT_FOUND', COMMENT_MESSAGES.missing);
@@ -36,8 +37,8 @@ function parseAnchor(json: string): CommentAnchorType {
 }
 
 /**
- * Comment threads on notes and documents (F8, D-165), single user. Only live items take comments; a locked note's
- * comments are read and written only while it is unlocked, sealed with its data key (D-111). Every change runs in one
+ * Comment threads on notes and documents (F8, D-165), single user. Only live items take comments; a locked item's
+ * comments are read and written only while it is unlocked, sealed with its data key (D-111, D-185). Every change runs in one
  * transaction and returns the thread as it now is.
  */
 export class CommentService {
@@ -69,7 +70,7 @@ export class CommentService {
       const now = this.deps.clock.now();
       const threadId = this.deps.ids.uuid();
       const commentId = this.deps.ids.uuid();
-      this.repo.insertThread({ id: threadId, kind: req.target.kind, targetId: req.target.id, anchorJson: JSON.stringify(req.anchor), quote: cipher.store('quote', threadId, quote), now });
+      this.repo.insertThread({ id: threadId, kind: req.target.kind, targetId: req.target.id, anchorJson: cipher.storeAnchor(threadId, JSON.stringify(req.anchor)), quote: cipher.store('quote', threadId, quote), now });
       this.repo.insertComment({ id: commentId, threadId, body: cipher.store('comment', commentId, req.body), createdAt: now, updatedAt: now });
       this.deps.logger.info(`comments: thread created id=${threadId} target=${req.target.kind}`);
       return this.threadDto(threadId, cipher);
@@ -140,7 +141,7 @@ export class CommentService {
     if (target.kind === 'note') {
       const note = this.notes.getContentRow(target.id);
       if (!note || note.deleted_at !== null) throw new AppError('NOT_FOUND', COMMENT_MESSAGES.itemMissing);
-      const cipher = note.locked === 1 ? sealedComments(this.deps.vault.keyOf(note.id), note.id) : PLAIN_COMMENTS;
+      const cipher = note.locked === 1 ? this.lockedCipher('note', note.id, LOCK_MESSAGES.locked) : PLAIN_COMMENTS;
       return {
         cipher,
         fits: (anchor) => {
@@ -151,7 +152,14 @@ export class CommentService {
     }
     const document = this.documents.get(target.id);
     if (!document || document.deleted_at !== null) throw new AppError('NOT_FOUND', COMMENT_MESSAGES.itemMissing);
-    return { cipher: PLAIN_COMMENTS, fits: (anchor) => anchorFits(anchor, { kind: 'document', documentKind: document.kind }) };
+    const cipher = document.locked === 1 ? this.lockedCipher('document', document.id, DOCUMENT_LOCK_MESSAGES.locked) : PLAIN_COMMENTS;
+    return { cipher, fits: (anchor) => anchorFits(anchor, { kind: 'document', documentKind: document.kind }) };
+  }
+
+  /** The comment cipher of a locked item: FORBIDDEN `{locked: true}` now unless it is unlocked; each value resolves the key. */
+  private lockedCipher(kind: 'note' | 'document', itemId: string, message: string): CommentCipher {
+    this.deps.vault.requireUnlocked(itemId, message);
+    return sealedComments(this.deps.vault.keyAccess(itemId, message), { kind, id: itemId });
   }
 
   private liveThread(threadId: string): { thread: ThreadRow; cipher: CommentCipher } {
@@ -169,7 +177,7 @@ export class CommentService {
     return {
       id: t.id,
       target: { kind: t.target_kind, id: t.target_id },
-      anchor: parseAnchor(t.anchor_json),
+      anchor: parseAnchor(cipher.readAnchor(t.id, t.anchor_json)),
       quote: cipher.read('quote', t.id, { text: t.quote, sealed: t.sealed_quote }),
       resolvedAt: t.resolved_at,
       createdAt: t.created_at,

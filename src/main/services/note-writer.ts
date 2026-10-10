@@ -8,7 +8,7 @@ import {
 import type { Db } from '../db/driver';
 import { DraftsRepo } from '../db/repositories/drafts-repo';
 import { NotesRepo } from '../db/repositories/notes-repo';
-import type { NoteVault } from '../locks/note-vault';
+import type { LockVault } from '../locks/lock-vault';
 import { AppError, errorDetail } from './app-error';
 import type { Clock } from './clock';
 import type { IdGenerator } from './ids';
@@ -31,7 +31,7 @@ export interface NoteWriterDeps {
   content: NoteContent;
   versions: VersionService;
   /** Seals the drafts of locked notes (D-111). */
-  vault: NoteVault;
+  vault: LockVault;
   emit: (event: NoteRevisionEventType) => void;
   faults?: SaveFaults;
 }

@@ -15,6 +15,8 @@ export interface ResolvedDocumentFile {
   file: string;
   sizeBytes: number;
   modifiedAt: number;
+  /** The stored blob the file is, or null for a linked original or another file; a sealed one holds ciphertext (D-185). */
+  blob: { id: string; sealed: boolean } | null;
 }
 
 /** The modification time main compares, in whole milliseconds. */
@@ -81,11 +83,11 @@ export class DocumentFiles {
   private async resolveBlob(kind: DocumentKind, blobId: string): Promise<ResolvedDocumentFile | null> {
     const blob = this.blobs.get(blobId);
     const file = blob ? await containedDataFile(this.dataDir, 'documents', blob.relative_path).catch(() => null) : null;
-    return file ? this.stated(kind, file) : null;
+    return blob && file ? this.stated(kind, file, { id: blob.id, sealed: blob.sealed === 1 }) : null;
   }
 
-  private async stated(kind: DocumentKind, file: string): Promise<ResolvedDocumentFile | null> {
+  private async stated(kind: DocumentKind, file: string, blob: ResolvedDocumentFile['blob'] = null): Promise<ResolvedDocumentFile | null> {
     const stat = await fs.promises.stat(file).catch(() => null);
-    return stat?.isFile() ? { kind, file, sizeBytes: stat.size, modifiedAt: modifiedAtOf(stat) } : null;
+    return stat?.isFile() ? { kind, file, sizeBytes: stat.size, modifiedAt: modifiedAtOf(stat), blob } : null;
   }
 }

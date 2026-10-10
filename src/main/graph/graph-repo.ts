@@ -16,6 +16,7 @@ export interface GraphDocumentRow {
   kind: DocumentKind;
   project_id: string | null;
   folder_id: string | null;
+  locked: number;
 }
 
 export interface GraphLinkRow {
@@ -61,7 +62,7 @@ export class GraphRepo {
   documents(scope: GraphScopeType): GraphDocumentRow[] {
     const { where, args } = scopeSql(scope);
     return this.db
-      .prepare<string[], GraphDocumentRow>(`SELECT x.id, x.title, x.kind, x.project_id, x.folder_id FROM documents x WHERE x.deleted_at IS NULL${where} ORDER BY x.updated_at DESC`)
+      .prepare<string[], GraphDocumentRow>(`SELECT x.id, x.title, x.kind, x.project_id, x.folder_id, x.locked FROM documents x WHERE x.deleted_at IS NULL${where} ORDER BY x.updated_at DESC`)
       .all(...args);
   }
 

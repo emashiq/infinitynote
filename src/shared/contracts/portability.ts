@@ -80,7 +80,7 @@ export type PortableCountsType = z.infer<typeof PortableCounts>;
 
 export const ExportPortableResponse = z.union([
   Canceled,
-  /** Locked notes are not exported (D-111); `skippedLocked` says how many were left out. */
+  /** Locked notes and documents are not exported (D-111, D-185); `skippedLocked` says how many were left out. */
   z.strictObject({ canceled: z.literal(false), file: z.string(), counts: PortableCounts, skippedLocked: z.number().int().nonnegative() }),
 ]);
 

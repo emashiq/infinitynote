@@ -55,7 +55,7 @@ describe('documents in the tree and tabs (D-118)', () => {
     expect(view.querySelector('[role="alert"]')?.textContent).toBe('File not found at /home/me/Paper.pdf');
     expect(view.querySelector('.file-chip-badge')?.getAttribute('title')).toBe('Linked: /home/me/Paper.pdf');
     const buttons = Object.fromEntries([...view.querySelectorAll('button')].map((b) => [b.textContent, b.disabled]));
-    expect(buttons).toEqual({ 'Open in system app': true, 'Show in folder': true, 'Export a copy…': true, Versions: false });
+    expect(buttons).toEqual({ Paper: false, Rename: false, 'Open in system app': true, 'Show in folder': true, 'Export a copy…': true, 'Lock…': false, Versions: false });
   });
 
   it('the context menu offers document actions and Move to Trash closes the tab', async () => {
@@ -73,6 +73,7 @@ describe('documents in the tree and tabs (D-118)', () => {
       'Add to favorites',
       'Open in system app',
       'Show in folder',
+      'Lock…',
       'Move to Trash',
     ]);
     await dom.click([...menu.querySelectorAll('[role="menuitem"]')].find((m) => m.textContent === 'Move to Trash')!);

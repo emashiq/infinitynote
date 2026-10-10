@@ -150,6 +150,15 @@ export const INVOKE_CHANNELS = [
   'sticky:activity',
   'sticky:blur',
   'sticky:setPin',
+  'lock:documentStatus',
+  'lock:documentSet',
+  'lock:documentUnlock',
+  'lock:documentUnlockHello',
+  'lock:documentLockNow',
+  'lock:documentChangePassword',
+  'lock:documentSetHello',
+  'lock:documentRemove',
+  'lock:documentActivity',
 ] as const;
 
 export const EVENT_CHANNELS = [
@@ -167,6 +176,7 @@ export const EVENT_CHANNELS = [
   'collab:reset',
   'collab:status',
   'sticky:lockState',
+  'lock:documentLocked',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

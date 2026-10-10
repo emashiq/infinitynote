@@ -25,12 +25,13 @@ import { FormatBubble } from './FormatBubble';
 import { InsertTableDialog } from './InsertTableDialog';
 import { applyLink, LINK_OPEN_FAILED, linkHrefAt, removeLink, selectedLinkHref } from './link';
 import { LinkDialog } from './LinkDialog';
-import { insertItems, noteMenuItems, type NoteActions } from './note-actions';
+import { insertDiagram, insertItems, noteMenuItems, type NoteActions } from './note-actions';
 import { LinkPicker, type PickedLink } from './LinkPicker';
 import { LINK_TRIGGER, linkableSelection, type LinkRequest } from './link-trigger';
 import { createPasteProps } from './paste';
 import type { CardRequest } from '../reminders/card-request';
 import { blockIdAtSelection, chipsMeta, findBlock, REMINDER_CHIP_EVENT, selectionAtBlockStart, type ChipInfo } from './reminder-chips';
+import type { NoteInsertItem } from '../state/ui-store';
 import { useStore } from '../state/use-store';
 import { Menu } from '../ui/Menu';
 import { DISMISS_FAILED } from '../reminders/suggestion-context';
@@ -72,9 +73,9 @@ export interface NoteEditorProps {
   /** A new request object opens the find bar (Ctrl+F); the editor then calls onFindRequestHandled. */
   findRequest: object | null;
   onFindRequestHandled: () => void;
-  /** A new request object opens the reference picker (palette "Link to note or document…"); then onReferenceRequestHandled. */
-  referenceRequest?: object | null;
-  onReferenceRequestHandled?: () => void;
+  /** A new request object inserts from the palette (the reference picker, or a diagram); then onInsertRequestHandled. */
+  insertRequest?: { item: NoteInsertItem } | null;
+  onInsertRequestHandled?: () => void;
   onConvert: (target: 'rich' | 'plain') => void;
   onOpenVersions: () => void;
   /** Receives the editor instance, so the title or the sticky can move the focus into it. */
@@ -365,16 +366,20 @@ export function NoteEditor(props: NoteEditorProps) {
     if (typed && !editor.isDestroyed) editor.chain().focus().insertContent(LINK_TRIGGER).run();
     else editor.commands.focus();
   };
-  // A palette request opens the picker once (state adjusted while rendering); the request is then consumed.
-  const { referenceRequest, onReferenceRequestHandled } = props;
-  const [shownReferenceRequest, setShownReferenceRequest] = useState<object | null>(null);
-  if (referenceRequest && referenceRequest !== shownReferenceRequest) {
-    setShownReferenceRequest(referenceRequest);
-    if (canReference) setPicker({});
+  // A palette request acts once: the picker opens while rendering (state adjusted), a diagram goes in after it; the
+  // request is then consumed.
+  const { insertRequest, onInsertRequestHandled } = props;
+  const [shownInsertRequest, setShownInsertRequest] = useState<object | null>(null);
+  if (insertRequest && insertRequest !== shownInsertRequest) {
+    setShownInsertRequest(insertRequest);
+    if (insertRequest.item === 'reference' && canReference) setPicker({});
   }
+  const canInsertBlocks = format === 'rich' && editable;
   useEffect(() => {
-    if (referenceRequest) onReferenceRequestHandled?.();
-  }, [referenceRequest, onReferenceRequestHandled]);
+    if (!insertRequest) return;
+    if (insertRequest.item === 'diagram' && canInsertBlocks) insertDiagram(editor);
+    onInsertRequestHandled?.();
+  }, [insertRequest, onInsertRequestHandled, canInsertBlocks, editor]);
 
   // Reminder suggestions (D-091): one detector per editor instance; it follows the note's reminders.
   const { suggestions } = props;
@@ -464,7 +469,8 @@ export function NoteEditor(props: NoteEditorProps) {
 
   const actions: NoteActions = {
     insertAttachment: (kind) => void insertAttachment(kind),
-    insertTable: format === 'rich' && editable ? () => setTableDialog(true) : undefined,
+    insertTable: canInsertBlocks ? () => setTableDialog(true) : undefined,
+    insertDiagram: canInsertBlocks ? () => insertDiagram(editor) : undefined,
     insertReference: canReference ? () => setPicker(selectionRequest()) : undefined,
     addReminder: props.onAddReminder,
     createFromText: suggestions ? () => void createFromText() : undefined,

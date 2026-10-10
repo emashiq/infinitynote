@@ -103,6 +103,14 @@ import {
 } from './hierarchy';
 import { HomeSummaryRequest, HomeSummaryResponse } from './home';
 import {
+  DocumentLockChangePasswordRequest,
+  DocumentLockedEvent,
+  DocumentLockRemoveRequest,
+  DocumentLockRequest,
+  DocumentLockSetHelloRequest,
+  DocumentLockSetRequest,
+  DocumentLockStatus,
+  DocumentLockUnlockRequest,
   LockAllResponse,
   LockChangePasswordRequest,
   LockNoteRequest,
@@ -376,6 +384,16 @@ export const CHANNEL_SCHEMAS = {
   'sticky:activity': { request: StickyNoteRequest, response: Empty },
   'sticky:blur': { request: StickyNoteRequest, response: StickyLockState },
   'sticky:setPin': { request: LockSetPinRequest, response: StickyLockState },
+  // v0.3.1: locked documents (D-185), main window only like every lock:* channel.
+  'lock:documentStatus': { request: DocumentLockRequest, response: DocumentLockStatus },
+  'lock:documentSet': { request: DocumentLockSetRequest, response: DocumentLockStatus },
+  'lock:documentUnlock': { request: DocumentLockUnlockRequest, response: DocumentLockStatus },
+  'lock:documentUnlockHello': { request: DocumentLockRequest, response: DocumentLockStatus },
+  'lock:documentLockNow': { request: DocumentLockRequest, response: DocumentLockStatus },
+  'lock:documentChangePassword': { request: DocumentLockChangePasswordRequest, response: DocumentLockStatus },
+  'lock:documentSetHello': { request: DocumentLockSetHelloRequest, response: DocumentLockStatus },
+  'lock:documentRemove': { request: DocumentLockRemoveRequest, response: DocumentLockStatus },
+  'lock:documentActivity': { request: DocumentLockRequest, response: Empty },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {
@@ -393,6 +411,7 @@ export const EVENT_SCHEMAS = {
   'collab:reset': CollabResetEvent,
   'collab:status': CollabStatusEvent,
   'sticky:lockState': StickyLockState,
+  'lock:documentLocked': DocumentLockedEvent,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 type ChannelSchemas = typeof CHANNEL_SCHEMAS;

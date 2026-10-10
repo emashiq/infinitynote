@@ -80,17 +80,22 @@ export class PortableRepo {
   }
 
   /** Live locked notes, which the export leaves out. */
-  countLockedNotes(): number {
-    return this.db.prepare<[], { n: number }>('SELECT count(*) AS n FROM notes WHERE deleted_at IS NULL AND locked = 1').get()!.n;
+  /** Live locked notes and documents (D-111, D-185): an export would hold them in the clear, so they are left out. */
+  countLocked(): number {
+    return this.db
+      .prepare<[], { n: number }>(
+        'SELECT (SELECT count(*) FROM notes WHERE deleted_at IS NULL AND locked = 1) + (SELECT count(*) FROM documents WHERE deleted_at IS NULL AND locked = 1) AS n',
+      )
+      .get()!.n;
   }
 
-  /** Live documents with the blob of each managed one (D-118). */
+  /** Live documents that are not locked, with the blob of each managed one (D-118, D-185). */
   liveDocuments(): PortableDocumentRow[] {
     return this.db
       .prepare<[], PortableDocumentRow>(
         `SELECT d.id, d.project_id, d.folder_id, d.title, d.kind, d.favorite, d.linked_file_id, b.relative_path, b.sha256, b.size_bytes AS blob_size
            FROM documents d LEFT JOIN document_blobs b ON b.id = d.blob_id
-          WHERE d.deleted_at IS NULL ORDER BY d.doc_key`,
+          WHERE d.deleted_at IS NULL AND d.locked = 0 ORDER BY d.doc_key`,
       )
       .all();
   }

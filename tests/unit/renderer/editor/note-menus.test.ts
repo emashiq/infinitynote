@@ -97,11 +97,13 @@ function actions(overrides: Partial<NoteActions> = {}): NoteActions {
 
 describe('note menus (D-102)', () => {
   it('the context menu of a tab offers insert, reminders and the note actions in groups', () => {
-    const items = noteMenuItems(actions({ insertTable: vi.fn(), insertReference: vi.fn(), addReminder: vi.fn(), createFromText: vi.fn(), float: vi.fn() }), { format: 'rich', editable: true });
+    const insertDiagram = vi.fn();
+    const items = noteMenuItems(actions({ insertTable: vi.fn(), insertDiagram, insertReference: vi.fn(), addReminder: vi.fn(), createFromText: vi.fn(), float: vi.fn() }), { format: 'rich', editable: true });
     expect(items.map((i) => [i.label, !!i.separatorBefore])).toEqual([
       ['Insert image', false],
       ['Attach file', false],
       ['Insert table…', false],
+      ['Insert diagram', false],
       ['Link to note or document…', false],
       ['Add reminder…', true],
       ['Create reminder from text', false],
@@ -111,6 +113,8 @@ describe('note menus (D-102)', () => {
       ['Float as sticky', false],
     ]);
     expect(items.every((i) => !i.disabled)).toBe(true);
+    items.find((i) => i.label === 'Insert diagram')!.onSelect();
+    expect(insertDiagram).toHaveBeenCalledTimes(1);
   });
 
   it('plain and read-only notes keep find and history; edits are disabled', () => {
@@ -152,7 +156,7 @@ describe('note menus (D-102)', () => {
 
   it('the insert menu lists block types, attachments, note links and reminders, filtered by what is typed', () => {
     const editor = typed('');
-    const a = actions({ insertTable: vi.fn(), insertReference: vi.fn(), addReminder: vi.fn(), createFromText: vi.fn() });
+    const a = actions({ insertTable: vi.fn(), insertDiagram: vi.fn(), insertReference: vi.fn(), addReminder: vi.fn(), createFromText: vi.fn() });
     const items = insertItems(editor, a);
     expect(items.map((i) => i.label)).toEqual([
       'Heading 1',
@@ -176,6 +180,8 @@ describe('note menus (D-102)', () => {
     expect(filterActions(items, 'rem').map((i) => i.id)).toEqual(['reminder', 'fromText']);
     expect(filterActions(items, 'todo').map((i) => i.id)).toEqual(['checklist']);
     expect(filterActions(items, 'mermaid').map((i) => i.id)).toEqual(['diagram']);
+    items.find((i) => i.id === 'diagram')!.run();
+    expect(a.insertDiagram).toHaveBeenCalledTimes(1);
     expect(filterActions(items, 'latex').map((i) => i.id)).toEqual(['mathBlock', 'mathInline']);
     expect(filterActions(items, 'table').map((i) => i.id)).toEqual(['table']);
     items.find((i) => i.id === 'table')!.run();
@@ -186,5 +192,6 @@ describe('note menus (D-102)', () => {
     items.find((i) => i.id === 'image')!.run();
     expect(a.insertAttachment).toHaveBeenCalledWith('image');
     expect(insertItems(editor, actions()).map((i) => i.id)).not.toContain('reference');
+    expect(insertItems(editor, actions()).map((i) => i.id)).not.toContain('diagram');
   });
 });

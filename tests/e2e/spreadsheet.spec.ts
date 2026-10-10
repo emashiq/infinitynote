@@ -6,7 +6,7 @@ import path from 'node:path';
 import { clipboardHtml, paletteAction, queueDialog, seedClipboardHtml } from './editor-ui';
 import { useApp } from './harness';
 import { queueSave } from './portability-ui';
-import { activate, dialogByName, tabItem } from './ui';
+import { activate, dialogByName, tabItem, treeItem } from './ui';
 
 /**
  * The spreadsheet viewer and editor (F3, D-134..D-141) and the Versions panel. Written in Run 2; run in WSL under Xvfb
@@ -215,4 +215,69 @@ test('Export a copy writes the saved bytes to the chosen file', async () => {
   await activate(page.getByRole('button', { name: 'Export a copy…' }));
   await expect.poll(() => fs.existsSync(target)).toBe(true);
   expect(fs.readFileSync(target)).toEqual(fs.readFileSync(storedFile(title)));
+});
+
+/** Closes the document's tab (saving first) and opens it again from the tree, so the grid is read from the file. */
+async function reopen(page: Page, title: string) {
+  await page.keyboard.press('Control+W');
+  await expect(tabItem(page, title)).toHaveCount(0);
+  await treeItem(page, title).click();
+  await expect(tabItem(page, title)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.spreadsheet-grid canvas').first()).toBeVisible();
+}
+
+const utcDate = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
+
+test('dates typed day first become dates with the typed look, and stay dates after save and reopen (D-184)', async () => {
+  const { app, page } = await h.start({ INFINITY_NOTES_TEST_LOCALE: 'en-GB' });
+  const title = await openSpreadsheet(page, app);
+  // Rows 7 and 8 across columns: the click positions assume default row heights, which hold that far in the sample.
+  await typeInto(page, 6, 0, '10-10-2026');
+  await typeInto(page, 6, 1, '25.10.2026');
+  await typeInto(page, 6, 2, '05/10/2026');
+  await typeInto(page, 6, 3, '31-02-2026');
+  await typeInto(page, 7, 0, '=B7-A7');
+  await saveAndWait(page, title, 1);
+  let ws = await savedSheet(title);
+  expect([ws.getCell('A7').value, ws.getCell('A7').numFmt]).toEqual([utcDate(2026, 10, 10), 'dd-mm-yyyy']);
+  expect([ws.getCell('B7').value, ws.getCell('B7').numFmt]).toEqual([utcDate(2026, 10, 25), 'dd"."mm"."yyyy']);
+  expect([ws.getCell('C7').value, ws.getCell('C7').numFmt]).toEqual([utcDate(2026, 10, 5), 'dd/mm/yyyy']);
+  expect(ws.getCell('D7').value).toBe('31-02-2026');
+  expect(ws.getCell('A8').result).toBe(15);
+
+  await reopen(page, title);
+  await typeInto(page, 7, 1, '=YEAR(B7)+MONTH(C7)');
+  await saveAndWait(page, title, 2);
+  ws = await savedSheet(title);
+  expect(ws.getCell('B8').result).toBe(2036);
+  expect([ws.getCell('B7').value, ws.getCell('B7').numFmt]).toEqual([utcDate(2026, 10, 25), 'dd"."mm"."yyyy']);
+});
+
+test('an ambiguous typed date follows a month-first computer; an unambiguous one does not (D-184)', async () => {
+  const { app, page } = await h.start({ INFINITY_NOTES_TEST_LOCALE: 'en-US' });
+  const title = await openSpreadsheet(page, app);
+  await typeInto(page, 6, 0, '05/10/2026');
+  await typeInto(page, 6, 1, '25-10-2026');
+  await typeInto(page, 6, 2, '10/25/2026 2:30 PM');
+  await saveAndWait(page, title, 1);
+  const ws = await savedSheet(title);
+  expect([ws.getCell('A7').value, ws.getCell('A7').numFmt]).toEqual([utcDate(2026, 5, 10), 'mm/dd/yyyy']);
+  expect([ws.getCell('B7').value, ws.getCell('B7').numFmt]).toEqual([utcDate(2026, 10, 25), 'dd-mm-yyyy']);
+  expect([ws.getCell('C7').value, ws.getCell('C7').numFmt]).toEqual([new Date(Date.UTC(2026, 9, 25, 14, 30)), 'mm/dd/yyyy h:mm AM/PM']);
+});
+
+test('a CSV saves typed dates as they were typed and reads them back as dates (D-184)', async () => {
+  const { app, page } = await h.start({ INFINITY_NOTES_TEST_LOCALE: 'en-GB' });
+  const file = path.join(dir, 'Dates.csv');
+  fs.writeFileSync(file, 'when,what\r\n');
+  await importFile(page, app, file, 'Link to the original');
+  await typeInto(page, 1, 0, '25.10.2026');
+  await typeInto(page, 1, 1, 'launch');
+  await saveAndWait(page, 'Dates', 1);
+  expect(fs.readFileSync(file, 'utf8')).toBe('when,what\r\n25.10.2026,launch\r\n');
+
+  await reopen(page, 'Dates');
+  await typeInto(page, 2, 0, '=YEAR(A2)');
+  await saveAndWait(page, 'Dates', 2);
+  expect(fs.readFileSync(file, 'utf8')).toBe('when,what\r\n25.10.2026,launch\r\n2026,\r\n');
 });

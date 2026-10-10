@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { isInTable } from '@tiptap/pm/tables';
 import { useEditorState } from '@tiptap/react';
-import { ALargeSmall, Baseline, Bold, Code, Heading, Highlighter, Italic, Link, List, ListOrdered, ListTodo, MessageSquarePlus, SquareCode, Table, Type } from 'lucide-react';
+import { ALargeSmall, Baseline, Bold, Code, Heading, Highlighter, Italic, Link, List, ListOrdered, ListTodo, MessageSquarePlus, SquareCode, Table, Type, Workflow } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import type { ImageSize } from '../../shared/editor/doc-schema';
 import { FONT_FAMILIES, FONT_SIZES, HIGHLIGHT_COLORS, TEXT_COLORS, type ColorSwatch } from '../../shared/editor/formatting';
@@ -12,8 +12,10 @@ import { SegmentedControl } from '../ui/SegmentedControl';
 import { ColorButton, MenuButton } from './bubble-controls';
 import { Floating } from './Floating';
 import { bubbleKind, selectionBox } from './placement';
+import { MERMAID } from './code/languages';
 import { LinkBar } from './LinkBar';
 import { selectedLinkHref } from './link';
+import { toggleDiagram } from './note-actions';
 import { tableHasHeaderRow, tableMenuItems } from './table-actions';
 
 export interface LinkActions {
@@ -81,7 +83,8 @@ export function FormatBubble({
         bulletList: e.isActive('bulletList'),
         orderedList: e.isActive('orderedList'),
         taskList: e.isActive('taskList'),
-        codeBlock: e.isActive('codeBlock'),
+        codeBlock: e.isActive('codeBlock') && !e.isActive('codeBlock', { language: MERMAID }),
+        diagram: e.isActive('codeBlock', { language: MERMAID }),
         fontFamily: style.fontFamily ?? null,
         fontSize: style.fontSize ?? null,
         color: style.color ?? null,
@@ -214,6 +217,7 @@ export function FormatBubble({
           <ToggleButton label="Numbered list" title="Numbered list (Ctrl+Shift+7)" icon={ListOrdered} pressed={s.orderedList} onClick={run(() => chain().toggleOrderedList().run())} />
           <ToggleButton label="Checklist" title="Checklist (Ctrl+Shift+9)" icon={ListTodo} pressed={s.taskList} onClick={run(() => chain().toggleTaskList().run())} />
           <ToggleButton label="Code block" title="Code block (Ctrl+Alt+C)" icon={SquareCode} pressed={s.codeBlock} onClick={run(() => chain().toggleCodeBlock().run())} />
+          <ToggleButton label="Diagram" title="Diagram (Mermaid; or type ```mermaid)" icon={Workflow} pressed={s.diagram} onClick={() => toggleDiagram(editor)} />
           {s.inTable ? <MenuButton label="Table" icon={Table} items={tableMenuItems(editor, s.headerRow)} /> : null}
           {onComment && !s.empty ? (
             <>

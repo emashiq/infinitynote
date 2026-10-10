@@ -29,6 +29,8 @@ export const AppInfo = z.strictObject({
     .nullable(),
   schemaVersion: z.number().int().nullable(),
   startup: StartupState,
+  /** Whether "10/05/2026" is 10 May or 5 October on this computer (its regional settings; D-184). */
+  dateOrder: z.enum(['day-first', 'month-first']),
 });
 export type AppInfoType = z.infer<typeof AppInfo>;
 
@@ -57,7 +59,8 @@ export type CapabilitiesType = z.infer<typeof Capabilities>;
  * Acknowledged flush before a window closes or the app quits (INF-SAVE-01, D-072): main asks why, the renderer
  * answers whether its text is saved (or kept by main as a draft).
  */
-export const FlushReason = z.enum(['close', 'quit']);
+/** Why main asks a window to save: it closes, the app quits, or a document locks again (D-185). */
+export const FlushReason = z.enum(['close', 'quit', 'lock']);
 export type FlushReasonType = z.infer<typeof FlushReason>;
 export const AppFlushRequestEvent = z.strictObject({ flushId: Uuid, reason: FlushReason });
 export type AppFlushRequestEventType = z.infer<typeof AppFlushRequestEvent>;

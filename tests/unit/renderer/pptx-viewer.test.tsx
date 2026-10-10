@@ -34,6 +34,7 @@ function fakeHost(overrides: Partial<DocumentViewerHost> = {}) {
   const notices: Array<{ message: string; tone?: string }> = [];
   const unsaved: Array<(() => Promise<boolean>) | null> = [];
   const host: DocumentViewerHost = {
+    dateOrder: 'day-first',
     notify: (message, tone) => void notices.push({ message, tone }),
     copyText: async () => true,
     save: async (bytes) => {

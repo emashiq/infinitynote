@@ -1,4 +1,4 @@
-import { History } from 'lucide-react';
+import { History, Lock } from 'lucide-react';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { documentVersionUrl } from '../../shared/app-identity';
 import { formatBytes } from '../../shared/attachments/names';
@@ -6,13 +6,17 @@ import type { DocumentVersionDtoType } from '../../shared/contracts/documents';
 import { LINK_MESSAGES } from '../../shared/contracts/attachments';
 import type { DocumentDtoType } from '../../shared/contracts/hierarchy';
 import { DOCUMENT_KIND_INFO } from '../../shared/documents/kinds';
+import { DOCUMENT_LOCK_MESSAGES } from '../../shared/contracts/locks';
 import { DOCUMENT_MESSAGES, DOCUMENT_VERSION_MESSAGES } from '../../shared/documents/messages';
+import { LockScreen } from '../notes/LockScreen';
 import { useServices, useStore } from '../state/use-store';
 import { copyText } from '../ui/copy-text';
 import { DocumentKindIcon } from '../ui/DocumentKindIcon';
+import { RenameInput } from '../ui/RenameInput';
 import { createDocumentCommentHost } from '../comments/document-comment-host';
 import { DocumentController } from './document-controller';
 import { DOCUMENT_VIEWERS, type DocumentViewerHost } from './viewer-registry';
+import { useDocumentLock } from './use-document-lock';
 import { DocumentVersionsPanel, formatVersionTime } from './versions/DocumentVersionsPanel';
 
 /** Kinds whose viewers edit and save, so they have versions (every kind but the read-only HTML viewer). */
@@ -28,7 +32,7 @@ const OPENS_IN_SYSTEM_APP = (document: DocumentDtoType) => document.kind !== 'ht
  */
 export function DocumentView({ documentId, tabId }: { documentId: string; tabId: string }) {
   const services = useServices();
-  const { bridge, notices, tabs, comments } = services;
+  const { bridge, notices, tabs, comments, commands } = services;
   const [controller] = useState(() => new DocumentController(bridge, documentId));
   const state = useStore(controller.store);
   // Renames and moves elsewhere show at once; the tree is the source of the title.
@@ -45,6 +49,15 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
   /** An earlier version shown read-only in the viewer (D-141). */
   const [viewing, setViewing] = useState<DocumentVersionDtoType | null>(null);
   const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const titleButton = useRef<HTMLButtonElement>(null);
+  // Enter and Escape in the header's name field give the focus back to the title once it shows again.
+  const refocusTitle = useRef(false);
+  useEffect(() => {
+    if (renaming || !refocusTitle.current) return;
+    refocusTitle.current = false;
+    titleButton.current?.focus();
+  }, [renaming]);
   const viewingId = viewing?.id;
 
   useEffect(() => {
@@ -52,8 +65,10 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
     return () => tabs.setDocumentEdits(null);
   }, [controller, tabs]);
 
+  const dateOrder = useStore(services.meta).info?.dateOrder ?? 'day-first';
   const host = useMemo<DocumentViewerHost>(
     () => ({
+      dateOrder,
       notify: (message, tone = 'info') => notices.push(message, tone),
       copyText,
       save: async (bytes) => {
@@ -96,7 +111,7 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
         );
       },
     }),
-    [bridge, comments, controller, documentId, notices, tabs, viewingId],
+    [bridge, comments, controller, dateOrder, documentId, notices, tabs, viewingId],
   );
 
   /** Saves the viewer's edits first (joining a save under way); false when they could not be saved (the viewer said why). */
@@ -111,6 +126,16 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
   // Ctrl+S saves this tab's edits also when the focus is not in the viewer (which handles it first when it is): a
   // closed menu, editor or presentation, or a document loading again, leaves the focus on the page.
   const view = useRef<HTMLDivElement>(null);
+  // A locked document (D-185) shows its lock screen until it is unlocked; work in it counts as use.
+  const documentLock = useDocumentLock(bridge, documentId, live?.locked ?? state.document?.locked ?? false, view, services.now);
+  // Locking or removing the lock changes how the document is stored (a linked file is copied in): when the tree says
+  // otherwise than the tab's copy, read it again. Only a real change: a tab opened before the tree has the document
+  // does not reload (that would remount the viewer for nothing).
+  const liveLocked = live?.locked;
+  const loadedLocked = state.document?.locked;
+  useEffect(() => {
+    if (liveLocked !== undefined && loadedLocked !== undefined && liveLocked !== loadedLocked) void controller.reload();
+  }, [liveLocked, loadedLocked, controller]);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 's') return;
@@ -189,7 +214,9 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
     );
   }
 
-  const document = { ...state.document, ...(live ? { title: live.title, favorite: live.favorite } : {}) };
+  const document = { ...state.document, ...(live ? { title: live.title, favorite: live.favorite, locked: live.locked } : {}) };
+  // While locked its bytes cannot be read: nothing that needs them is offered.
+  const lockedOut = documentLock.state === 'locked' || documentLock.state === 'checking';
   const info = DOCUMENT_KIND_INFO[document.kind];
   const file = state.file;
   const fileState = file?.state ?? 'available';
@@ -206,14 +233,55 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
     }
   };
 
+  const saveHeldEdits = async () => {
+    const res = await controller.saveHeld();
+    if (!res.ok && !controller.store.getState().conflict) notices.push(res.message, 'error');
+  };
+
+  /** Ends the header's rename; a blur leaves the focus where it went. */
+  const endRename = (refocus: boolean) => {
+    refocusTitle.current = refocus;
+    setRenaming(false);
+  };
+
   return (
     <div ref={view} className="document-view" data-document-kind={document.kind}>
-      <h2 className="sr-only">{document.title}</h2>
       <div className="document-header">
-        <span className="document-kind">
-          <DocumentKindIcon kind={document.kind} />
-          {info.label}
-        </span>
+        <DocumentKindIcon kind={document.kind} />
+        <h2 className="document-title">
+          {renaming ? (
+            <RenameInput
+              initial={document.title}
+              label="Document name"
+              className="rename-input document-title-input"
+              onCommit={async (value, how) => {
+                const message = await services.tree.renameDocumentTyped(documentId, value);
+                if (message === null) endRename(how === 'enter');
+                return message;
+              }}
+              onCancel={() => endRename(true)}
+            />
+          ) : (
+            <button
+              ref={titleButton}
+              type="button"
+              className="document-title-button"
+              title="Rename (F2)"
+              aria-keyshortcuts="F2"
+              onClick={() => setRenaming(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'F2') {
+                  e.preventDefault();
+                  setRenaming(true);
+                }
+              }}
+            >
+              {document.title}
+            </button>
+          )}
+        </h2>
+        {document.locked ? <Lock size={14} strokeWidth={1.75} aria-label="Locked" className="document-lock-mark" /> : null}
+        <span className="document-kind muted">{info.label}</span>
         {document.storage === 'linked' ? (
           <span className="file-chip-badge" title={file ? `Linked: ${file.path}` : undefined}>
             Linked
@@ -226,19 +294,36 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
           </span>
         ) : null}
         <span className="document-actions">
+          <button type="button" className="btn btn-small" disabled={renaming} onClick={() => setRenaming(true)}>
+            Rename
+          </button>
           {OPENS_IN_SYSTEM_APP(document) ? (
-            <button type="button" className="btn btn-small" disabled={fileState !== 'available'} onClick={() => run(() => bridge.document.openExternal({ documentId }))}>
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={fileState !== 'available' || document.locked}
+              title={document.locked ? DOCUMENT_LOCK_MESSAGES.noSystemApp : undefined}
+              onClick={() => run(() => bridge.document.openExternal({ documentId }))}
+            >
               Open in system app
             </button>
           ) : null}
-          <button type="button" className="btn btn-small" disabled={fileState === 'missing'} onClick={() => run(() => bridge.document.showInFolder({ documentId }))}>
+          <button type="button" className="btn btn-small" disabled={fileState === 'missing' || document.locked} onClick={() => run(() => bridge.document.showInFolder({ documentId }))}>
             Show in folder
           </button>
-          <button type="button" className="btn btn-small" disabled={fileState !== 'available' || busy} onClick={() => void exportCopy()}>
+          <button type="button" className="btn btn-small" disabled={fileState !== 'available' || busy || lockedOut} onClick={() => void exportCopy()}>
             Export a copy…
           </button>
+          {document.locked && documentLock.state === 'unlocked' ? (
+            <button type="button" className="btn btn-small" onClick={() => void commands.lockDocumentNow(documentId)}>
+              Lock now
+            </button>
+          ) : null}
+          <button type="button" className="btn btn-small" onClick={() => commands.openDocumentLock(documentId)}>
+            {document.locked ? 'Lock settings…' : 'Lock…'}
+          </button>
           {hasVersions ? (
-            <button type="button" className="btn btn-small" aria-pressed={versionsOpen} onClick={() => setVersionsOpen(!versionsOpen)}>
+            <button type="button" className="btn btn-small" disabled={lockedOut} aria-pressed={versionsOpen} onClick={() => setVersionsOpen(!versionsOpen)}>
               <History size={14} aria-hidden="true" />
               Versions
             </button>
@@ -252,8 +337,23 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
             <button type="button" className="btn btn-small" onClick={() => void controller.reload()}>
               Reload
             </button>
-            <button type="button" className="btn btn-small" onClick={() => void saveCopy()}>
-              Save a copy…
+            {document.locked ? null : (
+              <button type="button" className="btn btn-small" onClick={() => void saveCopy()}>
+                Save a copy…
+              </button>
+            )}
+          </span>
+        </div>
+      ) : null}
+      {state.heldEdits ? (
+        <div role="alert" className="banner document-held-edits">
+          <span>{lockedOut ? DOCUMENT_LOCK_MESSAGES.heldEditsLocked : DOCUMENT_LOCK_MESSAGES.heldEdits}</span>
+          <span className="banner-actions">
+            <button type="button" className="btn btn-small" disabled={lockedOut || state.saving} onClick={() => void saveHeldEdits()}>
+              Save them
+            </button>
+            <button type="button" className="btn btn-small" onClick={() => controller.discardHeld()}>
+              Discard them
             </button>
           </span>
         </div>
@@ -275,7 +375,13 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
         </div>
       ) : null}
       <div className="document-main">
-        {fileState !== 'available' && !viewing ? (
+        {documentLock.state === 'locked' ? (
+          <LockScreen target={documentLock.target} title={document.title} onUnlocked={documentLock.onUnlocked} />
+        ) : documentLock.state === 'checking' ? (
+          <div className="note-loading" aria-busy="true">
+            <span className="muted">Opening document…</span>
+          </div>
+        ) : fileState !== 'available' && !viewing ? (
           <p role="alert" className="document-message">
             {fileState === 'missing' && file ? LINK_MESSAGES.notFound(file.path) : DOCUMENT_MESSAGES.damaged(document.kind)}
           </p>
@@ -300,7 +406,7 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
             </div>
           </Suspense>
         )}
-        {versionsOpen && hasVersions ? (
+        {versionsOpen && hasVersions && !lockedOut ? (
           <DocumentVersionsPanel
             load={loadVersions}
             revision={document.revision}

@@ -1,3 +1,4 @@
+import type { ByteSource } from '../byte-source';
 import type { CsvFormatType, WORKBOOK_LIMITS, WorkbookFeature, WorkbookType } from '../../../shared/documents/workbook';
 
 /**
@@ -7,9 +8,9 @@ import type { CsvFormatType, WORKBOOK_LIMITS, WorkbookFeature, WorkbookType } fr
 export type WorkbookLimits = { readonly [K in keyof typeof WORKBOOK_LIMITS]: number };
 
 export type WorkbookTask =
-  | { op: 'readXlsx'; file: string; limits: WorkbookLimits }
+  | { op: 'readXlsx'; source: ByteSource; limits: WorkbookLimits }
   /** CSV text is decoded with the encoding main found (its byte-order mark, else UTF-8 when valid, else Windows-1252). */
-  | { op: 'readCsv'; file: string; limits: WorkbookLimits; encoding: Pick<CsvFormatType, 'encoding' | 'bom'> }
+  | { op: 'readCsv'; source: ByteSource; limits: WorkbookLimits; encoding: Pick<CsvFormatType, 'encoding' | 'bom'> }
   | { op: 'writeXlsx'; workbook: WorkbookType }
   | { op: 'writeCsv'; workbook: WorkbookType; format: CsvFormatType };
 

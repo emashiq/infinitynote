@@ -5,12 +5,14 @@ import { extensionFor, isOpenableExtension, sanitizeOriginalName } from '../../s
 import { HANDOFF_MESSAGES, LINK_MESSAGES, type FileLinkDtoType } from '../../shared/contracts/attachments';
 import type { DocumentOpenResponseType, DocumentPickPdfResponseType, DocumentVersionDtoType, ExpectedFileType } from '../../shared/contracts/documents';
 import type { DocumentDtoType, LocationType, TreeChangedEventType } from '../../shared/contracts/hierarchy';
+import { DOCUMENT_LOCK_MESSAGES } from '../../shared/contracts/locks';
 import { DOCUMENT_KIND_INFO, documentKindOf, titleFromFileName, type BlankDocumentKind, type DocumentKind } from '../../shared/documents/kinds';
 import { LINKED_DOCUMENT_SAVE_MAX_MB, MANAGED_DOCUMENT_MAX_MB } from '../../shared/documents/limits';
 import { DOCUMENT_MESSAGES } from '../../shared/documents/messages';
 import { suggestedFileName } from '../../shared/names';
 import { selectAutoVersionsToPrune, type AutoVersionPolicy } from '../../shared/versions/retention';
 import type { Db } from '../db/driver';
+import type { DocumentLocks } from '../locks/document-locks';
 import { AttachmentsRepo } from '../db/repositories/attachments-repo';
 import { DocumentBlobsRepo, type DocumentBlobRow } from '../db/repositories/document-blobs-repo';
 import { DocumentVersionsRepo, type DocumentVersionReason } from '../db/repositories/document-versions-repo';
@@ -25,7 +27,7 @@ import { toDocumentDto } from '../services/dto';
 import type { FilePicker } from '../services/file-picker';
 import { assertLiveLocation, requireLive } from '../services/hierarchy-service';
 import type { IdGenerator } from '../services/ids';
-import { KeyedQueue } from '../services/keyed-queue';
+import type { KeyedQueue } from '../services/keyed-queue';
 import { inspectLinkedFile, isNetworkPath, isUsableLinkPath } from '../services/linked-file';
 import type { LinkedFileService } from '../services/linked-file-service';
 import type { Logger } from '../services/logger';
@@ -34,6 +36,7 @@ import type { SettingsService } from '../services/settings-service';
 import type { ShellAdapter } from '../services/shell-adapter';
 import { runTx } from '../services/transaction';
 import { blankDocument } from './blank-documents';
+import type { ByteSource } from './byte-source';
 import { isDocumentOfKind } from './document-check';
 import { modifiedAtOf, type DocumentFiles, type ResolvedDocumentFile } from './document-files';
 import type { DocumentStore } from './document-store';
@@ -52,6 +55,10 @@ export interface DocumentServiceDeps {
   files: DocumentFiles;
   /** Reads the searchable text of saved and imported files. */
   text: DocumentText;
+  /** Decrypts and seals the bytes of locked documents (D-185). */
+  locks: Pick<DocumentLocks, 'plaintextOf' | 'sealerOf'>;
+  /** Content changes of one document run one at a time: saves, restores, and locking or unlocking it (D-185). */
+  writes: KeyedQueue;
   links: Pick<LinkedFileService, 'create'>;
   picker: Pick<FilePicker, 'pickDocuments' | 'claim'>;
   dialog: Pick<DialogAdapter, 'showSaveFile' | 'showOpenFile'>;
@@ -60,6 +67,14 @@ export interface DocumentServiceDeps {
   versionPolicy: () => AutoVersionPolicy;
   onChange: (event: TreeChangedEventType) => void;
   platform?: NodeJS.Platform;
+}
+
+/** A document's bytes for a reader: a file, or a locked document's bytes decrypted in memory (D-185). */
+export interface DocumentSource {
+  kind: DocumentKind;
+  source: ByteSource;
+  sizeBytes: number;
+  modifiedAt: number;
 }
 
 interface NewDocument {
@@ -97,7 +112,6 @@ export class DocumentService {
   private readonly hierarchy: HierarchyRepo;
   private readonly attachments: AttachmentsRepo;
   private readonly linkedFiles: LinkedFilesRepo;
-  private readonly saves = new KeyedQueue();
   private readonly platform: NodeJS.Platform;
 
   constructor(private readonly deps: DocumentServiceDeps) {
@@ -121,7 +135,7 @@ export class DocumentService {
    * are checked to be that kind (DocumentStore) and must fit the store.
    */
   async createBeside(documentId: string, title: string, bytes: Uint8Array): Promise<{ document: DocumentDtoType }> {
-    const source = this.liveRow(documentId);
+    const source = this.unlockedCopySource(documentId);
     if (bytes.byteLength > MANAGED_MAX_BYTES) throw new AppError('LIMIT_EXCEEDED', DOCUMENT_MESSAGES.tooLargeToStore(MANAGED_DOCUMENT_MAX_MB));
     const blob = await this.storing(DOCUMENT_MESSAGES.importFailed, () => this.deps.store.putBytes(source.kind, bytes));
     const location = { projectId: source.project_id, folderId: source.folder_id };
@@ -265,22 +279,22 @@ export class DocumentService {
    * since it was opened. The bytes replaced are kept as a version (for a linked file only within the store's size).
    */
   save(req: { documentId: string; baseRevision: number; bytes: Uint8Array; expectedFile?: ExpectedFileType }): Promise<DocumentOpenResponseType> {
-    return this.saves.run(req.documentId, () => this.write(req.documentId, req.baseRevision, req.bytes, req.expectedFile, 'save'));
+    return this.deps.writes.run(req.documentId, () => this.write(req.documentId, req.baseRevision, req.bytes, req.expectedFile, 'save'));
   }
 
   /** Puts an earlier version's bytes back as the next revision; the current bytes become a version. */
   restoreVersion(req: { documentId: string; versionId: string; baseRevision: number; expectedFile?: ExpectedFileType }): Promise<DocumentOpenResponseType> {
-    return this.saves.run(req.documentId, async () => {
+    return this.deps.writes.run(req.documentId, async () => {
       const version = this.versions.get(req.documentId, req.versionId);
       if (!version) throw new AppError('NOT_FOUND', DOCUMENT_MESSAGES.versionMissing);
-      const bytes = await this.deps.store.read(version.blob_id);
+      const bytes = await this.blobBytes(this.liveRow(req.documentId), version.blob_id);
       return this.write(req.documentId, req.baseRevision, bytes, req.expectedFile, 'restore');
     });
   }
 
   /** A new managed document next to this one with an earlier version's bytes ("Save as copy" in Versions). */
   async copyVersion(documentId: string, versionId: string): Promise<{ document: DocumentDtoType }> {
-    const row = this.liveRow(documentId);
+    const row = this.unlockedCopySource(documentId);
     const version = this.versions.get(documentId, versionId);
     const blob = version ? this.blobs.get(version.blob_id) : undefined;
     if (!version || !blob) throw new AppError('NOT_FOUND', DOCUMENT_MESSAGES.versionMissing);
@@ -315,6 +329,12 @@ export class DocumentService {
 
   private async writeManaged(row: DocumentRow, bytes: Uint8Array): Promise<WrittenContent> {
     if (bytes.byteLength > MANAGED_MAX_BYTES) throw new AppError('LIMIT_EXCEEDED', DOCUMENT_MESSAGES.tooLargeToStore(MANAGED_DOCUMENT_MAX_MB));
+    if (row.locked === 1) {
+      // Sealed in memory and written as ciphertext only; a locked document has no searchable text (D-185).
+      const seal = this.deps.locks.sealerOf(row.id);
+      const sealed = await this.storing(DOCUMENT_MESSAGES.saveFailed, () => this.deps.store.putSealed(row.kind, bytes, seal));
+      return { blobId: sealed.id, sizeBytes: bytes.byteLength, sourceModifiedAt: null, bodyText: '', previousBlobId: row.blob_id };
+    }
     const blob = await this.storing(DOCUMENT_MESSAGES.saveFailed, () => this.deps.store.putBytes(row.kind, bytes));
     const bodyText = await this.blobText(row.kind, blob);
     return { blobId: blob.id, sizeBytes: blob.size_bytes, sourceModifiedAt: null, bodyText, previousBlobId: row.blob_id };
@@ -384,7 +404,8 @@ export class DocumentService {
    * copy", also the way out of a conflict on a linked file). Network locations are refused before anything is written.
    */
   async saveCopy(req: { documentId: string; bytes: Uint8Array }, ctx: { webContentsId: number }): Promise<{ canceled: true } | { canceled: false; document: DocumentDtoType }> {
-    const row = this.liveRow(req.documentId);
+    // It adds an unencrypted linked document (with search text): never from a locked one (D-185).
+    const row = this.unlockedCopySource(req.documentId);
     if (req.bytes.byteLength > LINKED_SAVE_MAX_BYTES) throw new AppError('LIMIT_EXCEEDED', DOCUMENT_MESSAGES.tooLargeToSave(LINKED_DOCUMENT_SAVE_MAX_MB));
     const info = DOCUMENT_KIND_INFO[row.kind];
     const chosen = await this.deps.dialog.showSaveFile({
@@ -409,7 +430,9 @@ export class DocumentService {
    */
   async exportCopy(req: { documentId: string; versionId?: string }, ctx: { webContentsId: number }): Promise<{ canceled: boolean }> {
     const row = this.liveRow(req.documentId);
-    const source = await this.fileOf(req.documentId, req.versionId);
+    const file = await this.fileOf(req.documentId, req.versionId);
+    // A locked document must be unlocked: its bytes are decrypted before anything is asked.
+    const source = await this.readable(req.documentId, file);
     const info = DOCUMENT_KIND_INFO[row.kind];
     const chosen = await this.deps.dialog.showSaveFile({
       webContentsId: ctx.webContentsId,
@@ -422,13 +445,34 @@ export class DocumentService {
     if (this.platform === 'win32' && isNetworkPath(target)) throw new AppError('VALIDATION_FAILED', LINK_MESSAGES.networkLocation);
     if (!isUsableLinkPath(target, this.platform)) throw new AppError('VALIDATION_FAILED', DOCUMENT_MESSAGES.copyFailed);
     const key = (file: string) => (this.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file));
-    if (key(target) === key(source.file)) throw new AppError('VALIDATION_FAILED', DOCUMENT_MESSAGES.exportOverOriginal);
-    await this.storing(DOCUMENT_MESSAGES.copyFailed, () => copyDocumentFile(source.file, target, row.kind));
+    if (key(target) === key(file.file)) throw new AppError('VALIDATION_FAILED', DOCUMENT_MESSAGES.exportOverOriginal);
+    await this.storing(DOCUMENT_MESSAGES.copyFailed, () =>
+      typeof source.source === 'string' ? copyDocumentFile(source.source, target, row.kind) : writeDocumentFile(target, row.kind, source.source),
+    );
     return { canceled: false };
   }
 
-  /** Where the bytes of a live document (or one of its versions) are, for readers in main such as the spreadsheet editor. */
-  async fileOf(documentId: string, versionId?: string): Promise<ResolvedDocumentFile> {
+  /**
+   * The bytes of a live document (or one of its versions) for readers in main (the spreadsheet editor, the document
+   * protocols): its file, or for a locked document its bytes decrypted in memory, FORBIDDEN while it is locked.
+   */
+  async sourceOf(documentId: string, versionId?: string): Promise<DocumentSource> {
+    return this.readable(documentId, await this.fileOf(documentId, versionId));
+  }
+
+  /** A live document's kind (it never changes). */
+  kindOf(documentId: string): DocumentKind {
+    return this.liveRow(documentId).kind;
+  }
+
+  private async readable(documentId: string, file: ResolvedDocumentFile): Promise<DocumentSource> {
+    if (!file.blob?.sealed) return { kind: file.kind, source: file.file, sizeBytes: file.sizeBytes, modifiedAt: file.modifiedAt };
+    const bytes = await this.deps.locks.plaintextOf(documentId, file.blob);
+    return { kind: file.kind, source: bytes, sizeBytes: bytes.byteLength, modifiedAt: file.modifiedAt };
+  }
+
+  /** Where the bytes of a live document (or one of its versions) are stored. */
+  private async fileOf(documentId: string, versionId?: string): Promise<ResolvedDocumentFile> {
     const row = this.liveRow(documentId);
     if (versionId === undefined) return this.resolved(row);
     const file = await this.deps.files.resolveVersion(documentId, versionId);
@@ -442,7 +486,7 @@ export class DocumentService {
    * scripts in a browser), and for a linked file the checks of D-108 (its name and resolved name, no execute bit).
    */
   async openExternal(documentId: string): Promise<{ opened: true }> {
-    const row = this.liveRow(documentId);
+    const row = this.notLocked(documentId, DOCUMENT_LOCK_MESSAGES.noSystemApp);
     const file = await this.resolved(row);
     const openable =
       row.storage === 'managed' ? isOpenableExtension(extensionFor(file.file)) : (await inspectLinkedFile(this.deps.files.linkedPath(row)!, this.platform)).state === 'available';
@@ -456,7 +500,8 @@ export class DocumentService {
   }
 
   async showInFolder(documentId: string): Promise<{ shown: true }> {
-    const row = this.liveRow(documentId);
+    // The folder of a locked document holds only ciphertext.
+    const row = this.notLocked(documentId, DOCUMENT_LOCK_MESSAGES.noSystemApp);
     const file = await this.resolved(row);
     this.deps.shell.showItemInFolder(this.deps.files.linkedPath(row) ?? file.file);
     return { shown: true };
@@ -468,6 +513,23 @@ export class DocumentService {
     if (!row) throw new AppError('NOT_FOUND', DOCUMENT_MESSAGES.missing);
     if (row.deleted_at !== null) throw new AppError('NOT_FOUND', DOCUMENT_MESSAGES.inTrash);
     return row;
+  }
+
+  /** A live document that is not locked; a locked one is refused with `message`. */
+  private notLocked(documentId: string, message: string): DocumentRow {
+    const row = this.liveRow(documentId);
+    if (row.locked === 1) throw new AppError('FORBIDDEN', message);
+    return row;
+  }
+
+  /** The source of a new document made from this one's bytes: never a locked document (it would be an unencrypted copy). */
+  private unlockedCopySource(documentId: string): DocumentRow {
+    return this.notLocked(documentId, DOCUMENT_LOCK_MESSAGES.noCopyInside);
+  }
+
+  /** The bytes of one of a document's blobs: a locked document's decrypted. */
+  private blobBytes(row: DocumentRow, blobId: string): Promise<Uint8Array> {
+    return row.locked === 1 ? this.deps.locks.plaintextOf(row.id, { id: blobId }) : this.deps.store.read(blobId);
   }
 
   private async resolved(row: DocumentRow): Promise<ResolvedDocumentFile> {

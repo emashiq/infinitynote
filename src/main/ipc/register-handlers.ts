@@ -84,7 +84,7 @@ export function registerIpcHandlers(ipcRouter: IpcRouter, deps: { app: AppHandle
   registerAutostartHandlers(router, desktop.autostart);
   registerPortabilityHandlers(router, use('portability'));
   registerShortcutHandlers(router, () => desktop.shortcut ?? storageUnavailable());
-  registerLockHandlers(router, { locks: use('locks'), stickyLocks: use('stickyLocks'), stickies });
+  registerLockHandlers(router, { locks: use('locks'), documentLocks: use('documentLocks'), stickyLocks: use('stickyLocks'), stickies });
   registerDocumentHandlers(router, { documents: use('documents'), spreadsheets: use('spreadsheets'), hierarchy: use('hierarchy'), trash: use('trash') });
   registerCommentAndGraphHandlers(router, { comments: use('comments'), graph: use('graph') });
 }
