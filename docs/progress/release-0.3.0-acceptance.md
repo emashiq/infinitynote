@@ -111,3 +111,10 @@ Release-step items the plan schedules after acceptance (also required before tag
 - L3: renderer zip preflight for docx.
 - L4: FortuneSheet copyright text in notices.
 - The recorded deviations: app-side PDF and sheet comments, per-kind document print, speaker notes in presentation mode, lazy highlight.js grammars (main chunk 1,525 kB).
+
+## Re-check after Run R (coordinator, 2026-10-10)
+
+- M1 fixed (D-176): print and PDF export are served from memory; `export-tmp` swept at startup; integration and E2E tests prove no plaintext file is written.
+- CI: run 38062233684 on `release/v0.3.0` passed on windows-2025 and ubuntu-24.04 (check, build, native self-test, full E2E, packaging, packaged self-test and packaged E2E). The three Windows-only E2E failures of run 38059580351 are fixed (D-181); the graph timing test is deterministic (D-177).
+- Follow-ups L1, L3 and L4 fixed (D-178..D-180). Remaining recorded deviations are listed in the CHANGELOG known limitations.
+- Verdict: accepted for release v0.3.0.
