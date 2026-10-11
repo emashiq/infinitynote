@@ -2,7 +2,21 @@
 
 All notable changes to Infinity Notes. Versions follow [Semantic Versioning](https://semver.org/); each release's section is also its GitHub release notes.
 
-## [Unreleased]
+## [0.3.1] - 2026-10-11
+
+Locked documents, renaming documents from their tab and header, easier diagrams and dates typed the way you write them in spreadsheets. Free to use (see [LICENSE](https://github.com/emashiq/infinitynote/blob/main/LICENSE)). Developed by [Ashiqur Rahman Emran](https://github.com/emashiq).
+
+### Downloads
+
+| File | For |
+| --- | --- |
+| `Infinity-Notes-Setup-x64.exe` | Windows 11 x64 (24H2 or newer). Per-user install, no administrator rights. |
+| `infinity-notes_amd64.deb` | Ubuntu 24.04 or newer, Debian-based x64 (recommended on Linux). |
+| `Infinity-Notes-x86_64.AppImage` | Other x64 Linux distributions. |
+| `SHA256SUMS.txt` | SHA-256 checksums of every file in this release. |
+| `THIRD_PARTY_NOTICES.md` | Licenses of the open-source components the app includes. |
+
+Your notes and documents from earlier versions are upgraded automatically on first start.
 
 ### New
 
