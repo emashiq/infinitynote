@@ -64,6 +64,8 @@ Never promise notifications while fully quit or guaranteed window positioning un
   - Clean, well-structured implementation; full autonomous development, then the full release without asking.
   - Added the same day: create a note or sticky already locked (password first, never plaintext), and locked stickies. A locked sticky is blurred until revealed with a PIN, the password or Windows Hello, and blurs fully again 1 minute after the last interaction. Every dependency must be free for any use, commercial included (no paid, pro, trial or non-commercial licenses).
 
+- **v0.3.1 follow-up (2026-10-11).** The user reported that documents (spreadsheets) could not be renamed, Mermaid diagrams were hard to find and dates like 10-10-2026 did not work, and asked that files (documents) can be locked like notes: opened instantly while unlocked, the password needed again after 5 idle minutes. Implemented, accepted (`docs/progress/release-0.3.1.md`, `-acceptance.md`) and released as v0.3.1 at the user's request (same push/release permission and testing rules as v0.3.0).
+
 ## Host notes (Windows development machine)
 
 - Windows has no Python (`python` is the Store alias); none is needed.
