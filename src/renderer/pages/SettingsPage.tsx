@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import type { CloseBehaviorType } from '../../shared/contracts/windows';
+import { AiSettings } from '../settings/AiSettings';
 import { BackupSettings } from '../settings/BackupSettings';
+import { DocumentSettings } from '../settings/DocumentSettings';
 import { SettingsSection } from '../settings/fields';
 import { AboutCredits } from '../shell/HelpDialogs';
 import { KeyboardSettings } from '../settings/KeyboardSettings';
@@ -22,8 +24,8 @@ function autostartHint(reason: string): string {
 }
 
 /**
- * Settings (UX_SPEC section 5): General, Appearance, Notes and attachments, Reminders, Windows and tray, Backup,
- * Keyboard and About, each a labelled region.
+ * Settings (UX_SPEC section 5): General, Appearance, Notes and attachments, Documents, AI, Reminders, Windows and tray,
+ * Backup, Keyboard and About, each a labelled region.
  */
 export function SettingsPage() {
   const { theme, meta, notices, windowSettings, reminders, bridge } = useServices();
@@ -72,6 +74,8 @@ export function SettingsPage() {
         />
       </SettingsSection>
       <NotesSettings />
+      <DocumentSettings />
+      <AiSettings />
       <ReminderSettings notificationsSupported={windows.notifications?.status !== 'unsupported'} />
       <SettingsSection title="Windows and tray">
         <p className="setting-caption">When the main window closes</p>

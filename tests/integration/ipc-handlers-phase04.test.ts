@@ -96,8 +96,8 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
   it('window:getState answers the main handshake with queued opens and a sticky with its own state', async () => {
     const t = await setup();
     t.mainWindow.openNote(t.other.id);
-    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [{ noteId: t.other.id, blockId: null }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } } });
-    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } } });
+    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [{ noteId: t.other.id, blockId: null }], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false }, zoom: 100 } });
+    expect(await t.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false }, zoom: 100 } });
     await t.call('sticky:float', { noteId: t.own.id });
     expect(await t.call('window:getState', {}, STICKY)).toMatchObject({
       ok: true,
@@ -200,6 +200,6 @@ describe('Phase 04 IPC handlers (D-063, D-064)', () => {
   it('without storage the sticky channels answer INTERNAL and the main handshake still works', async () => {
     const r = catalogueRouter(null, app);
     expect(await r.call('sticky:float', { noteId: MISSING })).toMatchObject({ ok: false, error: { code: 'INTERNAL', message: 'Storage is unavailable' } });
-    expect(await r.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } } });
+    expect(await r.call('window:getState', {})).toEqual({ ok: true, data: { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false }, zoom: 100 } });
   });
 });

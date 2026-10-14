@@ -13,7 +13,8 @@ import { activate, dialogByName, tabItem, treeItem } from './ui';
  * and on CI at the end of release 0.3.0. The grid is FortuneSheet's canvas, so cells are reached by position: the
  * first cell sits right of the row headers (46 px) and below the column headers (20 px).
  */
-const h = useApp({ failOnMainErrors: true });
+// Word, spreadsheet and PowerPoint documents are off by default (D-187); these tests use them.
+const h = useApp({ failOnMainErrors: true, settings: { 'documents.office': true } });
 const FIXTURES = path.resolve('tests/fixtures/documents');
 const CELL = { width: 73, height: 19 };
 

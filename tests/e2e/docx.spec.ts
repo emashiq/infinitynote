@@ -12,7 +12,8 @@ import { activate, dialogByName, tabItem } from './ui';
  * release 0.3.0. The page is @portone/docx-editor's contenteditable sheet; its toolbar is the editor's own, the row
  * above it (Page break, Find, Save) is the app's.
  */
-const h = useApp({ failOnMainErrors: true });
+// Word, spreadsheet and PowerPoint documents are off by default (D-187); these tests use them.
+const h = useApp({ failOnMainErrors: true, settings: { 'documents.office': true } });
 const FIXTURES = path.resolve('tests/fixtures/documents');
 
 let dir = '';

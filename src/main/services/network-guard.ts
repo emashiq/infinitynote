@@ -57,3 +57,37 @@ export function installNetworkGuard(
     callback({ cancel: false });
   });
 }
+
+/** The only hosts main itself may reach, each only for an AI action on its API (D-190). */
+export const AI_API_HOSTS = { anthropic: 'api.anthropic.com', openai: 'api.openai.com' } as const;
+
+export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+/**
+ * A fetch for one AI request (D-190): it reaches `https://<host>` only, and only until the request is over (`close`).
+ * The SDKs get it as their transport, so nothing they do reaches another host, and nothing reaches the network after
+ * the action ends. A redirect is refused rather than followed, since it would lead past this check. Renderer requests
+ * stay under the session guard above.
+ */
+export function aiRequestFetch(host: string, logger: Logger, base: FetchLike = fetch): { fetch: FetchLike; close(): void } {
+  let open = true;
+  const guarded: FetchLike = (input, init) => {
+    let url: URL;
+    try {
+      url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+    } catch {
+      return Promise.reject(new Error('network: blocked invalid-url'));
+    }
+    if (!open || url.protocol !== 'https:' || url.hostname !== host || url.port !== '') {
+      logger.warn(`network: blocked ${url.protocol}//${url.host} (AI request ${open ? 'to another host' : 'over'})`);
+      return Promise.reject(new Error(`network: blocked ${url.protocol}//${url.host}`));
+    }
+    return base(input, { ...init, redirect: 'error' });
+  };
+  return {
+    fetch: guarded,
+    close: () => {
+      open = false;
+    },
+  };
+}

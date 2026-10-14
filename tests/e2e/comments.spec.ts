@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { editor, waitSaved } from './editor-ui';
+import { editor, selectText, waitSaved } from './editor-ui';
 import { useApp } from './harness';
 import { detailsPanel, withPanel } from './reminder-ui';
 import { COMMON, createNote, reloadUi, saveDoc } from './seed';
@@ -10,35 +10,11 @@ import { openByPalette } from './ui';
  * for an orphaned anchor, deleting with a confirmation, comments in search, and a comment on a spreadsheet cell.
  * Written in Run 6; runs in WSL under Xvfb and on CI (never on the Windows desktop).
  */
-const h = useApp({ failOnMainErrors: true });
+// Word, spreadsheet and PowerPoint documents are off by default (D-187); these tests use them.
+const h = useApp({ failOnMainErrors: true, settings: { 'documents.office': true } });
 
 const P1 = '0b0b0b0b-0000-4000-8000-000000000001';
 const comments = (page: Page) => detailsPanel(page).locator('.comments-section');
-
-/**
- * Selects the first occurrence of `text` in the note and waits for the browser's selectionchange: the editor reads the
- * selection on that asynchronous event, so a shortcut pressed before it would see the old one.
- */
-async function selectText(page: Page, text: string): Promise<void> {
-  await editor(page).getByText(text, { exact: false }).first().click();
-  await page.evaluate(async (needle) => {
-    const announced = new Promise<void>((resolve) => document.addEventListener('selectionchange', () => setTimeout(resolve, 0), { once: true }));
-    const root = document.querySelector('.note-editor-content')!;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      const at = (n as Text).data.indexOf(needle);
-      if (at < 0) continue;
-      const range = document.createRange();
-      range.setStart(n, at);
-      range.setEnd(n, at + needle.length);
-      const selection = window.getSelection()!;
-      selection.removeAllRanges();
-      selection.addRange(range);
-      return announced;
-    }
-    throw new Error(`no text ${needle}`);
-  }, text);
-}
 
 async function openPlan(page: Page): Promise<string> {
   const note = await createNote(page, COMMON, 'Plan');

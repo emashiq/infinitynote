@@ -1,7 +1,9 @@
+import type { MessageRoleType, ThreadKindType } from '../../../shared/contracts/comments';
 import type { Db } from '../driver';
 
 export interface ThreadRow {
   id: string;
+  kind: ThreadKindType;
   target_kind: 'note' | 'document';
   target_id: string;
   anchor_json: string;
@@ -15,19 +17,23 @@ export interface ThreadRow {
 export interface CommentRow {
   id: string;
   thread_id: string;
+  role: MessageRoleType;
   body: string | null;
   sealed_body: Buffer | null;
+  /** An AI message's details as JSON (D-190), in the clear or sealed like the body; null for comments. */
+  meta: string | null;
+  sealed_meta: Buffer | null;
   created_at: number;
   updated_at: number;
 }
 
-/** A thread's quote or a comment's body as stored: in the clear, or sealed with its note's data key (D-111). */
+/** A thread's quote or a comment's body or meta as stored: in the clear, or sealed with its item's data key (D-111). */
 export type StoredText = { text: string; sealed: null } | { text: null; sealed: Buffer };
 
-const THREAD_COLS = 'id, target_kind, target_id, anchor_json, quote, sealed_quote, resolved_at, created_at, updated_at';
-const COMMENT_COLS = 'id, thread_id, body, sealed_body, created_at, updated_at';
+const THREAD_COLS = 'id, kind, target_kind, target_id, anchor_json, quote, sealed_quote, resolved_at, created_at, updated_at';
+const COMMENT_COLS = 'id, thread_id, role, body, sealed_body, meta, sealed_meta, created_at, updated_at';
 
-/** Comment threads and their comments (F8, D-165). */
+/** Comment threads and their comments (F8, D-165), AI threads and their messages included (D-190). */
 export class CommentsRepo {
   constructor(private readonly db: Db) {}
 
@@ -67,25 +73,39 @@ export class CommentsRepo {
     return this.db.prepare<[string], { n: number }>('SELECT count(*) AS n FROM comments WHERE thread_id = ?').get(threadId)!.n;
   }
 
-  insertThread(t: { id: string; kind: 'note' | 'document'; targetId: string; anchorJson: string; quote: StoredText; resolvedAt?: number | null; now: number }): void {
+  insertThread(t: {
+    id: string;
+    /** The thread's kind: a comment thread unless named. */
+    threadKind?: ThreadKindType;
+    kind: 'note' | 'document';
+    targetId: string;
+    anchorJson: string;
+    quote: StoredText;
+    resolvedAt?: number | null;
+    now: number;
+  }): void {
     this.db
       .prepare(
-        `INSERT INTO comment_threads (id, target_kind, target_id, anchor_json, quote, sealed_quote, resolved_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO comment_threads (id, kind, target_kind, target_id, anchor_json, quote, sealed_quote, resolved_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(t.id, t.kind, t.targetId, t.anchorJson, t.quote.text, t.quote.sealed, t.resolvedAt ?? null, t.now, t.now);
+      .run(t.id, t.threadKind ?? 'comment', t.kind, t.targetId, t.anchorJson, t.quote.text, t.quote.sealed, t.resolvedAt ?? null, t.now, t.now);
   }
 
-  insertComment(c: { id: string; threadId: string; body: StoredText; createdAt: number; updatedAt: number }): void {
+  insertComment(c: { id: string; threadId: string; role?: MessageRoleType; body: StoredText; meta?: StoredText | null; createdAt: number; updatedAt: number }): void {
     this.db
-      .prepare('INSERT INTO comments (id, thread_id, body, sealed_body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(c.id, c.threadId, c.body.text, c.body.sealed, c.createdAt, c.updatedAt);
+      .prepare('INSERT INTO comments (id, thread_id, role, body, sealed_body, meta, sealed_meta, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(c.id, c.threadId, c.role ?? 'user', c.body.text, c.body.sealed, c.meta?.text ?? null, c.meta?.sealed ?? null, c.createdAt, c.updatedAt);
   }
 
   setBody(id: string, body: StoredText, now: number | null): void {
     this.db
       .prepare<[string | null, Buffer | null, number | null, string]>('UPDATE comments SET body = ?, sealed_body = ?, updated_at = coalesce(?, updated_at) WHERE id = ?')
       .run(body.text, body.sealed, now, id);
+  }
+
+  setMeta(id: string, meta: StoredText): void {
+    this.db.prepare<[string | null, Buffer | null, string]>('UPDATE comments SET meta = ?, sealed_meta = ? WHERE id = ?').run(meta.text, meta.sealed, id);
   }
 
   setQuote(threadId: string, quote: StoredText): void {

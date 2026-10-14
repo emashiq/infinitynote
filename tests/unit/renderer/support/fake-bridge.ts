@@ -21,7 +21,9 @@ import type {
   TrashItemType,
 } from '../../../../src/shared/contracts/hierarchy';
 import type { HomeScopeType } from '../../../../src/shared/contracts/home';
-import { COMMENT_MESSAGES, type CommentThreadDtoType } from '../../../../src/shared/contracts/comments';
+import { COMMENT_MESSAGES, type CommentDtoType, type CommentThreadDtoType } from '../../../../src/shared/contracts/comments';
+import type { AiConfigType, AiFileOptionType, AiStatusType } from '../../../../src/shared/contracts/ai';
+import { questionText } from '../../../../src/shared/ai/actions';
 import {
   DOCUMENT_LOCK_MESSAGES,
   LOCK_MESSAGES,
@@ -60,6 +62,7 @@ import { Step } from '@tiptap/pm/transform';
 import { noteSchema } from '../../../../src/shared/editor/schema';
 import { toSavable } from '../../../../src/shared/editor/savable';
 import { buildPathIndex, pathOf } from '../../../../src/shared/tree/paths';
+import { nextZoom, type ZoomPercent } from '../../../../src/shared/zoom';
 
 export interface FakeDraft {
   id: string;
@@ -153,8 +156,18 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const folders: Array<FolderDtoType & { deletedAt: number | null; batch: string | null }> = [];
   const notes: FakeNote[] = [];
   const documents: FakeDocument[] = [];
-  /** Comment threads by ID (D-165). */
+  /** Comment threads by ID (D-165), AI threads included (D-190). */
   const threads = new Map<string, CommentThreadDtoType>();
+  /**
+   * AI actions (D-190): the status the panel reads, the note's files it offers, what the fake engine answers (`wait`
+   * adds it to a running thread) and the stored keys and programs.
+   */
+  const aiData: { status: AiStatusType; files: AiFileOptionType[]; answer: string; config: AiConfigType } = {
+    status: { enabled: true, engine: 'claude-code', acknowledged: false, problem: null },
+    files: [],
+    answer: 'The fake answer',
+    config: { keys: { anthropic: false, openai: false }, keyStorage: true, cliPaths: { claude: null, codex: null } },
+  };
   /** Files the fake picker returns next: names and sizes. */
   const documentPicks: Array<Array<{ name: string; sizeBytes: number }>> = [];
   /** Document hand-offs to the OS, as "open:<id>" or "show:<id>". */
@@ -175,7 +188,9 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
   const floating = new Map<string, { collapsed: boolean; alwaysOnTop: boolean; activation: number }>();
   /** Default text colors of stickies (not part of the note DTO). */
   const textColors = new Map<string, HexColor>();
-  let windowState: WindowGetStateResponseType = { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } };
+  let windowState: WindowGetStateResponseType = { role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false }, zoom: 100 };
+  /** The window's zoom as main keeps it (D-186). */
+  let zoomPercent: ZoomPercent = 100;
   /** Reminder state the tests arrange: the zone list, the view lists, the Home summary and each note's reminders. */
   const reminderData = {
     zones: { zones: ['America/Chicago', 'America/New_York', 'Asia/Dhaka', 'UTC'], systemZone: 'Asia/Dhaka', defaultZone: 'Asia/Dhaka', asOf: Date.parse('2026-10-08T07:00:00Z') } as ZonesListResponseType,
@@ -452,6 +467,14 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     return ok({ thread });
   };
   const threadWithComment = (commentId: string) => [...threads.values()].find((t) => t.comments.some((c) => c.id === commentId));
+  const message = (role: CommentDtoType['role'], body: string): CommentDtoType => ({
+    id: uid(),
+    role,
+    body,
+    ai: { engine: aiData.status.engine, model: null, attachments: [], costUsd: null },
+    createdAt: clock,
+    updatedAt: clock,
+  });
   const fakeGraph = () => {
     const items = [
       ...liveNotes().map((n) => ({ kind: 'note' as const, id: n.id, documentKind: null, title: n.title, locked: n.locked, projectId: n.projectId, folderId: n.folderId })),
@@ -473,20 +496,22 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
         handle('comment:create', req, () => {
           const thread: CommentThreadDtoType = {
             id: uid(),
+            kind: 'comment',
             target: req.target,
             anchor: req.anchor,
             quote: req.quote,
             resolvedAt: null,
             createdAt: clock,
             updatedAt: clock,
-            comments: [{ id: uid(), body: req.body.trim(), createdAt: clock, updatedAt: clock }],
+            running: false,
+            comments: [{ id: uid(), role: 'user', body: req.body.trim(), ai: null, createdAt: clock, updatedAt: clock }],
           };
           threads.set(thread.id, thread);
           return ok({ thread });
         }),
       reply: (req) =>
         handle('comment:reply', req, () =>
-          changeThread(req.threadId, (t) => ({ ...t, comments: [...t.comments, { id: uid(), body: req.body.trim(), createdAt: clock, updatedAt: clock }] })),
+          changeThread(req.threadId, (t) => ({ ...t, comments: [...t.comments, { id: uid(), role: 'user', body: req.body.trim(), ai: null, createdAt: clock, updatedAt: clock }] })),
         ),
       edit: (req) =>
         handle('comment:edit', req, () => {
@@ -504,6 +529,60 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
       deleteThread: (req) =>
         handle('comment:deleteThread', req, () => (threads.delete(req.threadId) ? ok({ deleted: true as const }) : fail('NOT_FOUND', COMMENT_MESSAGES.missing))),
       resolve: (req) => handle('comment:resolve', req, () => changeThread(req.threadId, (t) => ({ ...t, resolvedAt: req.resolved ? clock : null }))),
+    },
+    ai: {
+      status: () => handle('ai:status', {}, () => ok(aiData.status)),
+      acknowledge: (req) =>
+        handle('ai:acknowledge', req, () => {
+          aiData.status = { ...aiData.status, acknowledged: true };
+          return ok(aiData.status);
+        }),
+      context: (req) => handle('ai:context', req, () => ok({ files: aiData.files })),
+      pickFiles: () => handle('ai:pickFiles', {}, () => ok({ canceled: false, pickId: uid(), files: (documentPicks.shift() ?? []).slice(0, 20), truncated: false, rejected: [] })),
+      ask: (req) =>
+        handle('ai:ask', req, () => {
+          const thread: CommentThreadDtoType = {
+            id: uid(),
+            kind: 'ai',
+            target: req.target,
+            anchor: req.anchor,
+            quote: req.quote,
+            resolvedAt: null,
+            createdAt: clock,
+            updatedAt: clock,
+            running: true,
+            comments: [message('user', questionText(req.action, req.prompt.trim()))],
+          };
+          threads.set(thread.id, thread);
+          return ok({ thread });
+        }),
+      followUp: (req) => handle('ai:followUp', req, () => changeThread(req.threadId, (t) => ({ ...t, running: true, comments: [...t.comments, message('user', req.prompt.trim())] }))),
+      wait: (req) =>
+        handle('ai:wait', req, () =>
+          changeThread(req.threadId, (t) => (t.running ? { ...t, running: false, comments: [...t.comments, message('assistant', aiData.answer)] } : t)),
+        ),
+      stop: (req) =>
+        handle<{ stopped: boolean }>('ai:stop', req, () => {
+          const found = threads.get(req.threadId);
+          if (!found?.running) return ok({ stopped: false });
+          threads.set(req.threadId, { ...found, running: false, comments: [...found.comments, message('error', 'Stopped')] });
+          return ok({ stopped: true });
+        }),
+      thread: (req) => handle('ai:thread', req, () => changeThread(req.threadId, (t) => t)),
+      deleteThread: (req) => handle('ai:deleteThread', req, () => (threads.delete(req.threadId) ? ok({ deleted: true as const }) : fail('NOT_FOUND', COMMENT_MESSAGES.missing))),
+      config: () => handle('ai:config', {}, () => ok(aiData.config)),
+      setKey: (req) =>
+        handle('ai:setKey', req, () => {
+          aiData.config = { ...aiData.config, keys: { ...aiData.config.keys, [req.provider]: req.key !== null } };
+          return ok(aiData.config);
+        }),
+      cliPath: (req) =>
+        handle('ai:cliPath', req, () => {
+          const path = req.action === 'clear' ? null : (documentPicks.shift()?.[0]?.name ?? null);
+          aiData.config = { ...aiData.config, cliPaths: { ...aiData.config.cliPaths, [req.cli]: path } };
+          return ok(aiData.config);
+        }),
+      test: (req) => handle('ai:test', req, () => ok({ ok: true, message: `${req.engine} 1.0.0` })),
     },
     graph: {
       build: (req) => handle('graph:build', req, () => ok(fakeGraph())),
@@ -1473,6 +1552,11 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     },
     window: {
       getState: () => handle('window:getState', {}, () => ok(windowState)),
+      zoom: (req) =>
+        handle('window:zoom', req, () => {
+          zoomPercent = nextZoom(zoomPercent, req.action);
+          return ok({ percent: zoomPercent });
+        }),
     },
     zones: { list: () => handle('zones:list', {}, () => ok(reminderData.zones)) },
     reminder: {
@@ -1665,7 +1749,7 @@ export function createFakeBridge(options: FakeBridgeOptions = {}) {
     /** Direct access for arranging state in tests. */
     /** Arranges a document directly (no tree:changed). */
     addDocument,
-    data: { threads, documents, documentPicks, documentHandoffs, locks: lockData, reminders: reminderData, windows: windowData, portability: portabilityData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, settings, projects, folders, notes, sessions, drafts, versions, imports, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
+    data: { threads, ai: aiData, documents, documentPicks, documentHandoffs, locks: lockData, reminders: reminderData, windows: windowData, portability: portabilityData, setDropped: (d: typeof dropped) => (dropped = d), setWindowState: (w: WindowGetStateResponseType) => (windowState = w), setCapabilities: (c: CapabilitiesType) => (capabilities = c), floating, settings, projects, folders, notes, sessions, drafts, versions, imports, shellCalls, handoffs, noteTags, getSession: () => session, setSession: (s: TabSessionType) => (session = s) },
   };
 }
 

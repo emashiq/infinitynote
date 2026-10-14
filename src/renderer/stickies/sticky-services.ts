@@ -5,6 +5,7 @@ import type { Result } from '../../shared/contracts/envelope';
 import type { NoteColorType } from '../../shared/contracts/hierarchy';
 import type { StickyLockStateType } from '../../shared/contracts/locks';
 import type { StickyStateType } from '../../shared/contracts/stickies';
+import type { DateOrder } from '../../shared/time/typed-date';
 import { displayTitle } from '../../shared/names';
 import { NoteController, textIsSafe, type FlushResult } from '../notes/note-controller';
 import { browserHideEvents, createCoreServices, type CoreServices } from '../state/core-services';
@@ -12,6 +13,9 @@ import { WINDOW_KEPT_NOTICE, restoreNotice, trashedDraftNotice, unsavedFlushNoti
 import { createStore, failOutcome, okOutcome, realTimers, uuidv4, type Outcome, type Store, type Timers } from '../state/store';
 import { browserThemeEnv, type ThemeEnv } from '../state/theme-store';
 import { createActivityReporter } from '../state/activity-reporter';
+import { EditorHandle } from '../editor/editor-handle';
+import type { EditorServices } from '../editor/editor-services';
+import { StickyAi } from './sticky-ai';
 
 export type StickyPhase = 'loading' | 'ready' | 'invalid';
 
@@ -57,6 +61,11 @@ export interface StickyServices {
   lockActions: StickyLockActions;
   /** Bumped when main asks this window to focus its editor (a repeated Float). */
   focusEditor: Store<{ request: number }>;
+  /** The sticky's editor, as its title, Float and AI actions reach it. */
+  editorHandle: EditorHandle;
+  /** What the sticky's editor uses from the app: the shared services plus AI actions on its note (D-190). */
+  editor: EditorServices;
+  ai: StickyAi;
   ready: Promise<void>;
   dispose(): Promise<void>;
 }
@@ -67,6 +76,8 @@ export interface StickyDeps {
   randomUUID?: () => string;
   themeEnv?: ThemeEnv | null;
   lifecycle?: { onHide(cb: () => void): () => void } | null;
+  /** The computer's order of day and month (D-184), for dates in math results. */
+  dateOrder?: DateOrder;
 }
 
 const isTrashedConflict = (r: FlushResult): boolean =>
@@ -80,7 +91,8 @@ const isTrashedConflict = (r: FlushResult): boolean =>
 export function createStickyServices(bridge: InfinityBridge, noteId: string, deps: StickyDeps = {}): StickyServices {
   const timers = deps.timers ?? realTimers;
   const uuid = deps.randomUUID ?? uuidv4;
-  const core = createCoreServices(bridge, { timers, themeEnv: deps.themeEnv === undefined ? browserThemeEnv() : deps.themeEnv });
+  const now = deps.now ?? (() => Date.now());
+  const core = createCoreServices(bridge, { timers, themeEnv: deps.themeEnv === undefined ? browserThemeEnv() : deps.themeEnv, dateOrder: deps.dateOrder, now });
   const { notices } = core;
   const controller = new NoteController({ bridge, noteId, viewId: uuid(), timers, uuid });
   const sticky = createStore<{ current: StickyStateType | null }>({ current: null });
@@ -88,7 +100,9 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
   const caps = createStore<{ current: CapabilitiesType | null }>({ current: null });
   const focusEditor = createStore({ request: 0 });
   const lock = createStore<{ current: StickyLockStateType | null }>({ current: null });
-  const now = deps.now ?? (() => Date.now());
+  const editorHandle = new EditorHandle();
+  const ai = new StickyAi({ bridge, noteId, handle: editorHandle, notify: (message) => notices.push(message, 'error'), enabled: () => core.features.getState().aiActions });
+  const editor: EditorServices = { ...core.editor, ai: ai.starter };
   let lastActivation = 0;
 
   const fail = (res: Result<unknown>): boolean => {
@@ -292,6 +306,9 @@ export function createStickyServices(bridge: InfinityBridge, noteId: string, dep
     lock,
     lockActions,
     focusEditor,
+    editorHandle,
+    editor,
+    ai,
     ready,
     async dispose() {
       reporter.dispose();

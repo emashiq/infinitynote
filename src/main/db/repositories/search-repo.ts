@@ -31,6 +31,14 @@ const META = prefixed(NOTE_META_COLS, 'n');
 const DOCUMENT_META = prefixed(DOCUMENT_COLS, 'd');
 /** Tokens of body context around the best hit (FTS5 snippet). */
 const SNIPPET_TOKENS = 16;
+/** An item one of whose comments matches a search, with the snippet of that comment. */
+export interface CommentHit {
+  thread_kind: 'comment' | 'ai';
+  target_kind: 'note' | 'document';
+  target_id: string;
+  body: string;
+}
+
 /** Matching comments read per wanted search result (comment hits are one per item). */
 const COMMENT_ROWS_PER_ITEM = 4;
 /** Characters of body shown for title-only matches. */
@@ -115,12 +123,12 @@ export class SearchRepo {
   /**
    * Comments matching an FTS5 query (D-165), best first, one per item: the item and a snippet of its best comment.
    * Only text in the clear is indexed, so a locked note's comments never match. A few rows per wanted item are read, so
-   * items with many matching comments do not crowd out the others.
+   * items with many matching comments do not crowd out the others. AI threads' messages match too (D-190).
    */
-  commentHits(match: string, limit: number): Array<{ target_kind: 'note' | 'document'; target_id: string; body: string }> {
+  commentHits(match: string, limit: number): CommentHit[] {
     const rows = this.db
-      .prepare<unknown[], { target_kind: 'note' | 'document'; target_id: string; body: string }>(
-        `SELECT t.target_kind, t.target_id, snippet(comments_fts, 0, ?, ?, '…', ${SNIPPET_TOKENS}) AS body
+      .prepare<unknown[], CommentHit>(
+        `SELECT t.kind AS thread_kind, t.target_kind, t.target_id, snippet(comments_fts, 0, ?, ?, '…', ${SNIPPET_TOKENS}) AS body
            FROM comments_fts
            JOIN comments c ON c.key = comments_fts.rowid
            JOIN comment_threads t ON t.id = c.thread_id

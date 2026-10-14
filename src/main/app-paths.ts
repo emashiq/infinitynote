@@ -30,6 +30,10 @@ export interface DataPaths {
   /** Where earlier 0.3.0 builds wrote the page being printed or exported as PDF; removed at startup (D-176). */
   leftoverPrintDir: string;
   logsDir: string;
+  /** The AI API keys, encrypted by the OS (D-193); outside the data folder, so never in a backup. */
+  aiKeysFile: string;
+  /** The command-line AI tools' working folders (D-195): the user's own, outside the data folder, emptied at startup. */
+  aiWorkDir: string;
 }
 
 export function resolveDataPaths(userData: string): DataPaths {
@@ -46,6 +50,8 @@ export function resolveDataPaths(userData: string): DataPaths {
     restorePendingFile: path.join(dataDir, 'restore-pending.json'),
     leftoverPrintDir: path.join(dataDir, 'export-tmp'),
     logsDir: path.join(userData, 'logs'),
+    aiKeysFile: path.join(userData, 'ai-keys.json'),
+    aiWorkDir: path.join(userData, 'ai-work'),
   };
 }
 

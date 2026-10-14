@@ -1,10 +1,14 @@
-import { Link2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { Link2, Minus, Plus } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { htmlDocumentUrl } from '../../../shared/app-identity';
+import { MAX_AI_SELECTION_CHARS } from '../../../shared/ai/limits';
 import { COMMENT_MESSAGES, MAX_COMMENT_QUOTE } from '../../../shared/contracts/comments';
+import { DEFAULT_ZOOM, nextZoom, type ZoomAction, type ZoomPercent } from '../../../shared/zoom';
 import { LINK_COPIED, LINK_COPY_FAILED } from '../../ui/copy-text';
+import { IconButton } from '../../ui/IconButton';
 import { Menu } from '../../ui/Menu';
 import { SegmentedControl } from '../../ui/SegmentedControl';
+import { useViewerZoom } from '../../zoom/use-viewer-zoom';
 import type { DocumentViewerProps } from '../viewer-registry';
 import { externalLinks, tokenizeHtml } from './html-source';
 import { occurrenceAt, occurrenceStart, rangeOf, textOffset } from './source-anchors';
@@ -22,7 +26,8 @@ type Mode = 'page' | 'source';
  * origin, no forms, no popups, no top navigation) from the infinity-html scheme, whose policy blocks every script and
  * network request; main stops any navigation within the scheme the page starts, and the app's frame policy refuses the
  * rest (see PageFrame). Links therefore open nothing; their addresses are listed under Links with "Copy link". Source shows the page's markup, colored, as text nodes only. Comments are
- * made on text selected in Source (the app cannot read the sandboxed page) and revealed there (D-165).
+ * made on text selected in Source (the app cannot read the sandboxed page) and revealed there (D-165). The zoom (the
+ * window's steps, D-186) scales the page and the source; the page is drawn larger, not scripted, since nothing may run in it.
  */
 export default function HtmlViewer({ document, sourceUrl, host }: DocumentViewerProps) {
   const [mode, setMode] = useState<Mode>('page');
@@ -33,6 +38,12 @@ export default function HtmlViewer({ document, sourceUrl, host }: DocumentViewer
   const failed = current !== null && current.text === null;
   const [linksAnchor, setLinksAnchor] = useState<{ x: number; y: number } | null>(null);
   const linksButton = useRef<HTMLButtonElement>(null);
+  const [zoom, setZoom] = useState<ZoomPercent>(DEFAULT_ZOOM);
+  const zoomBy = (action: ZoomAction) => setZoom((z) => nextZoom(z, action));
+  const root = useRef<HTMLDivElement>(null);
+  // Ctrl+wheel and the zoom keys over the toolbar and the source zoom the page; inside the page's own frame they reach
+  // the window, since a sandboxed page's events never come to the app.
+  useViewerZoom(root, zoomBy);
 
   useEffect(() => {
     let stale = false;
@@ -71,7 +82,7 @@ export default function HtmlViewer({ document, sourceUrl, host }: DocumentViewer
         const quote = raw.trim().slice(0, MAX_COMMENT_QUOTE);
         if (quote === '') return { error: COMMENT_MESSAGES.htmlSource };
         const start = textOffset(pre, range.startContainer, range.startOffset) + (raw.length - raw.trimStart().length);
-        return { anchor: { type: 'quote', occurrence: occurrenceAt(pre.textContent ?? '', quote, start) }, quote };
+        return { anchor: { type: 'quote', occurrence: occurrenceAt(pre.textContent ?? '', quote, start) }, quote, text: raw.trim().slice(0, MAX_AI_SELECTION_CHARS) };
       },
       reveal: (thread) => {
         if (thread.anchor.type !== 'quote') return false;
@@ -99,7 +110,7 @@ export default function HtmlViewer({ document, sourceUrl, host }: DocumentViewer
   };
 
   return (
-    <div className="html-viewer">
+    <div ref={root} className="html-viewer" style={{ '--html-zoom': zoom / 100 } as CSSProperties}>
       <div className="document-toolbar" role="toolbar" aria-label="Web page view">
         <SegmentedControl
           label="Show"
@@ -135,6 +146,13 @@ export default function HtmlViewer({ document, sourceUrl, host }: DocumentViewer
             items={links.map((url, i) => ({ id: `link-${i}`, label: `Copy ${url}`, onSelect: () => void copy(url) }))}
           />
         ) : null}
+        <span className="zoom-control" role="group" aria-label="Zoom">
+          <IconButton label="Zoom out (Ctrl+-)" icon={Minus} onClick={() => zoomBy('out')} />
+          <button type="button" className="btn btn-small zoom-control-value" title="Actual size (Ctrl+0)" aria-label={`Zoom ${zoom}%, back to actual size`} onClick={() => zoomBy('reset')}>
+            {`${zoom}%`}
+          </button>
+          <IconButton label="Zoom in (Ctrl+=)" icon={Plus} onClick={() => zoomBy('in')} />
+        </span>
       </div>
       {mode === 'page' ? (
         <PageFrame
@@ -167,7 +185,11 @@ function PageFrame({ title, src, onLeft }: { title: string; src: string; onLeft:
     setGeneration((g) => g + 1);
     onLeft();
   };
-  return <iframe key={generation} className="html-frame" title={title} sandbox="" referrerPolicy="no-referrer" src={src} onLoad={(e) => onLoad(e.currentTarget)} />;
+  return (
+    <div className="html-frame-wrap">
+      <iframe key={generation} className="html-frame" title={title} sandbox="" referrerPolicy="no-referrer" src={src} onLoad={(e) => onLoad(e.currentTarget)} />
+    </div>
+  );
 }
 
 function HtmlSource({ source, failed, preRef }: { source: string | null; failed: boolean; preRef: RefObject<HTMLPreElement | null> }) {

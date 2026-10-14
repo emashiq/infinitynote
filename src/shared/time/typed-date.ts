@@ -22,8 +22,22 @@ const TIME = String.raw`(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([AaPp][Mm]))?
 const YEAR_FIRST = new RegExp(String.raw`^(\d{4})([-/.])(\d{1,2})\2(\d{1,2})${TIME}$`);
 const YEAR_LAST = new RegExp(String.raw`^(\d{1,2})([-/.])(\d{1,2})\2(\d{4})${TIME}$`);
 
-/** A spreadsheet date for the text, or null when it is not a valid date in one of the forms above. */
-export function parseTypedDate(text: string, order: DateOrder): TypedDate | null {
+/** A typed date's calendar parts, with what the format of the typed text needs. */
+export interface TypedDateParts {
+  year: number;
+  month: number;
+  day: number;
+  /** The time of day as a fraction of the day, or null when none was typed. */
+  time: { fraction: number; format: string } | null;
+  /** How it was typed: the separator, the digits of day and month, and which came first. */
+  typed: { separator: string; day: string; month: string; order: 'year-first' | 'day-first' | 'month-first' };
+}
+
+/**
+ * The calendar date of a typed date (D-184), or null when the text is not a valid date in one of the forms above.
+ * Spreadsheets (parseTypedDate) and math results in notes (D-188) read dates with it.
+ */
+export function readTypedDate(text: string, order: DateOrder): TypedDateParts | null {
   const trimmed = text.trim();
   const yearFirst = YEAR_FIRST.exec(trimmed);
   const yearLast = yearFirst ? null : YEAR_LAST.exec(trimmed);
@@ -31,26 +45,34 @@ export function parseTypedDate(text: string, order: DateOrder): TypedDate | null
   if (!m) return null;
   const separator = m[2]!;
   const year = Number(yearFirst ? m[1] : m[4]);
-  let parts: { day: string; month: string; dayFirst: boolean };
-  if (yearFirst) parts = { month: m[3]!, day: m[4]!, dayFirst: false };
+  let typed: TypedDateParts['typed'];
+  if (yearFirst) typed = { separator, month: m[3]!, day: m[4]!, order: 'year-first' };
   else {
     const [a, b] = [m[1]!, m[3]!];
     const dayFirst = Number(a) > 12 ? true : Number(b) > 12 ? false : order === 'day-first';
-    parts = dayFirst ? { day: a, month: b, dayFirst } : { day: b, month: a, dayFirst };
+    typed = dayFirst ? { separator, day: a, month: b, order: 'day-first' } : { separator, day: b, month: a, order: 'month-first' };
   }
-  const day = Number(parts.day);
-  const month = Number(parts.month);
+  const day = Number(typed.day);
+  const month = Number(typed.month);
   if (year < MIN_YEAR || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
   const time = timeOf(m.slice(5, 9));
   if (time === undefined) return null;
+  return { year, month, day, time, typed };
+}
 
+/** A spreadsheet date for the text, or null when it is not a valid date in one of the forms above. */
+export function parseTypedDate(text: string, order: DateOrder): TypedDate | null {
+  const parts = readTypedDate(text, order);
+  if (!parts) return null;
+  const { year, month, day, time, typed } = parts;
   const tokens = (digits: string, letter: string) => (digits.length === 2 ? letter + letter : letter);
-  const literal = separator === '.' ? '"."' : separator;
-  const dateTokens = yearFirst
-    ? ['yyyy', tokens(parts.month, 'm'), tokens(parts.day, 'd')]
-    : parts.dayFirst
-      ? [tokens(parts.day, 'd'), tokens(parts.month, 'm'), 'yyyy']
-      : [tokens(parts.month, 'm'), tokens(parts.day, 'd'), 'yyyy'];
+  const literal = typed.separator === '.' ? '"."' : typed.separator;
+  const dateTokens =
+    typed.order === 'year-first'
+      ? ['yyyy', tokens(typed.month, 'm'), tokens(typed.day, 'd')]
+      : typed.order === 'day-first'
+        ? [tokens(typed.day, 'd'), tokens(typed.month, 'm'), 'yyyy']
+        : [tokens(typed.month, 'm'), tokens(typed.day, 'd'), 'yyyy'];
   const format = dateTokens.join(literal) + (time ? ` ${time.format}` : '');
   return { serial: excelSerial(year, month, day) + (time?.fraction ?? 0), format };
 }

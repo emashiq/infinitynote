@@ -3,6 +3,9 @@ import type { InfinityBridge } from '../../shared/contracts/bridge';
 import type { ReminderViewType } from '../../shared/contracts/reminders';
 import type { WidgetStateType } from '../../shared/contracts/widget';
 import type { AppOpenNoteEventType } from '../../shared/contracts/windows';
+import { openableKindOf } from '../../shared/documents/kinds';
+import type { ZoomPercent } from '../../shared/zoom';
+import type { DateOrder } from '../../shared/time/typed-date';
 import { RemindersStore } from '../reminders/reminders-store';
 import { CommentsStore } from '../comments/comments-store';
 import { GraphStore } from '../graph/graph-store';
@@ -13,7 +16,7 @@ import type { AttachmentPrefs } from '../editor/uploader';
 import { createCommandRunner, type CommandRunner } from './commands';
 import { createDocumentCommands, type DocumentCommands } from './document-commands';
 import { createPortabilityCommands, type PortabilityCommands } from './portability-commands';
-import { browserHideEvents, createCoreServices } from './core-services';
+import { browserHideEvents, createCoreServices, type FeaturePrefs } from './core-services';
 import { HomeStore } from './home-store';
 import { LayoutStore } from './layout-store';
 import { unsavedFlushNotice, type NoticeStore } from './notice-store';
@@ -24,6 +27,7 @@ import { browserThemeEnv, type ThemeEnv, type ThemeStore } from './theme-store';
 import { TreeStore } from './tree-store';
 import { UiStore } from './ui-store';
 import { WindowSettingsStore } from './window-settings-store';
+import { WindowZoomStore } from '../zoom/window-zoom-store';
 
 export interface AppDeps {
   now?: () => number;
@@ -39,6 +43,10 @@ export interface AppDeps {
   initialReminders?: ReminderViewType | null;
   /** The reminder widget's state when the window opened (D-086). */
   initialWidget?: WidgetStateType;
+  /** The window's zoom when it opened (D-186). */
+  initialZoom?: ZoomPercent;
+  /** The computer's order of day and month (D-184), for dates in math results. */
+  dateOrder?: DateOrder;
 }
 
 export interface MetaState {
@@ -67,9 +75,13 @@ export interface AppServices {
   /** The relation graph page (D-170). */
   graph: GraphStore;
   windowSettings: WindowSettingsStore;
+  /** The window's zoom (D-186). */
+  zoom: WindowZoomStore;
   reminders: RemindersStore;
   /** Attachment limits and "When adding files" from the public settings (followed live through settings:changed). */
   attachmentPrefs: Store<AttachmentPrefs>;
+  /** Office documents and math results from the public settings (followed live). */
+  features: Store<FeaturePrefs>;
   /** What every note editor uses from the app; one stable object. */
   editor: EditorServices;
   /** The active note tab's editor as the tab strip sees it: Enter in the tab's title moves into the text (D-102). */
@@ -98,7 +110,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
   const viewId = uuid();
   const now = deps.now ?? (() => Date.now());
 
-  const core = createCoreServices(bridge, { timers, themeEnv: deps.themeEnv === undefined ? browserThemeEnv() : deps.themeEnv, canWriteSettings: true });
+  const core = createCoreServices(bridge, { timers, themeEnv: deps.themeEnv === undefined ? browserThemeEnv() : deps.themeEnv, canWriteSettings: true, dateOrder: deps.dateOrder, now });
   const { notices, theme } = core;
   const meta = createStore<MetaState>({ info: null });
   const tabs = new TabsStore({ bridge, notices, timers, viewId, uuid });
@@ -117,7 +129,8 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     },
   });
   const graph = new GraphStore({ bridge, tabs });
-  const commands = createCommandRunner({ bridge, tree, tabs, home, layout, ui, notices, portability, documents, comments, graph });
+  const zoom = new WindowZoomStore(bridge, deps.initialZoom);
+  const commands = createCommandRunner({ bridge, tree, tabs, home, layout, ui, notices, portability, documents, comments, graph, zoom });
   const windowSettings = new WindowSettingsStore(bridge);
   const reminders = new RemindersStore(
     {
@@ -129,8 +142,10 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     },
     deps.initialWidget ?? { open: false, collapsed: false, alwaysOnTop: false },
   );
-  // Attached and linked files of a note open in the app as documents (main window only, D-118).
+  // Attached and linked files of a note open in the app as documents (main window only, D-118); Word, spreadsheet and
+  // PowerPoint files only while Office documents are on (D-187).
   const documentHost: DocumentHost = {
+    opens: (name) => openableKindOf(name, core.features.getState().officeDocuments) !== null,
     openAttachment: (noteId, attachmentId) => void documents.openFromAttachment(noteId, attachmentId),
     openLink: (noteId, linkId) => void documents.openFromLink(noteId, linkId),
   };
@@ -160,7 +175,13 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
       return { id: res.data.note.id, title: res.data.note.title };
     },
   };
-  const editor: EditorServices = { ...core.editor, references, documents: documentHost, comments };
+  const editor: EditorServices = {
+    ...core.editor,
+    references,
+    documents: documentHost,
+    comments,
+    ai: { enabled: () => core.features.getState().aiActions, start: () => comments.startAi() },
+  };
   let lastScope = home.store.getState().scope;
   let lastActive = tabs.store.getState().session.activeTabId;
 
@@ -212,6 +233,7 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
       });
     }),
   );
+  core.track(bridge.subscribe('window:zoomChanged', ({ percent }) => zoom.follow(percent)));
   core.track(bridge.subscribe('app:openNote', ({ noteId, blockId }) => void tabs.openNote(noteId, { blockId })));
   // Reminders (plan section 9.6): views re-read on every change; alerts, the widget state and Reminders opens from main.
   core.track(bridge.subscribe('reminder:changed', () => void reminders.refresh()));
@@ -260,8 +282,10 @@ export function createAppServices(bridge: InfinityBridge, deps: AppDeps = {}): A
     comments,
     graph,
     windowSettings,
+    zoom,
     reminders,
     attachmentPrefs: core.attachmentPrefs,
+    features: core.features,
     editor,
     noteEditor,
     ready,

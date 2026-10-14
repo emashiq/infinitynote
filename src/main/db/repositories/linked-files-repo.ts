@@ -49,6 +49,14 @@ export class LinkedFilesRepo {
     this.db.prepare<[number, string]>('UPDATE linked_files SET size_bytes = ? WHERE id = ?').run(sizeBytes, id);
   }
 
+  /** The links a note's saved content uses. */
+  usedBy(noteId: string): string[] {
+    return this.db
+      .prepare<[string], { link_id: string }>('SELECT link_id FROM note_linked_files WHERE note_id = ? ORDER BY link_id')
+      .all(noteId)
+      .map((r) => r.link_id);
+  }
+
   isUsedBy(noteId: string, linkId: string): boolean {
     return this.db.prepare<[string, string], { found: number }>('SELECT 1 AS found FROM note_linked_files WHERE note_id = ? AND link_id = ?').get(noteId, linkId) !== undefined;
   }

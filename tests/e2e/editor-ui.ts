@@ -23,6 +23,31 @@ export function editorSelectionText(page: Page): Promise<string> {
 }
 
 /**
+ * Selects the first occurrence of `text` in the note and waits for the browser's selectionchange: the editor reads the
+ * selection on that asynchronous event, so a shortcut pressed before it would see the old one.
+ */
+export async function selectText(page: Page, text: string): Promise<void> {
+  await editor(page).getByText(text, { exact: false }).first().click();
+  await page.evaluate(async (needle) => {
+    const announced = new Promise<void>((resolve) => document.addEventListener('selectionchange', () => setTimeout(resolve, 0), { once: true }));
+    const root = document.querySelector('.note-editor-content')!;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const at = (n as Text).data.indexOf(needle);
+      if (at < 0) continue;
+      const range = document.createRange();
+      range.setStart(n, at);
+      range.setEnd(n, at + needle.length);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return announced;
+    }
+    throw new Error(`no text ${needle}`);
+  }, text);
+}
+
+/**
  * Clicks into the editor and puts the cursor at the end of the document. ProseMirror reads the DOM selection change on
  * the asynchronous selectionchange event, so this waits until the editor's own cursor is at the end: a key pressed
  * earlier would act at the clicked position.

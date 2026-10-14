@@ -10,12 +10,13 @@ const MENUS: readonly MenuName[] = ['File', 'View', 'Help'];
  * alone moves the focus to it; Left and Right move between the menus, Down, Enter or Space opens one, Escape closes it.
  */
 export function AppMenuBar() {
-  const { commands, layout, theme, reminders, ui, bridge, tabs } = useServices();
+  const { commands, layout, theme, reminders, ui, bridge, tabs, features } = useServices();
   useStore(layout.store);
   const { session } = useStore(tabs.store);
   const noteTabActive = session.tabs.find((t) => t.id === session.activeTabId)?.kind === 'note';
   const themeValue = useStore(theme.store).value;
   const widgetOpen = useStore(reminders.store).widget.open;
+  const { officeDocuments } = useStore(features);
   const [open, setOpen] = useState<{ name: MenuName; anchor: { x: number; y: number } } | null>(null);
   const buttons = useRef<Partial<Record<MenuName, HTMLButtonElement | null>>>({});
 
@@ -50,10 +51,15 @@ export function AppMenuBar() {
       { id: 'new-sticky', label: 'New sticky', shortcut: 'Ctrl+Shift+N', onSelect: run('sticky.new') },
       { id: 'new-locked-note', label: 'New locked note…', onSelect: run('note.newLocked') },
       { id: 'new-locked-sticky', label: 'New locked sticky…', onSelect: run('sticky.newLocked') },
-      { id: 'new-docx', label: 'New Word document', separatorBefore: true, onSelect: run('document.newDocx') },
-      { id: 'new-xlsx', label: 'New spreadsheet', onSelect: run('document.newXlsx') },
-      { id: 'new-pptx', label: 'New presentation', onSelect: run('document.newPptx') },
-      { id: 'import-file', label: 'Import file…', onSelect: run('document.import') },
+      // Word, spreadsheet and PowerPoint documents only while they are on (D-187).
+      ...(officeDocuments
+        ? [
+            { id: 'new-docx', label: 'New Word document', separatorBefore: true, onSelect: run('document.newDocx') },
+            { id: 'new-xlsx', label: 'New spreadsheet', onSelect: run('document.newXlsx') },
+            { id: 'new-pptx', label: 'New presentation', onSelect: run('document.newPptx') },
+          ]
+        : []),
+      { id: 'import-file', label: 'Import file…', separatorBefore: !officeDocuments, onSelect: run('document.import') },
       { id: 'close-tab', label: 'Close tab', shortcut: 'Ctrl+W', separatorBefore: true, onSelect: run('tab.close') },
       { id: 'export-markdown', label: 'Export note as Markdown…', separatorBefore: true, disabled: !noteTabActive, onSelect: run('note.exportMarkdown') },
       { id: 'export-text', label: 'Export note as plain text…', disabled: !noteTabActive, onSelect: run('note.exportText') },
@@ -76,6 +82,9 @@ export function AppMenuBar() {
       })),
       { id: 'tree', label: 'Toggle notes tree', shortcut: 'Ctrl+\\', separatorBefore: true, onSelect: run('view.toggleTree') },
       { id: 'panel', label: 'Toggle details panel', shortcut: 'Ctrl+Shift+\\', onSelect: run('view.togglePanel') },
+      { id: 'zoom-in', label: 'Zoom in', shortcut: 'Ctrl+=', separatorBefore: true, onSelect: run('view.zoomIn') },
+      { id: 'zoom-out', label: 'Zoom out', shortcut: 'Ctrl+-', onSelect: run('view.zoomOut') },
+      { id: 'zoom-reset', label: 'Actual size', shortcut: 'Ctrl+0', onSelect: run('view.zoomReset') },
       { id: 'widget', label: widgetOpen ? 'Hide reminder widget' : 'Show reminder widget', separatorBefore: true, onSelect: () => void reminders.setWidgetOpen(!widgetOpen) },
     ],
     Help: [

@@ -1,9 +1,7 @@
 import { Bold, Copy, ImagePlus, Italic, Play, Plus, Redo2, Save, Search, Trash2, Type, Underline, Undo2 } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
 import type { RunFormat } from './pptx-xml';
-import type { Zoom } from './PptxStage';
-
-const ZOOMS: readonly number[] = [0.5, 0.75, 1, 1.5, 2];
+import { PPTX_ZOOMS, type Zoom } from './PptxStage';
 
 export interface ToolbarProps {
   ready: boolean;
@@ -107,7 +105,7 @@ export function PptxToolbar(p: ToolbarProps) {
       )}
       <select className="select pptx-zoom" aria-label="Zoom" disabled={!p.ready} value={String(p.zoom)} onChange={(e) => p.onZoom(e.target.value === 'fit' ? 'fit' : Number(e.target.value))}>
         <option value="fit">Fit</option>
-        {ZOOMS.map((z) => (
+        {PPTX_ZOOMS.map((z) => (
           <option key={z} value={String(z)}>{`${Math.round(z * 100)}%`}</option>
         ))}
       </select>

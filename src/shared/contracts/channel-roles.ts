@@ -12,7 +12,9 @@ import type { WindowRoleType } from './windows';
  * v0.2.0 (D-108) add files by copying or linking them and use its note's linked files. Everything else (tabs, the
  * tree, trash, creation, moves, settings writes, references, search and tags) is main-window only. From v0.3.0
  * (D-172) a sticky of a locked note asks for its lock state, reveals and blurs itself, reports activity and sets its
- * PIN; the `lock:*` channels stay main-window only.
+ * PIN; the `lock:*` channels stay main-window only. From v0.4.0 (D-186) it zooms the stickies with `window:zoom`, and
+ * (D-190) runs AI actions on its own note: the AI handlers accept only that note and its threads. Keys, programs and
+ * the engine test stay in the main window.
  */
 export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<InvokeChannel>([
   'app:getInfo',
@@ -66,6 +68,17 @@ export const STICKY_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<Invok
   'sticky:activity',
   'sticky:blur',
   'sticky:setPin',
+  'window:zoom',
+  'ai:status',
+  'ai:acknowledge',
+  'ai:context',
+  'ai:pickFiles',
+  'ai:ask',
+  'ai:followUp',
+  'ai:wait',
+  'ai:stop',
+  'ai:thread',
+  'ai:deleteThread',
 ]);
 
 /**
@@ -99,12 +112,19 @@ export const STICKY_CONTENT_CHANNELS: ReadonlySet<InvokeChannel> = new Set<Invok
   'reminder:createFromSuggestion',
   'suggestion:dismiss',
   'suggestion:listDismissed',
+  'ai:context',
+  'ai:ask',
+  'ai:followUp',
+  'ai:wait',
+  'ai:stop',
+  'ai:thread',
+  'ai:deleteThread',
 ]);
 
 /**
  * The channels the reminder widget may call (D-074, D-081): its reminder lists and their actions, opening a source in
- * the main window, its own window controls, settings reads and the app basics. It never reads note content, edits
- * reminders or touches tabs and the tree.
+ * the main window, its own window controls and zoom (D-186), settings reads and the app basics. It never reads note
+ * content, edits reminders or touches tabs and the tree.
  */
 export const WIDGET_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<InvokeChannel>([
   'app:getInfo',
@@ -120,6 +140,7 @@ export const WIDGET_ALLOWED_CHANNELS: ReadonlySet<InvokeChannel> = new Set<Invok
   'widget:hide',
   'widget:setPinned',
   'widget:setCollapsed',
+  'window:zoom',
 ]);
 
 /** The main window may call every channel; stickies and the widget only their allowlists. */

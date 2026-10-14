@@ -4,6 +4,7 @@ import { MAX_COMMENT_QUOTE } from '../../../shared/contracts/comments';
 import { DOCUMENT_MESSAGES } from '../../../shared/documents/messages';
 import { MAX_SHAPE_TEXT_CHARS, MAX_SLIDE_IMAGE_BYTES, MAX_SLIDE_NOTES_CHARS } from '../../../shared/documents/presentation';
 import { useStore } from '../../state/use-store';
+import { useViewerZoom } from '../../zoom/use-viewer-zoom';
 import { DocumentFindBar } from '../DocumentFindBar';
 import type { DocumentViewerProps } from '../viewer-registry';
 import { findInSlides } from './pptx-find';
@@ -16,7 +17,7 @@ import { EditRefused, PptxSession } from './pptx-session';
 import { browserXml, type RunFormat } from './pptx-xml';
 import { PptxNotes } from './PptxNotes';
 import { PptxPresenter } from './PptxPresenter';
-import { PptxStage, type TextEditing, type Zoom } from './PptxStage';
+import { pptxZoomAfter, PptxStage, type TextEditing, type Zoom } from './PptxStage';
 import { PptxThumbnails } from './PptxThumbnails';
 import { PptxToolbar } from './PptxToolbar';
 import { asEdited, editedLength, formatSelection, readEditor, shownFormat } from './text-edit';
@@ -93,6 +94,10 @@ function PresentationEditor({ session, host, target, findRequests, readOnly }: D
   const { model, slides, current, selection } = state;
   const [notShown] = useState(() => contentNotShown(model));
   const [zoom, setZoom] = useState<Zoom>('fit');
+  const fitScale = useRef(1);
+  const root = useRef<HTMLDivElement>(null);
+  // Ctrl+wheel and the zoom keys in the viewer zoom the slide, not the window (D-186).
+  useViewerZoom(root, (action) => setZoom((z) => pptxZoomAfter(z, fitScale.current, action)));
   const [editing, setEditing] = useState<TextEditing | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   /** The editor's last selection, put back before formatting it from the toolbar's fields. */
@@ -341,7 +346,7 @@ function PresentationEditor({ session, host, target, findRequests, readOnly }: D
   const summary = find.query === '' ? '' : matches.length === 0 ? PPTX_MESSAGES.noMatches : `${Math.min(matchIndex, matches.length - 1) + 1} of ${matches.length}`;
 
   return (
-    <div className="pptx-viewer" onKeyDownCapture={onKeyDownCapture}>
+    <div ref={root} className="pptx-viewer" onKeyDownCapture={onKeyDownCapture}>
       <PptxToolbar
         ready
         readOnly={readOnly}
@@ -453,6 +458,7 @@ function PresentationEditor({ session, host, target, findRequests, readOnly }: D
             onFormatKey={toggle}
             onPaste={onPaste}
             onStep={(delta) => goTo(current + delta)}
+            onFitScale={(scale) => (fitScale.current = scale)}
           />
           {slide ? (
             <PptxNotes

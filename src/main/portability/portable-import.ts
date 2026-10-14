@@ -310,7 +310,11 @@ function writeThreads(deps: Pick<PortableImportDeps, 'db' | 'uuid'>, doc: Portab
     if (t.target.kind === 'document' && !importedDocuments.has(t.target.id)) continue;
     const id = remap.thread(t.id)!;
     const anchor: CommentAnchorType = t.anchor.type === 'text' ? { type: 'text', blockId: t.anchor.blockId === null ? null : remap.block(t.target.id, t.anchor.blockId) } : t.anchor;
-    repo.insertThread({ id, kind: t.target.kind, targetId: remap.item(t.target.id), anchorJson: JSON.stringify(anchor), quote: { text: t.quote, sealed: null }, resolvedAt: t.resolvedAt, now });
-    for (const c of t.comments) repo.insertComment({ id: deps.uuid(), threadId: id, body: { text: c.body, sealed: null }, createdAt: c.createdAt, updatedAt: c.updatedAt });
+    repo.insertThread({ id, threadKind: t.kind, kind: t.target.kind, targetId: remap.item(t.target.id), anchorJson: JSON.stringify(anchor), quote: { text: t.quote, sealed: null }, resolvedAt: t.resolvedAt, now });
+    for (const c of t.comments) {
+      // An imported AI message has no session to resume: a follow-up starts a new one with the thread's text (D-190).
+      const meta = c.ai ? { text: JSON.stringify({ ...c.ai, sessionId: null }), sealed: null } : null;
+      repo.insertComment({ id: deps.uuid(), threadId: id, role: c.role, body: { text: c.body, sealed: null }, meta, createdAt: c.createdAt, updatedAt: c.updatedAt });
+    }
   }
 }

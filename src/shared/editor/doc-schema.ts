@@ -82,7 +82,7 @@ const CHILDREN: Record<string, readonly string[]> = {
 };
 
 export const RICH_NODE_TYPES = Object.keys(CHILDREN);
-export const RICH_MARK_TYPES = ['bold', 'italic', 'strike', 'underline', 'code', 'link', 'textStyle', 'comment'] as const;
+export const RICH_MARK_TYPES = ['bold', 'italic', 'strike', 'underline', 'code', 'link', 'textStyle', 'comment', 'calcResult'] as const;
 /** Most comment threads (D-165) one piece of text may carry. */
 export const MAX_COMMENT_MARKS = 16;
 export const CELL_ALIGNS = ['left', 'center', 'right'] as const;

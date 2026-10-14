@@ -11,7 +11,8 @@ import { activate, dialogByName, tabItem, treeByKey, treeItem } from './ui';
  * document reopening at once, locking again after the idle time (the lock clock of the test hooks), Lock now and Lock
  * all, and a linked file copied in to be locked.
  */
-const h = useApp({ failOnMainErrors: true });
+// Word, spreadsheet and PowerPoint documents are off by default (D-187); these tests use them.
+const h = useApp({ failOnMainErrors: true, settings: { 'documents.office': true } });
 const FIXTURES = path.resolve('tests/fixtures/documents');
 const PASSWORD = 'correct horse battery';
 

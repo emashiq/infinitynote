@@ -1,0 +1,151 @@
+/* AI actions (D-190): the highlight of an AI thread's text, the Ask AI panel and AI threads. */
+.comment-anchor.ai-anchor {
+  border-bottom-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.comment-anchor.ai-anchor.comment-anchor-active {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.comment-marker.is-ai {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.comment-marker.is-ai.is-active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.comment-area.is-ai {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.ai-badge {
+  align-self: flex-start;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.comment-thread.is-ai .comment-quote,
+.ask-ai-part .comment-quote {
+  border-left-color: var(--accent);
+}
+
+.ask-ai-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.ask-ai-part {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 120px;
+  margin-bottom: 8px;
+  overflow: auto;
+}
+
+.ai-notice {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+}
+
+.ai-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.ai-attach {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 6px 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+
+.ai-attach .checkbox {
+  display: flex;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.ai-messages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.ai-speaker {
+  font-size: 0.85em;
+  font-weight: 700;
+}
+
+.ai-message.is-assistant .ai-speaker {
+  color: var(--accent);
+}
+
+.ai-message.is-error .ai-speaker,
+.ai-message.is-error .ai-body {
+  color: var(--danger);
+}
+
+.ai-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-details {
+  font-size: 0.8em;
+  overflow-wrap: anywhere;
+}
+
+.ai-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.ai-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ai-spin 0.9s linear infinite;
+}
+
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sticky-ai-dialog {
+  width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+}

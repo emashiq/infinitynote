@@ -7,9 +7,9 @@ import { LATEST, MIGRATIONS } from '../../src/main/db/migrations';
 const dir = path.resolve('src/main/db/migrations');
 
 describe('migration set (INF-FND-05)', () => {
-  it('versions are contiguous from 1 and LATEST is 15', () => {
+  it('versions are contiguous from 1 and LATEST is 16', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual(MIGRATIONS.map((_, i) => i + 1));
-    expect(LATEST).toBe(15);
+    expect(LATEST).toBe(16);
   });
 
   it('accepted migrations 1 to 5 are frozen: their checksums never change (A05-F3)', () => {

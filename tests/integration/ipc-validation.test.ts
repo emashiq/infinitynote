@@ -213,6 +213,10 @@ describe('role allowlist and note ownership (D-064)', () => {
         'attachment:addPicked', 'fileLink:create', 'fileLink:status', 'fileLink:open', 'fileLink:showInFolder', 'fileLink:copyIn',
         // Locked stickies reveal, blur, report activity in and set the PIN of their own note (D-172).
         'sticky:lockStatus', 'sticky:reveal', 'sticky:activity', 'sticky:blur', 'sticky:setPin',
+        // Every sticky zooms with the others (D-186).
+        'window:zoom',
+        // AI actions on its own note (D-190); the handlers refuse other notes and their threads.
+        'ai:status', 'ai:acknowledge', 'ai:context', 'ai:pickFiles', 'ai:ask', 'ai:followUp', 'ai:wait', 'ai:stop', 'ai:thread', 'ai:deleteThread',
       ].sort(),
     );
     for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('main', channel)).toBe(true);
@@ -223,6 +227,8 @@ describe('role allowlist and note ownership (D-064)', () => {
       [
         'app:getInfo', 'app:quit', 'app:flushed', 'capabilities:get', 'settings:get', 'window:getState', 'reminders:listView',
         'occurrence:complete', 'occurrence:snooze', 'reminder:open', 'widget:hide', 'widget:setPinned', 'widget:setCollapsed',
+        // Its own zoom (D-186).
+        'window:zoom',
       ].sort(),
     );
     for (const channel of INVOKE_CHANNELS) expect(isChannelAllowed('widget', channel), channel).toBe(WIDGET_ALLOWED_CHANNELS.has(channel));

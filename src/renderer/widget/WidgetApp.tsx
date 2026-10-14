@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
+import type { ZoomAction } from '../../shared/zoom';
 import type { WidgetStateType } from '../../shared/contracts/widget';
 import { NoticeList } from '../shell/Notices';
 import { useStore } from '../state/use-store';
 import { createWidgetServices, type WidgetServices } from './widget-services';
 import { WidgetHeader } from './WidgetHeader';
 import { WidgetList } from './WidgetList';
+import { useZoomKeys } from '../zoom/use-zoom-keys';
 
 // One WidgetServices per bridge: the cache survives StrictMode's double render, like the other windows' services.
 const servicesByBridge = new WeakMap<InfinityBridge, WidgetServices>();
@@ -22,6 +24,7 @@ function servicesFor(bridge: InfinityBridge, initial: WidgetStateType): WidgetSe
 export function WidgetApp({ bridge, initial }: { bridge: InfinityBridge; initial: WidgetStateType }) {
   const [services] = useState(() => servicesFor(bridge, initial));
   const { window: state, pinSupported } = useStore(services.store);
+  useZoomKeys(useCallback((action: ZoomAction) => void bridge.window.zoom({ action }), [bridge]));
   return (
     <main className="widget-window" data-collapsed={state.collapsed ? 'true' : undefined}>
       <WidgetHeader

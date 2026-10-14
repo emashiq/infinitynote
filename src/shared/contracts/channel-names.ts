@@ -159,6 +159,21 @@ export const INVOKE_CHANNELS = [
   'lock:documentSetHello',
   'lock:documentRemove',
   'lock:documentActivity',
+  'window:zoom',
+  'ai:status',
+  'ai:acknowledge',
+  'ai:context',
+  'ai:pickFiles',
+  'ai:ask',
+  'ai:followUp',
+  'ai:wait',
+  'ai:stop',
+  'ai:thread',
+  'ai:deleteThread',
+  'ai:config',
+  'ai:setKey',
+  'ai:cliPath',
+  'ai:test',
 ] as const;
 
 export const EVENT_CHANNELS = [
@@ -177,6 +192,7 @@ export const EVENT_CHANNELS = [
   'collab:status',
   'sticky:lockState',
   'lock:documentLocked',
+  'window:zoomChanged',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

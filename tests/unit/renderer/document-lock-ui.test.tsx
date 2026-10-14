@@ -36,6 +36,8 @@ async function lockWithDialog() {
 describe('locked documents in the window (D-185)', () => {
   it('Lock… in the tree locks a document: the tab shows the lock screen, tree and tab show a lock, unlock shows the viewer', async () => {
     const fake = createFakeBridge();
+    // The viewers of these documents need Office documents on (off by default, D-187).
+    fake.data.settings.set('documents.office', true);
     const deck = fake.addDocument({ projectId: null, folderId: null, title: 'Board deck', kind: 'pptx', storage: 'managed', sizeBytes: 2048 });
     const { el } = await dom.mount(fake);
     await dom.click(el.querySelector(`[id="tree-document:${deck.id}"]`));
@@ -82,6 +84,8 @@ describe('locked documents in the window (D-185)', () => {
 
   it('a linked document is copied in to be locked; one over the copy limit is explained instead', async () => {
     const fake = createFakeBridge();
+    // The viewers of these documents need Office documents on (off by default, D-187).
+    fake.data.settings.set('documents.office', true);
     const at = { projectId: null, folderId: null };
     const paper = fake.addDocument({ ...at, title: 'Paper', kind: 'pptx', storage: 'linked', sizeBytes: 1000 }, { path: '/home/me/Paper.pptx', state: 'available', sizeBytes: 1000, modifiedAt: 1 });
     const scan = fake.addDocument({ ...at, title: 'Scan', kind: 'pdf', storage: 'linked', sizeBytes: 300 * 1024 * 1024 }, { path: '/home/me/Scan.pdf', state: 'available', sizeBytes: 1, modifiedAt: 1 });
@@ -109,6 +113,8 @@ describe('locked documents in the window (D-185)', () => {
 
   it('Lock settings of a document change the password and remove the lock', async () => {
     const fake = createFakeBridge();
+    // The viewers of these documents need Office documents on (off by default, D-187).
+    fake.data.settings.set('documents.office', true);
     const sheet = fake.addDocument({ projectId: null, folderId: null, title: 'Salaries', kind: 'xlsx', storage: 'managed', sizeBytes: 4096 });
     await fake.bridge.lock.documentSet({ documentId: sheet.id, password: PASSWORD, hello: false, acknowledged: true, copyIn: false });
     const { el } = await dom.mount(fake);

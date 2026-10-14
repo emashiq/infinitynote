@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { CommentAnchor } from '../../shared/comments/anchors';
 import { LinkedPath } from '../../shared/contracts/attachments';
-import { CommentTarget, MAX_COMMENT_CHARS, MAX_COMMENT_QUOTE, MAX_COMMENTS_PER_THREAD } from '../../shared/contracts/comments';
+import { MAX_AI_MESSAGE_CHARS } from '../../shared/ai/limits';
+import { AiMessageInfo, CommentTarget, MAX_COMMENT_QUOTE, MAX_COMMENTS_PER_THREAD, MessageRole, ThreadKind } from '../../shared/contracts/comments';
 import { maxBytes } from '../../shared/attachments/limits';
 import { DocumentKindSchema, HexColor, NoteColor } from '../../shared/contracts/hierarchy';
 import { MANAGED_DOCUMENT_MAX_MB } from '../../shared/documents/limits';
@@ -15,7 +16,8 @@ import { AppError } from '../services/app-error';
  * The portable export `*.infinityexport` (D-030, D-099): one `data.json` with the live projects, folders, notes (with
  * tags), reminders and the attachments the notes use, plus each attachment file, the links to files at their original
  * location (path, name and size only; the linked files are never in it, D-108), the live documents: managed ones with
- * their bytes, linked ones as a link (D-118), and the comment threads of those notes and documents (D-165). References travel inside the rich content as `noteRef` nodes and are
+ * their bytes, linked ones as a link (D-118), and the comment threads of those notes and documents (D-165), AI threads
+ * included (D-190; their messages' engine, model, file names and cost, never a session or key). References travel inside the rich content as `noteRef` nodes and are
  * re-indexed on import. Versions, drafts, trash, window state and settings are not
  * part of it (a backup keeps those).
  */
@@ -94,18 +96,31 @@ export const PortableDocument = z.strictObject({
     )
     .max(200_000)
     .optional(),
-  /** Added in 0.3.0 (format 2, D-165): comment threads of the notes and documents above. */
+  /**
+   * Added in 0.3.0 (format 2, D-165): comment threads of the notes and documents above. From 0.4.0 (D-190) an AI thread
+   * has `kind: 'ai'` and its messages a `role` and `ai` details; they are written only where they differ from a
+   * comment's, so an export without AI threads stays readable by 0.3.x.
+   */
   comments: z
     .array(
       z.strictObject({
         id: Uuid,
+        kind: ThreadKind.optional(),
         target: CommentTarget,
         anchor: CommentAnchor,
         quote: z.string().max(MAX_COMMENT_QUOTE),
         resolvedAt: z.number().int().nullable(),
         createdAt: z.number().int(),
         comments: z
-          .array(z.strictObject({ body: z.string().min(1).max(MAX_COMMENT_CHARS), createdAt: z.number().int(), updatedAt: z.number().int() }))
+          .array(
+            z.strictObject({
+              role: MessageRole.optional(),
+              body: z.string().min(1).max(MAX_AI_MESSAGE_CHARS),
+              ai: AiMessageInfo.optional(),
+              createdAt: z.number().int(),
+              updatedAt: z.number().int(),
+            }),
+          )
           .min(1)
           .max(MAX_COMMENTS_PER_THREAD),
       }),

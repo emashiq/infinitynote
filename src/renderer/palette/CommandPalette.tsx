@@ -3,7 +3,7 @@ import type { HomeScopeType } from '../../shared/contracts/home';
 import { SEARCH_DEBOUNCE_MS, type DocumentSearchResultType, type SearchResultType } from '../../shared/contracts/search';
 import type { TagInfoType } from '../../shared/contracts/tags';
 import { displayTitle } from '../../shared/names';
-import { filterActions, PALETTE_ACTIONS, type PaletteAction } from '../state/palette-actions';
+import { filterActions, paletteActions, type PaletteAction } from '../state/palette-actions';
 import { useServices, useStore } from '../state/use-store';
 import { openModal, useReturnFocus } from '../ui/Dialog';
 import { DocumentKindIcon } from '../ui/DocumentKindIcon';
@@ -34,7 +34,8 @@ export function CommandPalette() {
  * tag filters. Searches are debounced and capped by main, so the list never holds more than 50 notes.
  */
 function PaletteDialog() {
-  const { ui, bridge, commands, tabs, tree } = useServices();
+  const { ui, bridge, commands, tabs, tree, features: featureStore } = useServices();
+  const features = useStore(featureStore);
   const [query, setQuery] = useState(() => ui.store.getState().paletteQuery);
   const [scope, setScope] = useState<HomeScopeType>(ALL);
   const [tag, setTag] = useState('');
@@ -85,7 +86,7 @@ function PaletteDialog() {
           ...quick.pinned.map((note): Option => ({ kind: 'quick', group: 'Pinned', note })),
           ...quick.favorites.map((note): Option => ({ kind: 'quick', group: 'Favorites', note })),
         ]),
-    ...filterActions(PALETTE_ACTIONS, query).map((action): Option => ({ kind: 'action', action })),
+    ...filterActions(paletteActions(features), query).map((action): Option => ({ kind: 'action', action })),
   ];
   const current = Math.min(active, Math.max(0, options.length - 1));
 

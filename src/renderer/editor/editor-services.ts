@@ -4,6 +4,7 @@ import type { DocumentTargetType } from '../../shared/documents/targets';
 import type { SuggestionContext } from '../reminders/suggestion-context';
 import type { AddAction } from '../../shared/attachments/file-choice';
 import type { AttachmentPrefs } from './uploader';
+import type { MathSettings } from './calc/calc-results';
 
 /**
  * What the editor needs from the app; passed in so the same editor serves tabs and (Phase 04) stickies. Must be a
@@ -17,12 +18,23 @@ export interface EditorServices {
   rememberAddFiles?: (action: AddAction) => void;
   /** Reminder suggestions: main's reference context, dismissals and the suggestion settings (D-091). */
   suggestions: SuggestionContext;
+  /** Math results (D-188): the setting and the calculator's clock and date order, read at each use. */
+  mathResults: () => MathSettings;
   /** Note references (main window only): live titles for the chips and opening a reference in a tab. */
   references?: ReferenceHost;
   /** "Open in Infinity Notes" for attached and linked files of a supported kind (main window only, D-118). */
   documents?: DocumentHost;
   /** Comments on the selected text (main window only, D-165). */
   comments?: CommentStarter;
+  /** AI actions on the selected text (D-190): the main window and stickies. */
+  ai?: AiStarter;
+}
+
+/** Starts an AI action on the editor's selection: the Ask AI panel opens for it. */
+export interface AiStarter {
+  /** Whether AI actions are on (Settings → AI); the toolbar and the note menu offer Ask AI only then. */
+  enabled(): boolean;
+  start(): void;
 }
 
 /** Starts a comment on the active note's selection: the Comments section opens with a new comment. */
@@ -32,6 +44,8 @@ export interface CommentStarter {
 
 /** Opens a note's attached or linked file as a document in a tab (D-118). */
 export interface DocumentHost {
+  /** Whether a file of this name opens as a document: its kind, and for Office kinds the setting (D-187). */
+  opens(name: string): boolean;
   openAttachment(noteId: string, attachmentId: string): void;
   openLink(noteId: string, linkId: string): void;
 }

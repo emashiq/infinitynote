@@ -37,13 +37,17 @@
         <ul>
           <li><a href="#getting-started">Getting started</a></li>
           <li><a href="#window">The window</a></li>
+          <li><a href="#zoom">Zoom</a></li>
           <li><a href="#notes">Notes and projects</a></li>
           <li><a href="#tabs">Tabs</a></li>
           <li><a href="#formatting">Formatting</a></li>
           <li><a href="#tables">Tables</a></li>
           <li><a href="#diagrams">Code, diagrams and math</a></li>
+          <li><a href="#math-results">Math results</a></li>
+          <li><a href="#ai-actions">AI actions</a></li>
           <li><a href="#files">Files</a></li>
           <li><a href="#documents">Documents</a></li>
+          <li><a href="#office-documents">Office documents setting</a></li>
           <li><a href="#pdf">PDF documents</a></li>
           <li><a href="#spreadsheets">Spreadsheets</a></li>
           <li><a href="#word">Word documents</a></li>
@@ -118,6 +122,33 @@
             </li>
             <li>
               <strong>Theme:</strong> View &gt; Light, Dark or System theme.
+            </li>
+          </ul>
+        </section>
+
+        <section id="zoom">
+          <h2>Zoom</h2>
+          <p>
+            Make a window bigger or smaller, as in a browser: <kbd>Ctrl</kbd>+<kbd>=</kbd> (or
+            <kbd>Ctrl</kbd>+<kbd>+</kbd>, or <kbd>Ctrl</kbd> and the mouse wheel up) zooms in,
+            <kbd>Ctrl</kbd>+<kbd>-</kbd> (or the wheel down) zooms out and
+            <kbd>Ctrl</kbd>+<kbd>0</kbd> goes back to actual size, in steps from 50 to 300%.
+            <strong>View</strong> and the command palette have <strong>Zoom in</strong>,
+            <strong>Zoom out</strong> and <strong>Actual size</strong> too.
+          </p>
+          <ul>
+            <li>
+              The main window, the stickies and the reminder widget each keep their own zoom (all
+              stickies share one), also after a restart.
+            </li>
+            <li>
+              When the main window is not at 100%, the top bar shows the zoom, for example
+              <strong>125%</strong>; click it for actual size.
+            </li>
+            <li>
+              Over a PDF, Word document, presentation or web page, the keys and the wheel zoom that
+              page instead of the window, as a browser does with a PDF. A web page has its own zoom
+              buttons.
             </li>
           </ul>
         </section>
@@ -268,6 +299,81 @@
           </p>
         </section>
 
+        <section id="math-results">
+          <h2>Math results</h2>
+          <p>
+            End a calculation with <code>=</code> in a note or a sticky and its result appears after
+            the cursor in light gray. <kbd>Tab</kbd> or <kbd>Enter</kbd> inserts it,
+            <kbd>Esc</kbd> dismisses it, and typing on just goes on.
+          </p>
+          <pre><code>7+5=12
+Lunch = 25
+Dinner = 40
+Lunch + Dinner = 65
+20% of 50 = 10
+25-12-2026 - today = 72 days
+today + 3 weeks = Nov 4, 2026</code></pre>
+          <ul>
+            <li>
+              <strong>Numbers:</strong> <code>+ - * / ^</code> (also <code>×</code> and
+              <code>÷</code>), <code>mod</code>, parentheses, <code>sqrt abs round floor ceil min max
+              log ln sin cos tan</code> (angles in degrees), <code>pi</code> and <code>e</code>.
+              Percentages: <code>50 + 10%</code> is 55, <code>50 - 10%</code> is 45.
+            </li>
+            <li>
+              <strong>Variables:</strong> <code>Lunch = 25</code> defines <code>Lunch</code> for the
+              lines below. Change it and the results that use it are updated.
+            </li>
+            <li>
+              <strong>Dates:</strong> <code>today</code>, <code>tomorrow</code>,
+              <code>yesterday</code>, <code>now</code>, dates such as <code>25-12-2026</code>,
+              <code>2026-12-25</code>, <code>Dec 25 2026</code> or <code>Dec 25</code>, and durations
+              such as <code>3 days</code>, <code>2 weeks</code>, <code>5 months</code> or
+              <code>30 min</code>. Subtracting dates gives days; <code>… in weeks</code> converts.
+              The order of day and month follows your computer's regional settings when it could be
+              either way.
+            </li>
+            <li>
+              Code blocks, inline code, diagrams and formulas are left alone, and a plain number or
+              word before <code>=</code> asks for nothing.
+            </li>
+            <li>
+              Settings &gt; Notes and attachments &gt; <strong>Math results</strong>:
+              <strong>Suggest results</strong> (the default), <strong>Insert results
+              automatically</strong> or <strong>Off</strong>.
+            </li>
+          </ul>
+        </section>
+
+        <section id="ai-actions">
+          <h2>AI actions</h2>
+          <p>
+            Ask Claude or OpenAI about a part of a note, sticky, PDF or web page and keep the answer in a
+            thread on that part. AI actions are off until you turn them on in Settings &gt; <strong>AI</strong>;
+            nothing is sent anywhere until you run an action, and locked notes and documents are never sent.
+          </p>
+          <ul>
+            <li>
+              <strong>Engines:</strong> Claude Code or OpenAI Codex installed on your computer (headless, in an
+              empty private folder holding only copies of the files you attach; Claude Code may read only those,
+              Codex may not change files but can read others your account can read, and both keep their own
+              conversation records in <code>~/.claude</code> and <code>~/.codex</code>), or the Anthropic or
+              OpenAI API with your own key, encrypted by your operating system and never in backups or exports.
+              <strong>Test</strong> shows the tool's version or whether the key works.
+            </li>
+            <li>
+              Select text and choose <strong>Ask AI</strong> in the formatting toolbar or the note menu, or press
+              <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>. Pick <strong>Analyze</strong>, <strong>Summarize</strong>,
+              <strong>Explain</strong>, <strong>Action items</strong> or <strong>Find problems</strong>, or ask your own
+              question; attach the whole note, its files or files from your computer.
+            </li>
+            <li>
+              The answer is an AI thread in the Comments section: ask follow-up questions, <strong>Insert below</strong>,
+              <strong>Replace selection</strong>, <strong>Copy</strong>, <strong>Stop</strong> or <strong>Delete thread</strong>.
+            </li>
+          </ul>
+        </section>
+
         <section id="files">
           <h2>Files</h2>
           <p>
@@ -324,7 +430,8 @@
             <li>
               <strong>Start a blank one:</strong> <strong>New Word document</strong>,
               <strong>New spreadsheet</strong> or <strong>New presentation</strong> in the File menu,
-              the command palette or the tree's right-click menu.
+              the command palette or the tree's right-click menu (with
+              <a href="#office-documents">Office documents</a> on).
             </li>
             <li>
               <strong>Saving:</strong> edits stay in the tab until you <strong>Save</strong>
@@ -342,9 +449,33 @@
             </li>
           </ul>
           <p class="note">
-            Documents cannot be locked, and cannot be printed from the app yet: use
-            <strong>Export a copy…</strong> and print it from another program.
+            Documents cannot be printed from the app yet: use <strong>Export a copy…</strong> and
+            print it from another program.
           </p>
+          <h3 id="office-documents">Office documents setting</h3>
+          <p>
+            Word documents, Excel and CSV spreadsheets and PowerPoint presentations open and are
+            edited in Infinity Notes only when <strong>Office documents (Word, spreadsheets,
+            PowerPoint)</strong> is on in Settings &gt; Documents. It is off unless you turn it on,
+            also after an update. While it is off:
+          </p>
+          <ul>
+            <li>
+              There is no <strong>New Word document</strong>, <strong>New spreadsheet</strong> or
+              <strong>New presentation</strong>, and <strong>Import file…</strong> adds PDFs and web
+              pages only.
+            </li>
+            <li>
+              These files stay files in your notes, copied or linked as usual and opened in your
+              system app.
+            </li>
+            <li>
+              Documents of these kinds you already have stay in place, in search, backups and
+              exports. Opening one offers <strong>Open with the system app</strong>, <strong>Save a
+              copy…</strong> and <strong>Turn on in Settings</strong>; nothing is deleted.
+            </li>
+            <li>PDFs and web pages are not affected.</li>
+          </ul>
         </section>
 
         <section id="pdf">
@@ -872,6 +1003,10 @@
                   <td class="keys"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd></td>
                 </tr>
                 <tr>
+                  <td>Ask AI about selected text (when AI actions are on)</td>
+                  <td class="keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd></td>
+                </tr>
+                <tr>
                   <td>Save a document</td>
                   <td class="keys"><kbd>Ctrl</kbd>+<kbd>S</kbd></td>
                 </tr>
@@ -931,6 +1066,17 @@
                   <td class="keys">
                     <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>
                   </td>
+                </tr>
+                <tr>
+                  <td>Zoom in / out / actual size</td>
+                  <td class="keys">
+                    <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> /
+                    <kbd>Ctrl</kbd>+<kbd>0</kbd>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Insert a suggested math result</td>
+                  <td class="keys"><kbd>Tab</kbd> or <kbd>Enter</kbd></td>
                 </tr>
                 <tr>
                   <td>Menus</td>

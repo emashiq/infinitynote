@@ -2,7 +2,16 @@ import type { CommentAnchorType } from '../../shared/comments/anchors';
 import type { InfinityBridge } from '../../shared/contracts/bridge';
 import type { CommentTargetType, CommentThreadDtoType } from '../../shared/contracts/comments';
 import type { Result } from '../../shared/contracts/envelope';
+import { askAiProblem, type AiChoices, type AnswerPlacement } from '../ai/ai-request';
 import { createStore, failOutcome, okOutcome, type Outcome, type Store } from '../state/store';
+
+/** Where a new comment or AI action goes: the anchor, the text the thread shows, and the selected text an action sends. */
+export interface AnchorChoice {
+  anchor: CommentAnchorType;
+  quote: string;
+  /** The selection as an AI action sends it (D-190), with its lines; the quote when absent, '' for a place without text. */
+  text?: string;
+}
 
 /**
  * What the open item's view does for its comments (D-165): a note tab marks and highlights text, a document viewer
@@ -10,8 +19,8 @@ import { createStore, failOutcome, okOutcome, type Outcome, type Store } from '.
  */
 export interface CommentAnchorHost {
   readonly target: CommentTargetType;
-  /** The anchor and quote of a new comment at the current selection or place, or why there is none. */
-  begin(): { anchor: CommentAnchorType; quote: string } | { error: string };
+  /** The anchor and quote of a new comment or AI action at the current selection or place, or why there is none. */
+  begin(): AnchorChoice | { error: string };
   /** The new thread was saved: the view anchors it (a note marks the text). */
   attach(threadId: string): void;
   /** No comment was written: the view forgets the place. */
@@ -26,9 +35,13 @@ export interface CommentAnchorHost {
   orphans(threads: readonly CommentThreadDtoType[]): ReadonlySet<string> | null;
   /** Called when `orphans` may have changed. */
   subscribe(listener: () => void): () => void;
+  /** Puts an AI answer into the item at the thread's anchor (D-190); absent where the item is not editable here. */
+  placeAnswer?(threadId: string, text: string, placement: AnswerPlacement): boolean;
 }
 
 export type CommentFilter = 'open' | 'resolved';
+/** Which threads the sidebar lists (D-190): all, comments only, or AI threads only. */
+export type ThreadKindFilter = 'all' | 'comment' | 'ai';
 
 export interface CommentsState {
   target: CommentTargetType | null;
@@ -36,24 +49,41 @@ export interface CommentsState {
   message: string | null;
   threads: readonly CommentThreadDtoType[];
   filter: CommentFilter;
+  kind: ThreadKindFilter;
   /** A new comment being written, with its anchor and quote; `seq` grows with each start (the field takes the focus). */
   draft: { anchor: CommentAnchorType; quote: string; seq: number } | null;
+  /** An AI action being chosen for a selected part (the Ask AI panel is open; D-190). */
+  aiDraft: AnchorChoice | null;
   activeThreadId: string | null;
   orphans: ReadonlySet<string>;
 }
 
-const INITIAL: CommentsState = { target: null, status: 'none', message: null, threads: [], filter: 'open', draft: null, activeThreadId: null, orphans: new Set() };
+const INITIAL: CommentsState = {
+  target: null,
+  status: 'none',
+  message: null,
+  threads: [],
+  filter: 'open',
+  kind: 'all',
+  draft: null,
+  aiDraft: null,
+  activeThreadId: null,
+  orphans: new Set(),
+};
 
 const sameTarget = (a: CommentTargetType | null, b: CommentTargetType | null) => a !== null && b !== null && a.kind === b.kind && a.id === b.id;
 
 export interface CommentsStoreDeps {
-  bridge: Pick<InfinityBridge, 'comments'>;
+  bridge: Pick<InfinityBridge, 'comments' | 'ai'>;
   notify: (message: string) => void;
   /** Shows the Details panel, where the comments are. */
   showPanel: () => void;
 }
 
-/** The comments of the item shown in the active tab (D-165): the sidebar's state and every comment action. */
+/**
+ * The comments of the item shown in the active tab (D-165): the sidebar's state and every comment action, AI threads
+ * and actions included (D-190). A running AI thread is followed until its answer is in.
+ */
 export class CommentsStore {
   readonly store: Store<CommentsState> = createStore<CommentsState>(INITIAL);
   private host: CommentAnchorHost | null = null;
@@ -67,8 +97,9 @@ export class CommentsStore {
     this.unregisterHost();
     this.host = host;
     this.unsubscribeHost = host.subscribe(() => this.refreshOrphans());
-    const keepFilter = sameTarget(this.store.getState().target, host.target) ? this.store.getState().filter : 'open';
-    this.store.setState({ ...INITIAL, target: host.target, status: 'loading', filter: keepFilter });
+    const same = sameTarget(this.store.getState().target, host.target);
+    const { filter, kind } = this.store.getState();
+    this.store.setState({ ...INITIAL, target: host.target, status: 'loading', filter: same ? filter : 'open', kind: same ? kind : 'all' });
     void this.load();
     return () => {
       if (this.host !== host) return;
@@ -78,7 +109,8 @@ export class CommentsStore {
   }
 
   private unregisterHost(): void {
-    if (this.host && this.store.getState().draft) this.host.cancel();
+    const { draft, aiDraft } = this.store.getState();
+    if (this.host && (draft || aiDraft)) this.host.cancel();
     this.unsubscribeHost?.();
     this.unsubscribeHost = null;
     this.host = null;
@@ -101,10 +133,15 @@ export class CommentsStore {
     }
     this.setThreads(res.data.threads);
     this.store.setState({ status: 'ready', message: null });
+    for (const thread of res.data.threads) this.follow(thread);
   }
 
   setFilter(filter: CommentFilter): void {
     this.store.setState({ filter });
+  }
+
+  setKind(kind: ThreadKindFilter): void {
+    this.store.setState({ kind });
   }
 
   /** "Comment" (bubble, Ctrl+Alt+M, palette): opens the composer for the selection, with the panel shown. */
@@ -156,7 +193,8 @@ export class CommentsStore {
   }
 
   async deleteThread(threadId: string): Promise<Outcome> {
-    const res = await this.deps.bridge.comments.deleteThread({ threadId });
+    const ai = this.store.getState().threads.find((t) => t.id === threadId)?.kind === 'ai';
+    const res = ai ? await this.deps.bridge.ai.deleteThread({ threadId }) : await this.deps.bridge.comments.deleteThread({ threadId });
     if (!res.ok) return failOutcome(res.error.code, res.error.message);
     this.host?.detach(threadId);
     const s = this.store.getState();
@@ -171,6 +209,73 @@ export class CommentsStore {
     this.store.setState({ activeThreadId: threadId });
     this.host?.show(this.store.getState().threads, threadId);
     this.host?.reveal(thread);
+  }
+
+  // AI actions (D-190) ---------------------------------------------------------------------------------------------------
+
+  /** "Ask AI…" (bubble, note menu, palette, Ctrl+Shift+I): opens the Ask AI panel for the selection, with the panel shown. */
+  startAi(): void {
+    const host = this.host;
+    if (!host) return;
+    const begun = host.begin();
+    if ('error' in begun) {
+      this.deps.notify(askAiProblem(begun.error));
+      return;
+    }
+    this.deps.showPanel();
+    this.store.setState({ aiDraft: begun });
+  }
+
+  cancelAi(): void {
+    if (!this.store.getState().aiDraft) return;
+    this.host?.cancel();
+    this.store.setState({ aiDraft: null });
+  }
+
+  /** Runs the chosen action: the thread is anchored and selected at once, and its answer follows. */
+  async submitAi(choices: AiChoices): Promise<Outcome> {
+    const { aiDraft, target } = this.store.getState();
+    const host = this.host;
+    if (!aiDraft || !target || !host) return failOutcome('NOT_FOUND', 'Nothing to ask about');
+    const res = await this.deps.bridge.ai.ask({ target, anchor: aiDraft.anchor, quote: aiDraft.quote, selection: aiDraft.text ?? aiDraft.quote, ...choices });
+    if (!res.ok) return failOutcome(res.error.code, res.error.message);
+    if (this.host !== host) return okOutcome(undefined);
+    host.attach(res.data.thread.id);
+    this.store.setState({ aiDraft: null, filter: 'open' });
+    this.upsert(res.data.thread, true);
+    this.follow(res.data.thread);
+    return okOutcome(undefined);
+  }
+
+  /** A follow-up question; it continues the thread's session where the engine can. */
+  async followUpAi(threadId: string, prompt: string): Promise<Outcome> {
+    const res = await this.deps.bridge.ai.followUp({ threadId, prompt });
+    if (!res.ok) return failOutcome(res.error.code, res.error.message);
+    this.upsert(res.data.thread, false);
+    this.follow(res.data.thread);
+    return okOutcome(undefined);
+  }
+
+  async stopAi(threadId: string): Promise<void> {
+    await this.deps.bridge.ai.stop({ threadId });
+  }
+
+  /** Whether the open item takes answers into its text (an editable note). */
+  canPlaceAnswers(): boolean {
+    return this.host?.placeAnswer !== undefined;
+  }
+
+  /** "Insert below" or "Replace selection": the answer goes into the note at the thread's text. */
+  placeAnswer(threadId: string, text: string, placement: AnswerPlacement): boolean {
+    return this.host?.placeAnswer?.(threadId, text, placement) ?? false;
+  }
+
+  /** Waits for a running thread's answer and shows the thread as it then is. */
+  private follow(thread: CommentThreadDtoType): void {
+    if (!thread.running) return;
+    void this.deps.bridge.ai.wait({ threadId: thread.id }).then((res) => {
+      if (res.ok) this.upsert(res.data.thread, false);
+    });
   }
 
   private async change(call: Promise<Result<{ thread: CommentThreadDtoType }>>): Promise<Outcome> {

@@ -3,6 +3,7 @@ import { ARCHIVE_FORMAT_VERSION, EXPORT_FORMAT, type PortableCountsType } from '
 import { HexColor, NoteColor } from '../../shared/contracts/hierarchy';
 import { CommentAnchor } from '../../shared/comments/anchors';
 import type { Db } from '../db/driver';
+import { aiMessageInfo, parseAiMeta } from '../ai/ai-meta';
 import { CommentsRepo } from '../db/repositories/comments-repo';
 import { HierarchyRepo } from '../db/repositories/hierarchy-repo';
 import { LinkedFilesRepo } from '../db/repositories/linked-files-repo';
@@ -138,7 +139,10 @@ export async function writePortableExport(deps: PortableExportDeps, destFile: st
   return { counts, skippedLocked };
 }
 
-/** The threads of exportable items with their comments, oldest first (D-165); every one of them is in the clear. */
+/**
+ * The threads of exportable items with their comments, oldest first (D-165); every one of them is in the clear. AI
+ * threads and messages carry their kind, role and shown details (D-190); the session to resume stays behind.
+ */
 function exportableThreads(db: Db): PortableThread[] {
   const repo = new CommentsRepo(db);
   const threads = repo.exportableThreads();
@@ -146,13 +150,25 @@ function exportableThreads(db: Db): PortableThread[] {
   for (const c of repo.commentsOf(threads.map((t) => t.id))) {
     if (c.body === null) continue;
     const list = comments.get(c.thread_id) ?? [];
-    list.push({ body: c.body, createdAt: c.created_at, updatedAt: c.updated_at });
+    const meta = parseAiMeta(c.meta);
+    list.push({ ...(c.role === 'user' ? {} : { role: c.role }), body: c.body, ...(meta ? { ai: aiMessageInfo(meta) } : {}), createdAt: c.created_at, updatedAt: c.updated_at });
     comments.set(c.thread_id, list);
   }
   return threads.flatMap((t) => {
     const anchor = CommentAnchor.safeParse(JSON.parse(t.anchor_json));
     const list = comments.get(t.id);
     if (!anchor.success || !list || t.quote === null) return [];
-    return [{ id: t.id, target: { kind: t.target_kind, id: t.target_id }, anchor: anchor.data, quote: t.quote, resolvedAt: t.resolved_at, createdAt: t.created_at, comments: list }];
+    return [
+      {
+        id: t.id,
+        ...(t.kind === 'ai' ? { kind: t.kind } : {}),
+        target: { kind: t.target_kind, id: t.target_id },
+        anchor: anchor.data,
+        quote: t.quote,
+        resolvedAt: t.resolved_at,
+        createdAt: t.created_at,
+        comments: list,
+      },
+    ];
   });
 }

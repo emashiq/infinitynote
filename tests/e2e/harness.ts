@@ -30,9 +30,10 @@ export interface Harness {
 
 /**
  * Registers per-test userData and teardown hooks; call at the top level of a spec file. With `failOnMainErrors`,
- * a test fails when main logged an uncaught exception or an unhandled rejection during it.
+ * a test fails when main logged an uncaught exception or an unhandled rejection during it. `settings` are public
+ * settings each start sets through the bridge before the test goes on (for example Office documents, off by default).
  */
-export function useApp(options: { failOnMainErrors?: boolean } = {}): Harness {
+export function useApp(options: { failOnMainErrors?: boolean; settings?: Record<string, unknown> } = {}): Harness {
   let userData = '';
   let launched: Launched | null = null;
 
@@ -61,6 +62,10 @@ export function useApp(options: { failOnMainErrors?: boolean } = {}): Harness {
     },
     async start(extraEnv) {
       launched = await launchApp({ userDataDir: userData, extraEnv });
+      for (const [key, value] of Object.entries(options.settings ?? {})) {
+        const res = await launched.page.evaluate(([k, v]) => window.infinity.settings.set({ key: k, value: v } as never), [key, value] as const);
+        if (!res.ok) throw new Error(`settings.set ${key} failed: ${res.error.message}`);
+      }
       return launched;
     },
     async restart(extraEnv) {

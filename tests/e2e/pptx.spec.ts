@@ -12,7 +12,8 @@ import { activate, dialogByName, tabItem } from './ui';
  * release 0.3.0. Slides are SVG images; each drawing on the shown slide has a frame (`[data-shape-id]`) to select,
  * drag and resize, and the slide itself takes the keyboard.
  */
-const h = useApp({ failOnMainErrors: true });
+// Word, spreadsheet and PowerPoint documents are off by default (D-187); these tests use them.
+const h = useApp({ failOnMainErrors: true, settings: { 'documents.office': true } });
 const FIXTURES = path.resolve('tests/fixtures/documents');
 
 let dir = '';

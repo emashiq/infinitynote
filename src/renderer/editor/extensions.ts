@@ -3,12 +3,14 @@ import { UniqueID } from '@tiptap/extension-unique-id';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { Placeholder } from '@tiptap/extensions';
 import StarterKit from '@tiptap/starter-kit';
+import { CalcResultMark } from '../../shared/editor/calc-result-mark';
 import { CommentMark } from '../../shared/editor/comment-mark';
 import { BLOCK_ID_TYPES } from '../../shared/editor/doc-schema';
 import { PLAIN_STARTER_KIT, RICH_STARTER_KIT } from '../../shared/editor/schema';
 import { TABLE_EXTENSIONS } from '../../shared/editor/tables';
 import { TEXT_STYLE_EXTENSIONS } from '../../shared/editor/text-style';
 import { createBlockIdGuard, isPasteOrDrop } from './block-id-guard';
+import { CalcResults, type MathSettings } from './calc/calc-results';
 import { CodeBlock } from './code/code-block';
 import { CommentMarks } from './comments/comment-marks';
 import { isRemote } from './content';
@@ -38,6 +40,7 @@ const newBlockId = () => crypto.randomUUID();
  * and the wrapping of very long unbroken runs (F-03-1); the last three are decorations only. Note references and file hand-off (D-098) act only where the window
  * provides them. The schema is the shared one main applies live-sync steps with (D-103); another view's steps already
  * carry their block IDs. Comment threads are marks in the text, highlighted only where the window lists them (D-165).
+ * Lines ending in "=" get their math result (D-188).
  */
 export function richExtensions(deps: {
   uploader: AttachmentUploader;
@@ -49,6 +52,8 @@ export function richExtensions(deps: {
   requestLink: (request: LinkRequest) => boolean;
   /** Starts a comment on the selection (Ctrl+Alt+M, D-165); null where comments are not offered. */
   startComment: (() => boolean) | null;
+  /** Math results (D-188): the setting and the calculator's context. */
+  mathResults: () => MathSettings;
 }): Extensions {
   return [
     // The code block is StarterKit's node with highlighting and the diagram view (D-158, D-159).
@@ -69,6 +74,8 @@ export function richExtensions(deps: {
     ...TEXT_STYLE_EXTENSIONS,
     CommentMark,
     CommentMarks.configure({ start: deps.startComment }),
+    CalcResultMark,
+    CalcResults.configure({ settings: deps.mathResults }),
     // Pasted and dropped slices already carry fresh IDs (BlockIdGuard); UniqueID's pass over them is quadratic (QA-2).
     UniqueID.configure({ types: [...BLOCK_ID_TYPES], generateID: newBlockId, filterTransaction: (tr) => !isPasteOrDrop(tr) && !isRemote(tr) }),
     createBlockIdGuard(newBlockId),

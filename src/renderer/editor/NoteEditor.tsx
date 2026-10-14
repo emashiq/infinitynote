@@ -143,7 +143,7 @@ export function NoteEditor(props: NoteEditorProps) {
       files: {
         open: (attachmentId) => void settle(() => bridge.attachment.open({ noteId: host.noteId, attachmentId })),
         showInFolder: (attachmentId) => void settle(() => bridge.attachment.showInFolder({ noteId: host.noteId, attachmentId })),
-        ...(documents ? { openInApp: (attachmentId: string) => void host.flush().then(() => documents.openAttachment(host.noteId, attachmentId)) } : {}),
+        ...(documents ? { inApp: { opens: documents.opens, open: (attachmentId: string) => void host.flush().then(() => documents.openAttachment(host.noteId, attachmentId)) } } : {}),
       },
       links: {
         status: async (linkId) => {
@@ -154,7 +154,7 @@ export function NoteEditor(props: NoteEditorProps) {
         showInFolder: async (linkId) => (await settle(() => bridge.fileLink.showInFolder(link(linkId)))) !== null,
         copyIn: async (linkId) => (await settle(() => bridge.fileLink.copyIn(link(linkId))))?.attachment ?? null,
         copyLimitBytes: () => maxBytes(services.attachmentPrefs().documentMaxMb),
-        ...(documents ? { openInApp: (linkId: string) => void host.flush().then(() => documents.openLink(host.noteId, linkId)) } : {}),
+        ...(documents ? { inApp: { opens: documents.opens, open: (linkId: string) => void host.flush().then(() => documents.openLink(host.noteId, linkId)) } } : {}),
       },
     };
   });
@@ -196,6 +196,7 @@ export function NoteEditor(props: NoteEditorProps) {
                 return true;
               },
               startComment,
+              mathResults: services.mathResults,
             })
           : plainExtensions()),
         collabSync(props.sync.version, props.sync.clientID),
@@ -479,6 +480,7 @@ export function NoteEditor(props: NoteEditorProps) {
     openVersions: props.onOpenVersions,
     float: props.onFloat,
     lock: props.lock,
+    askAi: format === 'rich' && services.ai?.enabled() ? () => services.ai?.start() : undefined,
   };
   const slash = useSlashMenu(editor, insertItems(editor, actions), format === 'rich' && editable);
 
@@ -520,6 +522,7 @@ export function NoteEditor(props: NoteEditorProps) {
               editable={editable}
               request={bubbleRequest}
               onComment={startComment ? () => void startComment() : undefined}
+              ai={services.ai}
               link={{
                 edit: () => {
                   const href = selectedLinkHref(editor.state);

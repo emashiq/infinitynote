@@ -23,7 +23,7 @@ const input = { title: 'Have to submit this', zoneId: 'Asia/Dhaka', date: '2026-
 describe('Phase 06 catalogue (D-089)', () => {
   it('the four channels are appended after autostart:set in order, no new event', () => {
     expect(INVOKE_CHANNELS.slice(63, 68)).toEqual(['autostart:set', 'reminder:createFromSuggestion', 'reminder:updateFromSource', 'suggestion:dismiss', 'suggestion:listDismissed']);
-    expect(EVENT_CHANNELS).toHaveLength(15);
+    expect(EVENT_CHANNELS).toHaveLength(16);
   });
 
   it('stickies may add reminders and confirm or dismiss suggestions, never edit reminders; the widget gets nothing new', () => {
@@ -39,8 +39,12 @@ describe('Phase 06 catalogue (D-089)', () => {
     // The three lease channels gave way to the five live-sync channels (D-103); v0.2.0 adds sticky:setTextColor, and the
     // picker (attachment:pickFiles replacing attachment:importFromDialog, attachment:addPicked) and the five fileLink
     // channels (D-108).
-    // Plus the five lock channels of locked stickies (D-172).
-    expect(STICKY_ALLOWED_CHANNELS.size).toBe(51);
+    // Plus the five lock channels of locked stickies (D-172), window:zoom (D-186) and the ten AI channels about the
+    // sticky's own note (D-190); keys, programs and the engine test stay in the main window.
+    expect(STICKY_ALLOWED_CHANNELS.size).toBe(62);
+    for (const channel of ['ai:config', 'ai:setKey', 'ai:cliPath', 'ai:test'] as const) expect(isChannelAllowed('sticky', channel), channel).toBe(false);
+    for (const channel of ['ai:ask', 'ai:followUp', 'ai:wait', 'ai:deleteThread'] as const) expect(isChannelAllowed('sticky', channel), channel).toBe(true);
+    for (const channel of INVOKE_CHANNELS.filter((c) => c.startsWith('ai:'))) expect(isChannelAllowed('widget', channel), channel).toBe(false);
     expect([...WIDGET_ALLOWED_CHANNELS]).toEqual([
       'app:getInfo',
       'app:quit',
@@ -55,6 +59,8 @@ describe('Phase 06 catalogue (D-089)', () => {
       'widget:hide',
       'widget:setPinned',
       'widget:setCollapsed',
+      // Its own zoom (D-186).
+      'window:zoom',
     ]);
   });
 });

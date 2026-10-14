@@ -43,7 +43,7 @@ export class SealError extends Error {
 }
 
 /** What a sealed value is, bound into its tag: a value sealed for one purpose or note never opens as another. */
-export type SealPurpose = 'content' | 'draft' | 'key' | 'comment' | 'quote' | 'anchor' | 'document';
+export type SealPurpose = 'content' | 'draft' | 'key' | 'comment' | 'quote' | 'anchor' | 'document' | 'meta';
 
 const additionalData = (purpose: SealPurpose, noteId: string): Buffer => Buffer.from(`infinity-notes/v1/${purpose}/${noteId}`, 'utf8');
 

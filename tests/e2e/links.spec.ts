@@ -11,7 +11,8 @@ import { activeTabLabel, dialogByName, openByPalette } from './ui';
  * documents, "Create note", document backlinks. Written in Run 5; runs in WSL under Xvfb and on CI (never on the
  * Windows desktop).
  */
-const h = useApp({ failOnMainErrors: true });
+// Word, spreadsheet and PowerPoint documents are off by default (D-187); these tests use them.
+const h = useApp({ failOnMainErrors: true, settings: { 'documents.office': true } });
 
 async function createDeck(page: Page, title: string): Promise<string> {
   const res = await page.evaluate((t) => window.infinity.document.create({ location: { projectId: null, folderId: null }, kind: 'pptx', title: t }), title);

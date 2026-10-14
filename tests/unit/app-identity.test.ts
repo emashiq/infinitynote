@@ -64,7 +64,7 @@ describe('app identity (INF-FND-11)', () => {
   it('package.json identity and engines', () => {
     expect(pkg.name).toBe(NPM_NAME);
     expect(pkg.productName).toBe(PRODUCT_NAME);
-    expect(pkg.version).toBe('0.3.1');
+    expect(pkg.version).toBe('0.4.0');
     expect(pkg.version).toBe(APP_VERSION);
     expect(pkg.engines.node).toBe('>=24.15.0 <25');
     expect(pkg.main).toBe('out/main/index.js');
@@ -173,13 +173,24 @@ describe('app identity (INF-FND-11)', () => {
     const all = { ...pkg.dependencies, ...pkg.devDependencies };
     for (const name of [
       '@electron/rebuild', 'electron-rebuild', 'node-gyp', '@electron/remote', 'electron-log', 'prettier',
-      'sequelize', 'typeorm', 'prisma', 'knex', 'drizzle-orm', 'openai', '@anthropic-ai/sdk', 'axios', 'node-fetch',
+      'sequelize', 'typeorm', 'prisma', 'knex', 'drizzle-orm', 'axios', 'node-fetch',
       'mixpanel', '@sentry/electron', 'electron-updater',
     ]) {
       expect(Object.keys(all), name).not.toContain(name);
     }
     // yazl and yauzl write and read backup and export archives in main (Phase 08, pinned in DECISIONS).
     expect(Object.keys(pkg.dependencies).sort()).toEqual(['better-sqlite3', 'luxon', 'yauzl', 'yazl', 'zod']);
+  });
+
+  it('the AI SDKs of the opt-in AI actions are pinned and bundled into main, nowhere else (D-191)', () => {
+    expect(pkg.devDependencies['@anthropic-ai/sdk']).toBe('0.133.0');
+    expect(pkg.devDependencies.openai).toBe('7.33.0');
+    const files = fs
+      .readdirSync('src', { recursive: true, encoding: 'utf8' })
+      .filter((f) => /\.(ts|tsx)$/.test(f))
+      .map((f) => f.replace(/\\/g, '/'));
+    const users = files.filter((f) => /(from\s*|import\(\s*)['"](@anthropic-ai\/sdk|openai)['"]/.test(fs.readFileSync(`src/${f}`, 'utf8')));
+    expect(users.sort()).toEqual(['main/ai/engines/anthropic-api.ts', 'main/ai/engines/openai-api.ts']);
   });
 
   it('dependency versions are exact pins', () => {

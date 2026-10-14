@@ -23,6 +23,8 @@ export interface NoteActions {
   float?: () => void;
   /** "Lock note…", or "Lock now" and "Lock settings…" for a locked note (main window; D-111). */
   lock?: { locked: boolean; open(): void; lockNow(): void };
+  /** "Ask AI…" on the selection (rich notes while AI actions are on; D-190). */
+  askAi?: () => void;
 }
 
 /** Flattens menu groups, drawing a separator before every group but the first. */
@@ -34,7 +36,7 @@ function grouped(...groups: MenuItem[][]): MenuItem[] {
 
 /**
  * The editor's context menu (right-click, Shift+F10): the table actions when the cursor is in a table, insert,
- * reminders, then the note's own actions.
+ * reminders, Ask AI, then the note's own actions.
  */
 export function noteMenuItems(actions: NoteActions, opts: { format: 'rich' | 'plain'; editable: boolean; table?: MenuItem[] }): MenuItem[] {
   const off = !opts.editable;
@@ -61,7 +63,8 @@ export function noteMenuItems(actions: NoteActions, opts: { format: 'rich' | 'pl
     ...(actions.float ? [{ id: 'float', label: 'Float as sticky', onSelect: actions.float }] : []),
     ...lockItems(actions.lock),
   ];
-  return grouped(opts.table ?? [], insert, reminders, note);
+  const ai: MenuItem[] = actions.askAi ? [{ id: 'askAi', label: 'Ask AI…', onSelect: actions.askAi }] : [];
+  return grouped(opts.table ?? [], insert, reminders, ai, note);
 }
 
 function lockItems(lock: NoteActions['lock']): MenuItem[] {

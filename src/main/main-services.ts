@@ -4,6 +4,10 @@ import type { NoteRevisionEventType } from '../shared/contracts/notes';
 import type { ReminderChangedEventType } from '../shared/contracts/reminders';
 import type { RestoreOutcomeType } from '../shared/contracts/portability';
 import type { SettingsChangedPayload } from '../shared/contracts/settings';
+import { AiContext } from './ai/ai-context';
+import { AiKeys, type TextProtector } from './ai/ai-keys';
+import { AiService } from './ai/ai-service';
+import type { CliProcessDeps } from './ai/engines/cli-process';
 import { CommentService } from './comments/comment-service';
 import type { Db } from './db/driver';
 import { SettingsRepo } from './db/repositories/settings-repo';
@@ -63,6 +67,7 @@ import { WidgetStateStore } from './services/widget-state';
 import { TrashService } from './services/trash-service';
 import { VersionService } from './services/version-service';
 import type { HtmlPrinter } from './portability/note-document';
+import type { FetchLike } from './services/network-guard';
 
 /** Every main-process service that needs the database. Absent when the database failed to open. */
 export interface MainServices {
@@ -111,6 +116,8 @@ export interface MainServices {
   comments: CommentService;
   /** The relation graph of notes and documents (D-170). */
   graph: GraphService;
+  /** AI actions on a selected part (D-190). */
+  ai: AiService;
 }
 
 export interface MainServicesDeps {
@@ -168,6 +175,18 @@ export interface MainServicesDeps {
   pdfText: PdfTextWorkerOptions;
   /** Reads and writes workbooks: the workbook worker in the app (D-134). */
   workbooks: WorkbookConverter;
+  /** AI actions (D-190): where keys and working folders are, the OS encryption of keys, and test transports. */
+  ai: {
+    /** `<userData>/ai-keys.json`, outside the data folder (never in backups). */
+    keysFile: string;
+    /** `<userData>/ai-work`: the command-line tools' working folders (D-195); what an earlier run left is removed here. */
+    workRoot: string;
+    protector: TextProtector | null;
+    processes?: CliProcessDeps;
+    apiFetch?: FetchLike;
+    env?: NodeJS.ProcessEnv;
+    minuteMs?: number;
+  };
   /** Test-only hooks (E2E): save fault injection and an import delay. */
   testFaults?: { save?: SaveFaults; beforeImport?: () => Promise<void> };
 }
@@ -308,6 +327,25 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     power: deps.locks?.power,
     pinKdf: deps.locks?.pinKdf,
   });
+  // AI threads are comment threads (D-190); the comment service asks the AI service which of them is answering now.
+  let ai: AiService | null = null;
+  const comments = new CommentService({ db, clock, ids, logger, vault, running: (threadId) => ai?.isRunning(threadId) ?? false });
+  ai = new AiService({
+    db,
+    logger,
+    settings,
+    comments,
+    context: new AiContext(db, { dataDir: deps.dataDir, files: documentFiles, text: documentText }),
+    keys: new AiKeys(deps.ai.keysFile, deps.ai.protector, logger),
+    picker,
+    dialog: deps.dialog,
+    workRoot: deps.ai.workRoot,
+    processes: deps.ai.processes,
+    apiFetch: deps.ai.apiFetch,
+    env: deps.ai.env,
+    minuteMs: deps.ai.minuteMs,
+  });
+  ai.removeLeftoverWorkDirs();
   // The blur timer runs on the reminder clock, so the E2E fake clock moves it (D-172).
   const stickyLocks = new StickyLockService({ db, clock: reminderClock, logger, vault, locks, collab, settings, send: deps.sendStickyLock });
   return {
@@ -333,7 +371,8 @@ export function createMainServices(deps: MainServicesDeps): MainServices {
     picker,
     documents,
     spreadsheets: new SpreadsheetService({ documents, convert: deps.workbooks, logger }),
-    comments: new CommentService({ db, clock, ids, logger, vault }),
+    comments,
+    ai,
     graph: new GraphService(db),
     documentStore,
     documentFiles,

@@ -1,7 +1,7 @@
 import type { CommentAnchorType } from '../../shared/comments/anchors';
 import type { CommentThreadDtoType } from '../../shared/contracts/comments';
 import type { DocumentTargetType } from '../../shared/documents/targets';
-import type { CommentAnchorHost } from './comments-store';
+import type { AnchorChoice, CommentAnchorHost } from './comments-store';
 
 /**
  * What a document viewer contributes to comments (D-165): the anchor of a new comment at its current selection or
@@ -9,7 +9,7 @@ import type { CommentAnchorHost } from './comments-store';
  * anchor's place, like a link).
  */
 export interface ViewerCommentAnchors {
-  current(): { anchor: CommentAnchorType; quote: string } | { error: string };
+  current(): AnchorChoice | { error: string };
   /** Draws the threads (PDF markers); `select` is what a click on a marker does. */
   show?(threads: readonly CommentThreadDtoType[], activeId: string | null, select: (threadId: string) => void): void;
   reveal?(thread: CommentThreadDtoType): boolean;

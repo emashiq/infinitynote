@@ -5,6 +5,8 @@ import { AppError } from '../services/app-error';
 import type { MainWindowController } from '../windows/main-window-controller';
 import type { StickyManager } from '../windows/sticky-manager';
 import type { WidgetManager } from '../windows/widget-manager';
+import type { WindowZoom } from '../windows/window-zoom';
+import { registerAiHandlers } from './handlers/ai-handlers';
 import { registerAppHandlers, type AppHandlerDeps } from './handlers/app-handlers';
 import { registerAttachmentHandlers } from './handlers/attachment-handlers';
 import { registerCommentAndGraphHandlers } from './handlers/comment-handlers';
@@ -37,6 +39,8 @@ export interface DesktopHandlerDeps {
   autostart: AutostartControl;
   /** The global quick-sticky shortcut; absent without storage (its choice is a setting). */
   shortcut: GlobalShortcutService | null;
+  /** The zoom of each kind of window (D-186). */
+  zoom: WindowZoom;
 }
 
 const storageUnavailable = (): never => {
@@ -74,6 +78,7 @@ export function registerIpcHandlers(ipcRouter: IpcRouter, deps: { app: AppHandle
     stickies,
     widget,
     widgetState: () => desktop.widget?.state() ?? { open: false, collapsed: false, alwaysOnTop: false },
+    zoom: desktop.zoom,
   });
   registerReminderHandlers(router, {
     reminders: use('reminders'),
@@ -87,4 +92,5 @@ export function registerIpcHandlers(ipcRouter: IpcRouter, deps: { app: AppHandle
   registerLockHandlers(router, { locks: use('locks'), documentLocks: use('documentLocks'), stickyLocks: use('stickyLocks'), stickies });
   registerDocumentHandlers(router, { documents: use('documents'), spreadsheets: use('spreadsheets'), hierarchy: use('hierarchy'), trash: use('trash') });
   registerCommentAndGraphHandlers(router, { comments: use('comments'), graph: use('graph') });
+  registerAiHandlers(router, { ai: use('ai'), comments: use('comments') });
 }

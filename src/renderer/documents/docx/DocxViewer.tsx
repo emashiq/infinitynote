@@ -9,6 +9,8 @@ import { Plugin } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import { FileText, Save, Search } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { stepLevel, type ZoomAction } from '../../../shared/zoom';
+import { useViewerZoom } from '../../zoom/use-viewer-zoom';
 import { DocumentFindBar } from '../DocumentFindBar';
 import type { DocumentViewerProps } from '../viewer-registry';
 import { exportForSave } from './docx-export';
@@ -35,6 +37,12 @@ type Loaded = { status: 'loading' } | { status: 'error' } | { status: 'refused';
  * link shortcut is turned off; links are added with the toolbar's Link button.
  */
 const appKeys = () => keymap({ 'Mod-k': () => true });
+
+/** The page zoom after a zoom key or Ctrl+wheel (D-186): the editor's levels, "Fit width" counting as 100 %. */
+export function docxZoomAfter(zoom: DocxEditorZoom, action: ZoomAction): DocxEditorZoom {
+  if (action === 'reset') return 'fit-width';
+  return stepLevel(DEFAULT_ZOOM_LEVELS, zoom === 'fit-width' ? 1 : zoom, action === 'in' ? 1 : -1);
+}
 
 /** The page area announces itself to screen readers as the document's text. */
 function labelPlugin(label: string): Plugin {
@@ -81,6 +89,7 @@ export default function DocxViewer({ document, sourceUrl, host, target, findRequ
   const [refusal, setRefusal] = useState('');
   const [placeholders, setPlaceholders] = useState(false);
   const [zoom, setZoom] = useState<DocxEditorZoom>('fit-width');
+  const root = useRef<HTMLDivElement>(null);
   const [findToggle, setFindToggle] = useState(() => ({ open: false, at: findRequests }));
   const findOpen = findRequests > findToggle.at || findToggle.open;
   const [find, setFind] = useState({ query: '', caseSensitive: false, wholeWord: false });
@@ -195,10 +204,12 @@ export default function DocxViewer({ document, sourceUrl, host, target, findRequ
   };
 
   const ready = view !== null;
+  // Ctrl+wheel and the zoom keys in the viewer zoom the pages, not the window (D-186).
+  useViewerZoom(root, ready ? (action) => setZoom((z) => docxZoomAfter(z, action)) : null);
   const summary = find.query === '' ? '' : matches.count === 0 ? DOCX_MESSAGES.noMatches : `${matches.current + 1} of ${matches.count}`;
 
   return (
-    <div className="docx-viewer" onKeyDownCapture={onKeyDownCapture}>
+    <div ref={root} className="docx-viewer" onKeyDownCapture={onKeyDownCapture}>
       <div className="document-toolbar docx-toolbar" role="toolbar" aria-label="Word document">
         {readOnly ? null : (
           <button type="button" className="btn btn-small" disabled={!ready} onClick={pageBreak} title="Page break (Ctrl+Enter)">

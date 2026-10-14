@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import { COMMENT_MESSAGES, type CommentThreadDtoType } from '../../shared/contracts/comments';
+import { placeAnswer } from '../ai/answer-blocks';
 import { addCommentMark, commentableSelection, commentLookMeta, commentMarksKey, markedThreads, removeCommentMark, revealCommentMark } from '../editor/comments/comment-marks';
 import type { EditorHandle } from '../editor/editor-handle';
 import type { CommentAnchorHost } from './comments-store';
@@ -8,7 +9,8 @@ export const NOTE_READ_ONLY = 'This note cannot be changed right now';
 
 /**
  * Comments in a note tab (D-165): a thread is anchored by a `comment` mark on its text. The note's editor comes from
- * the tab's editor handle, so a fresh editor (reload, conversion) gets the highlights again.
+ * the tab's editor handle, so a fresh editor (reload, conversion) gets the highlights again. AI threads (D-190) use the
+ * same mark with their own highlight, and their answers can go into the text.
  */
 export function createNoteCommentHost(noteId: string, handle: EditorHandle): CommentAnchorHost {
   let shown: { threads: readonly CommentThreadDtoType[]; activeId: string | null } = { threads: [], activeId: null };
@@ -23,8 +25,9 @@ export function createNoteCommentHost(noteId: string, handle: EditorHandle): Com
   const applyLook = () => {
     const editor = live();
     if (!editor) return;
-    const open = new Set(shown.threads.filter((t) => t.resolvedAt === null).map((t) => t.id));
-    editor.view.dispatch(commentLookMeta(editor.state, { open, active: shown.activeId }));
+    const open = new Set(shown.threads.filter((t) => t.kind === 'comment' && t.resolvedAt === null).map((t) => t.id));
+    const ai = new Set(shown.threads.filter((t) => t.kind === 'ai').map((t) => t.id));
+    editor.view.dispatch(commentLookMeta(editor.state, { open, ai, active: shown.activeId }));
   };
   const clearPending = () => {
     const editor = live();
@@ -70,7 +73,7 @@ export function createNoteCommentHost(noteId: string, handle: EditorHandle): Com
       const selected = commentableSelection(editor.state);
       if ('error' in selected) return selected;
       editor.view.dispatch(commentLookMeta(editor.state, { pending: { from: selected.from, to: selected.to } }));
-      return { anchor: { type: 'text', blockId: selected.blockId }, quote: selected.quote };
+      return { anchor: { type: 'text', blockId: selected.blockId }, quote: selected.quote, text: selected.text };
     },
     attach(threadId) {
       const editor = live();
@@ -91,6 +94,10 @@ export function createNoteCommentHost(noteId: string, handle: EditorHandle): Com
     show(threads, activeId) {
       shown = { threads, activeId };
       applyLook();
+    },
+    placeAnswer(threadId, text, placement) {
+      const editor = live();
+      return editor ? placeAnswer(editor, threadId, text, placement) : false;
     },
     orphans(threads) {
       const editor = live();

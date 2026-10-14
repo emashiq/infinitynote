@@ -3,6 +3,7 @@ import type { Mark, Node as PmNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
 import { AddMarkStep, RemoveMarkStep, ReplaceAroundStep, ReplaceStep, type Step } from '@tiptap/pm/transform';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { MAX_AI_SELECTION_CHARS } from '../../../shared/ai/limits';
 import { COMMENT_MESSAGES, MAX_COMMENT_QUOTE } from '../../../shared/contracts/comments';
 import { BLOCK_ID_TYPES } from '../../../shared/editor/doc-schema';
 import { markPersistent } from '../content';
@@ -10,9 +11,13 @@ import { markPersistent } from '../content';
 /** How long a comment's text stays flashed after the sidebar revealed it. */
 export const COMMENT_FLASH_MS = 1500;
 
-/** What the note tab shows of its threads (D-165): open threads are highlighted, the selected one more strongly. */
+/**
+ * What the note tab shows of its threads (D-165): open threads are highlighted, the selected one more strongly. AI
+ * threads (D-190) have a highlight of their own.
+ */
 export interface CommentLook {
   open: ReadonlySet<string>;
+  ai: ReadonlySet<string>;
   active: string | null;
   flash: string | null;
   /** The text a comment is being written for, until it is saved or canceled. */
@@ -23,7 +28,7 @@ interface CommentMarksState extends CommentLook {
   decorations: DecorationSet;
 }
 
-const EMPTY_LOOK: CommentLook = { open: new Set(), active: null, flash: null, pending: null };
+const EMPTY_LOOK: CommentLook = { open: new Set(), ai: new Set(), active: null, flash: null, pending: null };
 export const commentMarksKey = new PluginKey<CommentMarksState>('commentMarks');
 const ID_TYPES = new Set<string>(BLOCK_ID_TYPES);
 
@@ -44,13 +49,15 @@ function touchesComments(step: Step): boolean {
 
 function decorate(doc: PmNode, look: CommentLook): DecorationSet {
   const decorations: Decoration[] = [];
-  if (look.open.size > 0) {
+  if (look.open.size > 0 || look.ai.size > 0) {
     doc.descendants((node, pos) => {
       if (!node.isText) return true;
       for (const mark of node.marks) {
         const id = mark.attrs.threadId as string;
-        if (!isComment(mark) || !look.open.has(id)) continue;
-        const cls = ['comment-anchor', id === look.active ? 'comment-anchor-active' : '', id === look.flash ? 'comment-anchor-flash' : ''].filter(Boolean).join(' ');
+        if (!isComment(mark)) continue;
+        const ai = look.ai.has(id);
+        if (!ai && !look.open.has(id)) continue;
+        const cls = ['comment-anchor', ai ? 'ai-anchor' : '', id === look.active ? 'comment-anchor-active' : '', id === look.flash ? 'comment-anchor-flash' : ''].filter(Boolean).join(' ');
         decorations.push(Decoration.inline(pos, pos + node.nodeSize, { class: cls, 'data-comment-anchor': id }));
       }
       return false;
@@ -99,7 +106,7 @@ export const CommentMarks = Extension.create<{ start: (() => boolean) | null }>(
           apply(tr, prev, _old, state) {
             const meta = tr.getMeta(commentMarksKey) as Partial<CommentLook> | undefined;
             const pending = prev.pending && tr.docChanged ? mapRange(prev.pending, tr) : prev.pending;
-            const look: CommentLook = { open: prev.open, active: prev.active, flash: prev.flash, pending, ...meta };
+            const look: CommentLook = { open: prev.open, ai: prev.ai, active: prev.active, flash: prev.flash, pending, ...meta };
             if (meta || (tr.docChanged && tr.steps.some(touchesComments))) return { ...look, decorations: decorate(state.doc, look) };
             if (!tr.docChanged) return { ...prev, ...look };
             const decorations = pending === prev.pending ? prev.decorations.map(tr.mapping, tr.doc) : decorate(state.doc, look);
@@ -133,13 +140,17 @@ function blockIdAt(state: EditorState, pos: number): string | null {
   return null;
 }
 
-/** The selected text to comment on, or why there is none: a text selection inside the note (one table cell at most). */
-export function commentableSelection(state: EditorState): { from: number; to: number; quote: string; blockId: string | null } | { error: string } {
+/**
+ * The selected text to comment on, or why there is none: a text selection inside the note (one table cell at most).
+ * `quote` is what the thread shows; `text` is the selection with its lines, as an AI action sends it (D-190).
+ */
+export function commentableSelection(state: EditorState): { from: number; to: number; quote: string; text: string; blockId: string | null } | { error: string } {
   const { selection } = state;
   if (!(selection instanceof TextSelection) || selection.empty) return { error: COMMENT_MESSAGES.quoteNeeded };
   const quote = state.doc.textBetween(selection.from, selection.to, ' ', ' ').replace(/\s+/g, ' ').trim();
   if (quote === '') return { error: COMMENT_MESSAGES.quoteNeeded };
-  return { from: selection.from, to: selection.to, quote: quote.slice(0, MAX_COMMENT_QUOTE), blockId: blockIdAt(state, selection.from) };
+  const text = state.doc.textBetween(selection.from, selection.to, '\n', ' ').trim().slice(0, MAX_AI_SELECTION_CHARS);
+  return { from: selection.from, to: selection.to, quote: quote.slice(0, MAX_COMMENT_QUOTE), text, blockId: blockIdAt(state, selection.from) };
 }
 
 /** Marks a range with a thread (saved with the note, outside the undo history so undo does not orphan the thread). */

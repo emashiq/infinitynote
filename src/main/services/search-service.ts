@@ -74,7 +74,7 @@ export class SearchService {
   ): { rows: SearchRow[]; documents: DocumentSearchRow[] } {
     const hits = this.repo.commentHits(match, limit);
     if (hits.length === 0) return { rows, documents };
-    const snippets = new Map(hits.map((h) => [`${h.target_kind}:${h.target_id}`, `${COMMENT_SNIPPET_PREFIX}${h.body}`]));
+    const snippets = new Map(hits.map((h) => [`${h.target_kind}:${h.target_id}`, `${SNIPPET_PREFIX[h.thread_kind]}${h.body}`]));
     const found = new Set([...rows.map((r) => `note:${r.id}`), ...documents.map((d) => `document:${d.id}`)]);
     const fresh = (kind: 'note' | 'document') => hits.filter((h) => h.target_kind === kind && !found.has(`${kind}:${h.target_id}`)).map((h) => h.target_id);
     const withSnippet = <R extends { id: string; body: string }>(kind: string, list: R[]) => list.map((r) => ({ ...r, body: snippets.get(`${kind}:${r.id}`) ?? r.body }));
@@ -84,8 +84,10 @@ export class SearchService {
   }
 }
 
-/** How a result found by one of its comments introduces the snippet. */
+/** How a result found by one of its comments, or by an AI thread's message (D-190), introduces the snippet. */
 export const COMMENT_SNIPPET_PREFIX = 'Comment: ';
+export const AI_SNIPPET_PREFIX = 'AI: ';
+const SNIPPET_PREFIX = { comment: COMMENT_SNIPPET_PREFIX, ai: AI_SNIPPET_PREFIX } as const;
 
 /** Highlight segments of a result's title and snippet, never raw markup (D-098). */
 function segmentsOf(row: { title: string; title_marked: string | null; body: string }, text: string) {

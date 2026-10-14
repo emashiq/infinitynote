@@ -7,7 +7,8 @@ const noteTab = (id: string) => ({ id: `note:${id}`, kind: 'note' as const, note
 
 describe('session service (INF-TABS-05, INF-TABS-06, INF-HOME-01)', () => {
   it('returns the default session and never writes on get', async () => {
-    const s = await setupServices();
+    // Without the Office documents row the test services add, the settings table starts empty.
+    const s = await setupServices({ office: false });
     expect(s.sessions.get()).toEqual({ session: DEFAULT_SESSION, dropped: { trashed: 0, missing: 0, duplicates: 0 } });
     expect(s.row<{ n: number }>('SELECT count(*) AS n FROM settings')?.n).toBe(0);
   });

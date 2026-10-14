@@ -53,6 +53,8 @@ const WORKBOOK: DocumentReadWorkbookResponseType = {
 /** A spreadsheet saved twice, so it has two earlier versions. */
 async function openSpreadsheet() {
   const fake = createFakeBridge();
+  // The spreadsheet editor needs Office documents on (off by default, D-187).
+  fake.data.settings.set('documents.office', true);
   const doc = fake.addDocument({ projectId: null, folderId: null, title: 'Budget', kind: 'xlsx', storage: 'managed', sizeBytes: 4096 });
   doc.workbook = WORKBOOK;
   const { el } = await dom.mount(fake);

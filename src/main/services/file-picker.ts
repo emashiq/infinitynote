@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { importFailedMessage, MAX_FILES_PER_ACTION } from '../../shared/attachments/limits';
 import { sanitizeOriginalName } from '../../shared/attachments/names';
-import { DOCUMENT_EXTENSIONS, documentKindOf } from '../../shared/documents/kinds';
+import { documentExtensions, documentKindOf, openableKindOf } from '../../shared/documents/kinds';
 import { DOCUMENT_MESSAGES } from '../../shared/documents/messages';
 import {
   LINK_MESSAGES,
@@ -16,10 +16,8 @@ import type { DialogAdapter, OpenFilesRequest } from './dialog-adapter';
 import type { IdGenerator } from './ids';
 import type { LinkedFileService } from './linked-file-service';
 
-const DOCUMENT_FILTER = { name: 'Documents', extensions: [...DOCUMENT_EXTENSIONS] };
-
-/** Files picked for a note, or to import as documents; each kind of pick is added only by its own channel. */
-type PickPurpose = 'attachments' | 'documents';
+/** Files picked for a note, to import as documents, or to send with an AI action (D-190); each is used only by its own channels. */
+type PickPurpose = 'attachments' | 'documents' | 'ai';
 
 interface PickSession {
   pickId: string;
@@ -49,11 +47,20 @@ export class FilePicker {
     return this.choose({ webContentsId: ctx.webContentsId, kind }, 'attachments', () => null);
   }
 
-  /** Files to import as documents (D-118): the picker shows the document types, and any other file is refused by name. */
-  pickDocuments(ctx: { webContentsId: number }): Promise<PickFilesResponseType> {
-    return this.choose({ webContentsId: ctx.webContentsId, kind: 'document', filter: DOCUMENT_FILTER }, 'documents', (name) =>
-      documentKindOf(name) === null ? DOCUMENT_MESSAGES.unsupported : null,
+  /**
+   * Files to import as documents (D-118): the picker shows the document types, and any other file is refused by name.
+   * With Office documents off (D-187) Word, spreadsheet and PowerPoint files are refused too.
+   */
+  pickDocuments(ctx: { webContentsId: number }, office: boolean): Promise<PickFilesResponseType> {
+    const filter = { name: 'Documents', extensions: documentExtensions(office) };
+    return this.choose({ webContentsId: ctx.webContentsId, kind: 'document', filter }, 'documents', (name) =>
+      documentKindOf(name) === null ? DOCUMENT_MESSAGES.unsupported : openableKindOf(name, office) === null ? DOCUMENT_MESSAGES.officeOffImport : null,
     );
+  }
+
+  /** Files to send with an AI action (D-190): any file; the action reads them and refuses what it cannot send. */
+  pickForAi(ctx: { webContentsId: number }): Promise<PickFilesResponseType> {
+    return this.choose({ webContentsId: ctx.webContentsId, kind: 'document' }, 'ai', () => null);
   }
 
   private async choose(request: OpenFilesRequest, purpose: PickPurpose, refuse: (name: string) => string | null): Promise<PickFilesResponseType> {

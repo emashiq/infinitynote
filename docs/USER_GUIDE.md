@@ -47,6 +47,35 @@ The app always runs inside Chromium's sandbox; never start it with `--no-sandbox
 - **Reminders.** Add a reminder from a note (the note menu's **Add reminder…** or **/reminder**), or accept a suggestion when you type a phrase such as "tomorrow at 5": the app shows the date and time and asks you to confirm; nothing is created on its own. Reminders have a time zone, can repeat, and can follow up. The **Reminders** page and the small **reminder widget** (View > Show reminder widget) show what is due; **Done** completes it, **Snooze** moves it.
 - **Keyboard.** **Ctrl+/** shows every shortcut. **Alt** opens the menu bar.
 
+### Zoom
+
+Make everything in a window bigger or smaller, as in a browser: **Ctrl+=** (or **Ctrl++**, or **Ctrl+mouse wheel up**) zooms in, **Ctrl+-** (or **Ctrl+mouse wheel down**) zooms out, and **Ctrl+0** goes back to actual size. The steps are 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250 and 300 %. **View** in the menu bar and the command palette have **Zoom in**, **Zoom out** and **Actual size** too.
+
+- The main window, the stickies and the reminder widget each keep their own zoom; all stickies share one. The zoom is remembered when you restart.
+- When the main window is not at 100 %, the title bar shows the zoom (for example **125%**); click it to go back to actual size.
+- Over a PDF, Word document, presentation or web page, the zoom keys and **Ctrl+wheel** zoom that page instead of the window, as a browser does in its PDF viewer (with the keyboard, the focus must be in the viewer; **Ctrl+0** fits the page again). A web page has its own zoom buttons in its toolbar. Inside a web page's own frame, **Ctrl+wheel** zooms the window, because the page's events never reach the app.
+
+### Math results
+
+Type a calculation and end the line with **=**: the result appears after the cursor in light gray, as in Apple Notes. **Tab** or **Enter** inserts it, **Esc** dismisses it, and typing on just goes on. `7+5=` gives `12`, `1,200 * 3 =` gives `3600`. Inserted results are underlined with dots.
+
+- **What it calculates.** `+ - * / ^` (also `×` and `÷`), `mod`, parentheses, and `sqrt abs round floor ceil min max log ln sin cos tan` (angles in degrees), with `pi` and `e`. Percentages: `20% of 50` is 10, `50 + 10%` is 55, `50 - 10%` is 45, `10% * 30` is 3. Results have up to 10 significant digits.
+- **Variables.** A line such as `Lunch = 25` defines `Lunch` for the lines below it (letters, digits and `_`, no spaces; capital letters do not matter). `Lunch * 2 =` then gives 50, and `Total = Lunch + Dinner =` both calculates and defines `Total`. When you change a variable, the results below it that use it are updated (Ctrl+Z undoes your change, and the results follow).
+- **Dates.** `today`, `tomorrow`, `yesterday`, `now`, dates such as `25-12-2026`, `25/12/2026`, `2026-12-25`, `Dec 25 2026`, `25 December 2026` or `Dec 25` (this year), and durations such as `3 days`, `2 weeks`, `5 months`, `1 year`, `4 hours` or `30 min`. `25-12-2026 - today =` gives the days until then (for example `72 days`), `today + 3 weeks =` a date (`Nov 4, 2026`), and `… in weeks` or `… in months` converts a duration. Months and years move on the calendar: a month from 31 January is the end of February. When day and month could be either way round (`05/10/2026`), your computer's regional date order decides.
+- **Where.** In notes and stickies, in paragraphs, lists, headings and table cells, but not in code blocks, inline code, diagrams or formulas. A plain number or word before **=** (`12 =`, `Lunch =`) asks for nothing.
+- **Setting.** Settings > Notes and attachments > **Math results**: **Suggest results** (the default), **Insert results automatically** (the result is written as you type **=**), or **Off**.
+
+### Office documents (Word, spreadsheets, PowerPoint)
+
+Word documents, Excel and CSV spreadsheets and PowerPoint presentations open and are edited in Infinity Notes only when **Office documents (Word, spreadsheets, PowerPoint)** is on in Settings > Documents. It is **off** unless you turn it on, also after an update from an earlier version. While it is off:
+
+- There is no **New Word document**, **New spreadsheet** or **New presentation**, and **Import file…** adds only PDFs and web pages.
+- Word, Excel, CSV and PowerPoint files in notes stay files: copied or linked as usual and opened with **Open** in your system app (there is no **Open in Infinity Notes** for them).
+- Documents of these kinds you already have stay where they are, with their versions, comments and links, in search, backups and exports. Opening one shows **Word, spreadsheet and PowerPoint editing is turned off** with **Open with the system app**, **Save a copy…** (the file as it was last saved) and **Turn on in Settings**.
+- PDFs and web pages are not affected.
+
+The sections on spreadsheets, Word documents and PowerPoint presentations below describe them with the setting on.
+
 ### Locked notes
 
 Lock a note that holds passwords or other confidential text: the note menu's **Lock note…**, **Lock note…** in the Details panel, or **Lock note…** in **Ctrl+K**.
@@ -157,6 +186,15 @@ Comments are notes about a piece of a note or document, kept beside it in the **
 - **Documents.** In a PDF, select text and add a comment to mark that area, or add one without a selection for the page shown; numbered markers show the comments on the pages (they are kept in Infinity Notes, not in the PDF file). In a spreadsheet the selected cell is commented, in a presentation the slide shown and the selected shape, and in a Word document the paragraph at the cursor (the document's own Word comments stay in its comments panel). For a web page, show **Source** and select the text there. Clicking a thread opens the document at its place.
 - **Locked notes.** Comments on a locked note are encrypted with it and readable only while it is unlocked; locking a note encrypts the comments it already has.
 - **Search, Trash and backups.** Ctrl+K also finds notes and documents by their comments (the result shows "Comment: …"). Comments go to Trash and come back with their item and are deleted when it is deleted from Trash. Backups and **Export all notes** keep them (comments of locked notes are not exported); Markdown, HTML and PDF exports of a note do not include them.
+
+### AI actions
+
+Ask Claude or OpenAI about a part of a note, sticky, PDF or web page, and keep the answer in a thread on that part. AI actions are **off** until you turn them on in **Settings > AI**; nothing is sent anywhere until you run an action.
+
+- **Engines.** **Claude Code (headless)** and **OpenAI Codex (headless)** use the tools you installed and signed in to on this computer: they run without a window in an empty working folder of your own (in the app's settings folder, outside your notes and backups) that holds only copies of the files you attach, and the folder is removed afterwards. Claude Code may only read the files in that folder. Codex may not change files, but its read-only sandbox does not stop it from reading other files your account can read, so prefer Claude Code or an API engine for material you do not trust. Both tools keep their own record of each conversation (Claude Code in `~/.claude`, Codex in `~/.codex`); Infinity Notes cannot remove those records, also not when you lock the note later. **Anthropic API** and **OpenAI API** use your own API key, entered in Settings > AI; the key is encrypted by your operating system and kept apart from your notes (never in the database, backups, exports or logs). Settings > AI also has the program of each tool (found on PATH, or **Choose…**), the model, the Anthropic effort, how long an action may run (5 minutes by default) and **Test**, which shows the tool's version or whether the key works.
+- **Asking.** Select text and choose **Ask AI** in the formatting toolbar, **Ask AI…** in the note menu (right-click or Shift+F10), **Ask AI about the selection…** in the command palette, or press **Ctrl+Shift+I** (in stickies too). In a PDF, select text or ask about the page shown (the PDF is sent); in a web page, show **Source** and select the text. Choose **Analyze**, **Summarize**, **Explain**, **Action items** or **Find problems** (words in the field are added to it), or write your own question and choose **Ask** (Ctrl+Enter). **Attach** adds the whole note or document, the note's files, linked files and linked documents, or files from this computer (up to 10 files, 20 MB each, 50 MB together; images, PDFs, documents and text files). The first action on an engine shows what is sent where.
+- **Threads.** The answer appears in the **Comments** section with an **AI** badge, and the selected text gets its own highlight. Follow-up questions continue the same conversation. **Insert below** puts the latest answer after the paragraph, **Replace selection** puts it in place of the selected text (formatted: headings, lists, checklists, code), **Copy** copies it and **Delete thread** removes the thread. **Stop** ends an action that is still working. The filter **All / Comments / AI** chooses what the section lists. AI threads move to Trash, come back, are backed up and exported with their item, like comments.
+- **Locked notes and documents are never sent**, not even while unlocked; locking a note or document encrypts its AI threads with it.
 
 ### Graph
 

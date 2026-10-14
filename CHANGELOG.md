@@ -2,6 +2,41 @@
 
 All notable changes to Infinity Notes. Versions follow [Semantic Versioning](https://semver.org/); each release's section is also its GitHub release notes.
 
+## [Unreleased]
+
+## [0.4.0] - 2026-10-14
+
+AI actions on a selected part with Claude or OpenAI, math results as you type, zoom in and out, and Word, spreadsheet and PowerPoint documents turned off by default. Free to use (see [LICENSE](https://github.com/emashiq/infinitynote/blob/main/LICENSE)). Developed by [Ashiqur Rahman Emran](https://github.com/emashiq).
+
+### Downloads
+
+| File | For |
+| --- | --- |
+| `Infinity-Notes-Setup-x64.exe` | Windows 11 x64 (24H2 or newer). Per-user install, no administrator rights. |
+| `infinity-notes_amd64.deb` | Ubuntu 24.04 or newer, Debian-based x64 (recommended on Linux). |
+| `Infinity-Notes-x86_64.AppImage` | Other x64 Linux distributions. |
+| `SHA256SUMS.txt` | SHA-256 checksums of every file in this release. |
+| `THIRD_PARTY_NOTICES.md` | Licenses of the open-source components the app includes. |
+
+Your notes and documents from earlier versions are upgraded automatically on first start.
+
+### New
+
+- **Zoom in and out** like a browser: Ctrl+= (or Ctrl++), Ctrl+-, Ctrl+0 for actual size and Ctrl+mouse wheel, also in View and the command palette. The main window, the stickies and the reminder widget each remember their zoom, and the title bar shows it when it is not 100% (click it for actual size). Over a PDF, Word document, presentation or web page the keys and the wheel zoom the page instead; web pages got zoom buttons.
+- **Math results** in notes and stickies, like Apple Notes: end a calculation with "=" and the result is suggested (Tab or Enter inserts it, Esc dismisses it). Variables (`Lunch = 25`), percentages (`20% of 50`, `50 + 10%`), functions, and dates (`25-12-2026 - today =` gives the days until then, `today + 3 weeks =` a date). Results that use a variable update when it changes. Settings > Notes and attachments > Math results: Suggest, Insert automatically or Off.
+- **AI actions on a selected part**, off until you turn them on in Settings > AI: Analyze, Summarize, Explain, Action items, Find problems or your own question about selected text in a note, sticky, PDF or web page, with the whole note or document and files attached if you like. Runs on Claude Code or OpenAI Codex installed on your computer (headless, without changing files, in an empty private working folder), or on the Anthropic or OpenAI API with your own key (stored encrypted by your operating system, never in backups or exports). Each action becomes an AI thread on that part, with follow-up questions that continue the conversation, Insert below, Replace selection, Copy, Stop and Delete; the Comments section filters All, Comments or AI. Locked notes and documents are never sent.
+
+### Changed
+
+- **Word, spreadsheet and PowerPoint documents are turned off** unless you turn on Settings > Documents > Office documents, also after updating. While off, such files stay files in your notes (opened with your system app), Import file adds PDFs and web pages only, and documents of these kinds you already have stay in place and show "Open with the system app", "Save a copy…" and "Turn on in Settings". Nothing is deleted; PDFs and web pages are not affected.
+
+### Known limitations
+
+- Claude Code reads only the files copied into its working folder. OpenAI Codex cannot change files, but its read-only sandbox can still read other files your account can read; use Claude Code or an API engine for material you do not trust.
+- Claude Code and Codex keep their own conversation records (`~/.claude`, `~/.codex`), which Infinity Notes cannot remove when a note is locked later.
+- On Linux without a keyring (for example WSL), API keys cannot be stored encrypted, so the API engines are unavailable there; the Claude Code and Codex engines still work.
+- Ctrl+mouse wheel over the page of the web page viewer zooms the window; use the viewer's zoom buttons or keys for the page.
+
 ## [0.3.1] - 2026-10-11
 
 Locked documents, renaming documents from their tab and header, easier diagrams and dates typed the way you write them in spreadsheets. Free to use (see [LICENSE](https://github.com/emashiq/infinitynote/blob/main/LICENSE)). Developed by [Ashiqur Rahman Emran](https://github.com/emashiq).

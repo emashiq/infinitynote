@@ -5,20 +5,23 @@ import { openText, sealText } from '../locks/note-crypto';
 
 /**
  * How comment text is stored (D-165): in the clear, or for a locked note or document sealed with its data key like its
- * content (D-111, D-185). The sealed value is bound to the item and to the comment or thread it belongs to, so it never
+ * content (D-111, D-185). An AI message's details (meta, D-190) are stored the same way as its text. The sealed value is bound to the item and to the comment or thread it belongs to, so it never
  * opens as another comment's text. A locked document's thread anchors are sealed too, since they can name a sheet; a
  * note's anchor is only the ID of a block.
  */
 export interface CommentCipher {
-  /** A thread's quote or a comment's body as it is stored. */
-  store(kind: 'quote' | 'comment', id: string, text: string): StoredText;
-  /** The text of a stored quote or body. */
-  read(kind: 'quote' | 'comment', id: string, stored: { text: string | null; sealed: Buffer | null }): string;
+  /** A thread's quote, or a comment's body or meta, as it is stored. */
+  store(kind: StoredPart, id: string, text: string): StoredText;
+  /** The text of a stored quote, body or meta. */
+  read(kind: StoredPart, id: string, stored: { text: string | null; sealed: Buffer | null }): string;
   /** A thread's anchor (JSON) as it is stored in `anchor_json`. */
   storeAnchor(threadId: string, json: string): string;
   /** The anchor JSON of a stored `anchor_json`. */
   readAnchor(threadId: string, stored: string): string;
 }
+
+/** The parts of a thread kept in the clear or sealed. */
+export type StoredPart = 'quote' | 'comment' | 'meta';
 
 /** The type of a stored anchor that is sealed (the migration 015 triggers check it). */
 const SEALED_ANCHOR = 'sealed';
@@ -57,7 +60,7 @@ export interface CommentItem {
   id: string;
 }
 
-/** Rewrites every anchor, quote and body of an item's comments from one cipher to another, in place (a lock or its removal). */
+/** Rewrites every anchor, quote, body and meta of an item's comments from one cipher to another, in place (a lock or its removal). */
 function recode(db: Db, item: CommentItem, from: CommentCipher, to: CommentCipher): number {
   const repo = new CommentsRepo(db);
   const threads = repo.threadsOf(item.kind, item.id);
@@ -66,7 +69,10 @@ function recode(db: Db, item: CommentItem, from: CommentCipher, to: CommentCiphe
     repo.setAnchor(t.id, to.storeAnchor(t.id, from.readAnchor(t.id, t.anchor_json)));
   }
   const comments = repo.commentsOf(threads.map((t) => t.id));
-  for (const c of comments) repo.setBody(c.id, to.store('comment', c.id, from.read('comment', c.id, { text: c.body, sealed: c.sealed_body })), null);
+  for (const c of comments) {
+    repo.setBody(c.id, to.store('comment', c.id, from.read('comment', c.id, { text: c.body, sealed: c.sealed_body })), null);
+    if (c.meta !== null || c.sealed_meta !== null) repo.setMeta(c.id, to.store('meta', c.id, from.read('meta', c.id, { text: c.meta, sealed: c.sealed_meta })));
+  }
   return comments.length;
 }
 

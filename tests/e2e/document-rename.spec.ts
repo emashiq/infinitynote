@@ -10,7 +10,8 @@ import { activate, dialogByName, tabItem, toasts, treeByKey, treeItem } from './
  * Renaming documents with their viewer open (D-182): from the tree's context menu (the v0.3.0 defect: its field closed
  * at once), from the tab (F2, double-click) and from the document header, for a spreadsheet, a Word document, a PDF and a presentation.
  */
-const h = useApp({ failOnMainErrors: true });
+// Word, spreadsheet and PowerPoint documents are off by default (D-187); these tests use them.
+const h = useApp({ failOnMainErrors: true, settings: { 'documents.office': true } });
 const FIXTURES = path.resolve('tests/fixtures/documents');
 
 let dir = '';

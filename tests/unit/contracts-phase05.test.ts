@@ -163,15 +163,17 @@ describe('Phase 05 catalogue (D-074)', () => {
     ]);
     expect(EVENT_CHANNELS.slice(6, 10)).toEqual(['reminder:changed', 'reminder:alert', 'widget:state', 'app:openReminders']);
     // Later events (live sync, locked stickies) come after these.
-    expect(EVENT_CHANNELS).toHaveLength(15);
+    expect(EVENT_CHANNELS).toHaveLength(16);
   });
 
   it('app:openNote takes an optional block (default null); the main window state carries a pending Reminders view', () => {
     expect(AppOpenNoteEvent.parse({ noteId: ID })).toEqual({ noteId: ID, blockId: null });
     expect(AppOpenNoteEvent.parse({ noteId: ID, blockId: B })).toEqual({ noteId: ID, blockId: B });
     expect(AppOpenNoteEvent.safeParse({ noteId: ID, blockId: 'x' }).success).toBe(false);
-    expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [], openReminders: 'overdue', widget: { open: true, collapsed: false, alwaysOnTop: false } }).success).toBe(true);
-    expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } }).success).toBe(true);
+    expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [], openReminders: 'overdue', widget: { open: true, collapsed: false, alwaysOnTop: false }, zoom: 100 }).success).toBe(true);
+    expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false }, zoom: 125 }).success).toBe(true);
+    // The main window's zoom is one of the browser steps (D-186).
+    expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false }, zoom: 120 }).success).toBe(false);
     expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [], openReminders: null }).success).toBe(false);
     expect(WindowGetStateResponse.safeParse({ role: 'main', openNotes: [] }).success).toBe(false);
     expect(CHANNEL_SCHEMAS['reminder:open'].request.safeParse({ reminderId: ID }).success).toBe(true);

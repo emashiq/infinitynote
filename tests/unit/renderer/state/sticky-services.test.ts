@@ -36,7 +36,7 @@ async function setup(opts: { activation?: number; pin?: 'supported' | 'unsupport
   // Main has this note's window open.
   fake.data.floating.set(note.id, { collapsed: false, alwaysOnTop: false, activation: opts.activation ?? 1 });
   const state: StickyStateType = fake.stickyState(note.id);
-  if (opts.role === 'main') fake.data.setWindowState({ role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false } });
+  if (opts.role === 'main') fake.data.setWindowState({ role: 'main', openNotes: [], openReminders: null, widget: { open: false, collapsed: false, alwaysOnTop: false }, zoom: 100 });
   else if (opts.role === 'other-note') fake.data.setWindowState({ role: 'sticky', sticky: { ...state, noteId: BATCH } });
   else fake.data.setWindowState({ role: 'sticky', sticky: state });
   const s = createStickyServices(fake.bridge, note.id, { themeEnv: null, lifecycle: null, randomUUID: testUuid });

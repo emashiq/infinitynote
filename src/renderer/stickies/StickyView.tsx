@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { displayTitle } from '../../shared/names';
-import { EditorHandle } from '../editor/editor-handle';
+import type { EditorHandle } from '../editor/editor-handle';
 import { NoteEditor } from '../editor/NoteEditor';
 import { useNoteReminders } from '../reminders/note-reminders';
 import { ReminderChipBar } from '../reminders/ReminderChipBar';
@@ -18,6 +18,8 @@ import { useSticky } from './sticky-context';
 import { StickyHeader } from './StickyHeader';
 import { StickyLockPanel } from './StickyLockPanel';
 import { StickyTrashState } from './StickyTrashState';
+import { StickyAiPanel } from './StickyAiPanel';
+import { isAskAiShortcut } from '../state/shortcuts';
 
 export const INVALID_WINDOW = 'This window could not be opened.';
 
@@ -35,7 +37,7 @@ export function InvalidWindow() {
 
 /** The editor part of a sticky: the same banners, editor, find, links and conversions as a tab (INF-EDIT-01). */
 function StickyNote({ editorHandle, findRequest, onFindHandled }: { editorHandle: EditorHandle; findRequest: object | null; onFindHandled: () => void }) {
-  const { controller, core, now } = useSticky();
+  const { controller, core, now, editor } = useSticky();
   const state = useStore(controller.store);
   const [dialog, setDialog] = useState<NoteDialog | null>(null);
   // The sticky shows its note's reminders read-only; a click opens the reminder in the main window (D-080).
@@ -80,7 +82,7 @@ function StickyNote({ editorHandle, findRequest, onFindHandled }: { editorHandle
         onChipClick={openReminder}
         scrollTop={0}
         onScroll={() => undefined}
-        services={core.editor}
+        services={editor}
         findRequest={findRequest}
         onFindRequestHandled={onFindHandled}
         handle={editorHandle}
@@ -118,7 +120,7 @@ export function StickyView() {
   const caps = useStore(services.caps).current;
   const note = useStore(controller.store);
   const { request: focusRequest } = useStore(services.focusEditor);
-  const [editorHandle] = useState(() => new EditorHandle());
+  const { editorHandle } = services;
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [editPin, setEditPin] = useState(false);
   const [findRequest, setFindRequest] = useState<object | null>(null);
@@ -146,6 +148,11 @@ export function StickyView() {
         titleRef.current?.select();
         return;
       }
+      if (isAskAiShortcut(e) && !collapsed && !trashed && !blurred) {
+        e.preventDefault();
+        services.ai.start();
+        return;
+      }
       if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
       const key = e.key.toLowerCase();
       if (key === 'w') {
@@ -167,7 +174,7 @@ export function StickyView() {
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keyup', onKeyUp, true);
     };
-  }, [actions, collapsed, trashed, blurred, canRename]);
+  }, [actions, collapsed, trashed, blurred, canRename, services.ai]);
 
   // The sticky's colors paint the whole page and follow every change at once.
   const color = sticky?.color;
@@ -231,6 +238,7 @@ export function StickyView() {
           // Typing, clicks, scrolling and the pointer over the text keep a revealed locked sticky shown (throttled).
           <div className="sticky-content" onKeyDown={lockActions.activity} onPointerDown={lockActions.activity} onPointerMove={lockActions.activity} onWheel={lockActions.activity}>
             <StickyNote editorHandle={editorHandle} findRequest={findRequest} onFindHandled={() => setFindRequest(null)} />
+            <StickyAiPanel ai={services.ai} bridge={core.bridge} notify={(message, tone) => core.notices.push(message, tone)} />
           </div>
         )}
       </div>

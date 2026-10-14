@@ -6,7 +6,7 @@ import { HANDOFF_MESSAGES, LINK_MESSAGES, type FileLinkDtoType } from '../../sha
 import type { DocumentOpenResponseType, DocumentPickPdfResponseType, DocumentVersionDtoType, ExpectedFileType } from '../../shared/contracts/documents';
 import type { DocumentDtoType, LocationType, TreeChangedEventType } from '../../shared/contracts/hierarchy';
 import { DOCUMENT_LOCK_MESSAGES } from '../../shared/contracts/locks';
-import { DOCUMENT_KIND_INFO, documentKindOf, titleFromFileName, type BlankDocumentKind, type DocumentKind } from '../../shared/documents/kinds';
+import { DOCUMENT_KIND_INFO, documentKindOf, isOfficeKind, titleFromFileName, type BlankDocumentKind, type DocumentKind } from '../../shared/documents/kinds';
 import { LINKED_DOCUMENT_SAVE_MAX_MB, MANAGED_DOCUMENT_MAX_MB } from '../../shared/documents/limits';
 import { DOCUMENT_MESSAGES } from '../../shared/documents/messages';
 import { suggestedFileName } from '../../shared/names';
@@ -104,6 +104,8 @@ const PDF_FILTER = { name: 'PDF documents', extensions: ['pdf'] };
  * D-108: the copy limit, links only to local files), "Open in Infinity Notes" for a note's attachments and linked
  * files, opening, saving with a revision check, versions, saving a copy, and handing a document to the OS. Saves of
  * one document run one at a time. Renaming, moving and favorites are hierarchy operations; trash is TrashService's.
+ * While Office documents are off (D-187) nothing makes, imports or writes a Word, spreadsheet or PowerPoint document;
+ * existing ones stay, open in the system app and export as copies.
  */
 export class DocumentService {
   private readonly documents: DocumentsRepo;
@@ -126,6 +128,7 @@ export class DocumentService {
 
   // Creating and importing ----------------------------------------------------------
   async createBlank(kind: BlankDocumentKind, location: LocationType, title?: string): Promise<{ document: DocumentDtoType }> {
+    this.requireOfficeOn(kind);
     const blob = await this.storing(DOCUMENT_MESSAGES.importFailed, async () => this.deps.store.putBytes(kind, await blankDocument(kind)));
     return { document: this.insertManaged({ location, kind, title: title ?? DOCUMENT_KIND_INFO[kind].blankTitle }, blob, '') };
   }
@@ -136,6 +139,7 @@ export class DocumentService {
    */
   async createBeside(documentId: string, title: string, bytes: Uint8Array): Promise<{ document: DocumentDtoType }> {
     const source = this.unlockedCopySource(documentId);
+    this.requireOfficeOn(source.kind);
     if (bytes.byteLength > MANAGED_MAX_BYTES) throw new AppError('LIMIT_EXCEEDED', DOCUMENT_MESSAGES.tooLargeToStore(MANAGED_DOCUMENT_MAX_MB));
     const blob = await this.storing(DOCUMENT_MESSAGES.importFailed, () => this.deps.store.putBytes(source.kind, bytes));
     const location = { projectId: source.project_id, folderId: source.folder_id };
@@ -158,7 +162,7 @@ export class DocumentService {
   }
 
   pickFiles(ctx: { webContentsId: number }) {
-    return this.deps.picker.pickDocuments(ctx);
+    return this.deps.picker.pickDocuments(ctx, this.officeOn());
   }
 
   /** Copies or links one picked file as a document; a copy obeys the copy limit, a link any size (D-108). */
@@ -170,6 +174,7 @@ export class DocumentService {
     const name = sanitizeOriginalName(file) ?? 'file';
     const kind = documentKindOf(name);
     if (!kind) throw new AppError('UNSUPPORTED', DOCUMENT_MESSAGES.unsupported);
+    this.requireOfficeOn(kind, DOCUMENT_MESSAGES.officeOffImport);
     const wanted = { location: req.location, kind, title: titleFromFileName(name, kind) };
     if (req.action === 'link') return { document: await this.insertLinked(wanted, await this.deps.links.create(file)) };
     const limitMb = this.deps.settings.getInternal('attachments.documentMaxMb');
@@ -189,6 +194,7 @@ export class DocumentService {
     const name = row.original_name ?? path.posix.basename(row.managed_relative_path);
     const kind = documentKindOf(name);
     if (!kind) throw new AppError('UNSUPPORTED', DOCUMENT_MESSAGES.unsupported);
+    this.requireOfficeOn(kind);
     const file = await containedAttachmentFile(this.deps.dataDir, row.managed_relative_path).catch(() => null);
     if (!file) throw new AppError('NOT_FOUND', HANDOFF_MESSAGES.missing);
     const wanted = { location: { projectId: note.project_id, folderId: note.folder_id }, kind, title: titleFromFileName(name, kind), sourceAttachmentId: attachmentId };
@@ -204,6 +210,7 @@ export class DocumentService {
     if (existing) return { document: toDocumentDto(existing), created: false };
     const kind = documentKindOf(link.name);
     if (!kind) throw new AppError('UNSUPPORTED', DOCUMENT_MESSAGES.unsupported);
+    this.requireOfficeOn(kind);
     const wanted = { location: { projectId: note.project_id, folderId: note.folder_id }, kind, title: titleFromFileName(link.name, kind) };
     return { document: await this.insertLinked(wanted, { id: link.id, path: link.path }), created: true };
   }
@@ -295,6 +302,7 @@ export class DocumentService {
   /** A new managed document next to this one with an earlier version's bytes ("Save as copy" in Versions). */
   async copyVersion(documentId: string, versionId: string): Promise<{ document: DocumentDtoType }> {
     const row = this.unlockedCopySource(documentId);
+    this.requireOfficeOn(row.kind);
     const version = this.versions.get(documentId, versionId);
     const blob = version ? this.blobs.get(version.blob_id) : undefined;
     if (!version || !blob) throw new AppError('NOT_FOUND', DOCUMENT_MESSAGES.versionMissing);
@@ -318,6 +326,7 @@ export class DocumentService {
     reason: DocumentVersionReason,
   ): Promise<DocumentOpenResponseType> {
     const row = this.liveRow(documentId);
+    this.requireOfficeOn(row.kind);
     if (row.revision !== baseRevision) throw revisionConflict(row.revision);
     if (row.storage === 'managed') {
       const content = await this.writeManaged(row, bytes);
@@ -406,6 +415,7 @@ export class DocumentService {
   async saveCopy(req: { documentId: string; bytes: Uint8Array }, ctx: { webContentsId: number }): Promise<{ canceled: true } | { canceled: false; document: DocumentDtoType }> {
     // It adds an unencrypted linked document (with search text): never from a locked one (D-185).
     const row = this.unlockedCopySource(req.documentId);
+    this.requireOfficeOn(row.kind);
     if (req.bytes.byteLength > LINKED_SAVE_MAX_BYTES) throw new AppError('LIMIT_EXCEEDED', DOCUMENT_MESSAGES.tooLargeToSave(LINKED_DOCUMENT_SAVE_MAX_MB));
     const info = DOCUMENT_KIND_INFO[row.kind];
     const chosen = await this.deps.dialog.showSaveFile({
@@ -465,6 +475,13 @@ export class DocumentService {
     return this.liveRow(documentId).kind;
   }
 
+  /** A live document's kind, for its editor: refused for an Office document while Office documents are off (D-187). */
+  editableKindOf(documentId: string): DocumentKind {
+    const kind = this.kindOf(documentId);
+    this.requireOfficeOn(kind);
+    return kind;
+  }
+
   private async readable(documentId: string, file: ResolvedDocumentFile): Promise<DocumentSource> {
     if (!file.blob?.sealed) return { kind: file.kind, source: file.file, sizeBytes: file.sizeBytes, modifiedAt: file.modifiedAt };
     const bytes = await this.deps.locks.plaintextOf(documentId, file.blob);
@@ -508,6 +525,15 @@ export class DocumentService {
   }
 
   // Helpers ---------------------------------------------------------------------
+  private officeOn(): boolean {
+    return this.deps.settings.getInternal('documents.office');
+  }
+
+  /** Word, spreadsheet and PowerPoint work is refused while Office documents are off (D-187). */
+  private requireOfficeOn(kind: DocumentKind, message: string = DOCUMENT_MESSAGES.officeOff): void {
+    if (isOfficeKind(kind) && !this.officeOn()) throw new AppError('FORBIDDEN', message);
+  }
+
   private liveRow(documentId: string): DocumentRow {
     const row = this.documents.get(documentId);
     if (!row) throw new AppError('NOT_FOUND', DOCUMENT_MESSAGES.missing);

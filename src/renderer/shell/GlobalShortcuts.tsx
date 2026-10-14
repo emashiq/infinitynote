@@ -1,8 +1,15 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
+import type { ZoomAction } from '../../shared/zoom';
 import { matchShortcut } from '../state/shortcuts';
 import { useServices } from '../state/use-store';
+import { useZoomKeys } from '../zoom/use-zoom-keys';
 
-/** One capture-phase keydown listener for application shortcuts. Modal dialogs (not drawers) handle their own keys. */
+const ZOOM_COMMANDS = { in: 'view.zoomIn', out: 'view.zoomOut', reset: 'view.zoomReset' } as const;
+
+/**
+ * One capture-phase keydown listener for application shortcuts. Modal dialogs (not drawers) handle their own keys.
+ * The zoom keys listen in the bubble phase, after the viewers that zoom their own page (D-186).
+ */
 export function GlobalShortcuts() {
   const { commands } = useServices();
   useEffect(() => {
@@ -18,5 +25,6 @@ export function GlobalShortcuts() {
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [commands]);
+  useZoomKeys(useCallback((action: ZoomAction) => void commands.run(ZOOM_COMMANDS[action]), [commands]));
   return null;
 }

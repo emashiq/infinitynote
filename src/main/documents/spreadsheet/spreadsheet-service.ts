@@ -14,7 +14,7 @@ import type { WorkbookConverter } from './workbook-runner';
 import type { WorkbookReply, WorkbookTask } from './workbook-task';
 
 export interface SpreadsheetServiceDeps {
-  documents: Pick<DocumentService, 'sourceOf' | 'kindOf' | 'save'>;
+  documents: Pick<DocumentService, 'sourceOf' | 'editableKindOf' | 'save'>;
   convert: WorkbookConverter;
   logger: Logger;
 }
@@ -44,6 +44,8 @@ export class SpreadsheetService {
   constructor(private readonly deps: SpreadsheetServiceDeps) {}
 
   async read(documentId: string, versionId?: string): Promise<DocumentReadWorkbookResponseType> {
+    // Spreadsheets are read for their editor only, which is off with Office documents (D-187).
+    this.deps.documents.editableKindOf(documentId);
     // A locked document's bytes come decrypted in memory (D-185); they reach the worker as bytes, never as a file.
     const { kind, source, sizeBytes } = await this.deps.documents.sourceOf(documentId, versionId);
     if (kind !== 'xlsx' && kind !== 'csv') throw new AppError('UNSUPPORTED', DOCUMENT_MESSAGES.noViewer(kind));
@@ -64,7 +66,7 @@ export class SpreadsheetService {
 
   /** Writes the model in the document's own format and saves the bytes as its next revision. */
   async save(req: DocumentSaveWorkbookRequestType): Promise<DocumentOpenResponseType> {
-    const kind = this.deps.documents.kindOf(req.documentId);
+    const kind = this.deps.documents.editableKindOf(req.documentId);
     if (kind !== 'xlsx' && kind !== 'csv') throw new AppError('UNSUPPORTED', DOCUMENT_MESSAGES.noViewer(kind));
     if (kind === 'csv' && !req.csv) throw new AppError('VALIDATION_FAILED', 'Invalid request: csv');
     const task: WorkbookTask = kind === 'xlsx' ? { op: 'writeXlsx', workbook: req.workbook } : { op: 'writeCsv', workbook: req.workbook, format: req.csv as CsvFormatType };

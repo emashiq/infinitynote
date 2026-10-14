@@ -5,7 +5,7 @@ import { formatBytes } from '../../shared/attachments/names';
 import type { DocumentVersionDtoType } from '../../shared/contracts/documents';
 import { LINK_MESSAGES } from '../../shared/contracts/attachments';
 import type { DocumentDtoType } from '../../shared/contracts/hierarchy';
-import { DOCUMENT_KIND_INFO } from '../../shared/documents/kinds';
+import { DOCUMENT_KIND_INFO, isOfficeKind } from '../../shared/documents/kinds';
 import { DOCUMENT_LOCK_MESSAGES } from '../../shared/contracts/locks';
 import { DOCUMENT_MESSAGES, DOCUMENT_VERSION_MESSAGES } from '../../shared/documents/messages';
 import { LockScreen } from '../notes/LockScreen';
@@ -15,6 +15,7 @@ import { DocumentKindIcon } from '../ui/DocumentKindIcon';
 import { RenameInput } from '../ui/RenameInput';
 import { createDocumentCommentHost } from '../comments/document-comment-host';
 import { DocumentController } from './document-controller';
+import { OfficeOffPanel } from './OfficeOffPanel';
 import { DOCUMENT_VIEWERS, type DocumentViewerHost } from './viewer-registry';
 import { useDocumentLock } from './use-document-lock';
 import { DocumentVersionsPanel, formatVersionTime } from './versions/DocumentVersionsPanel';
@@ -28,7 +29,8 @@ const OPENS_IN_SYSTEM_APP = (document: DocumentDtoType) => document.kind !== 'ht
 /**
  * A document tab (D-118): the header with the document's kind, size and, for a linked one, its original, then the
  * viewer of its kind, loaded on first use. Viewers save through the tab, which reports a conflict with Reload and Save a
- * copy; a kind without a viewer offers the system app and the folder.
+ * copy; a kind without a viewer offers the system app and the folder. While Office documents are off (D-187) a Word,
+ * spreadsheet or PowerPoint document shows what can be done with it instead, and its viewer chunk is never loaded.
  */
 export function DocumentView({ documentId, tabId }: { documentId: string; tabId: string }) {
   const services = useServices();
@@ -50,6 +52,7 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
   const [viewing, setViewing] = useState<DocumentVersionDtoType | null>(null);
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const { officeDocuments } = useStore(services.features);
   const titleButton = useRef<HTMLButtonElement>(null);
   // Enter and Escape in the header's name field give the focus back to the title once it shows again.
   const refocusTitle = useRef(false);
@@ -221,7 +224,9 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
   const file = state.file;
   const fileState = file?.state ?? 'available';
   const Viewer = DOCUMENT_VIEWERS[document.kind];
-  const hasVersions = EDITABLE.has(document.kind);
+  const officeOff = isOfficeKind(document.kind) && !officeDocuments;
+  const hasVersions = EDITABLE.has(document.kind) && !officeOff;
+  const fileProblem = fileState === 'available' ? null : fileState === 'missing' && file ? LINK_MESSAGES.notFound(file.path) : DOCUMENT_MESSAGES.damaged(document.kind);
   const saveCopy = async () => {
     const bytes = refused.current;
     if (!bytes) return;
@@ -381,9 +386,19 @@ export function DocumentView({ documentId, tabId }: { documentId: string; tabId:
           <div className="note-loading" aria-busy="true">
             <span className="muted">Opening document…</span>
           </div>
-        ) : fileState !== 'available' && !viewing ? (
+        ) : officeOff ? (
+          <OfficeOffPanel
+            kind={document.kind}
+            problem={fileProblem}
+            noSystemApp={document.locked ? DOCUMENT_LOCK_MESSAGES.noSystemApp : null}
+            busy={busy}
+            onOpenSystemApp={() => run(() => bridge.document.openExternal({ documentId }))}
+            onSaveCopy={() => void exportCopy()}
+            onTurnOn={() => void tabs.openPage('settings').then(() => services.ui.requestFocus({ target: 'officeSetting' }))}
+          />
+        ) : fileProblem && !viewing ? (
           <p role="alert" className="document-message">
-            {fileState === 'missing' && file ? LINK_MESSAGES.notFound(file.path) : DOCUMENT_MESSAGES.damaged(document.kind)}
+            {fileProblem}
           </p>
         ) : (
           <Suspense

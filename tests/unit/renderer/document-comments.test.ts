@@ -12,13 +12,15 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 const thread = (id: string, anchor: CommentThreadDtoType['anchor'], resolved = false): CommentThreadDtoType => ({
   id,
+  kind: 'comment',
   target: { kind: 'document', id: DOC },
   anchor,
   quote: '',
   resolvedAt: resolved ? 1 : null,
   createdAt: 1,
   updatedAt: 1,
-  comments: [{ id: `${id.slice(0, 35)}9`, body: 'Look here', createdAt: 1, updatedAt: 1 }],
+  running: false,
+  comments: [{ id: `${id.slice(0, 35)}9`, role: 'user', body: 'Look here', ai: null, createdAt: 1, updatedAt: 1 }],
 });
 
 describe('document comment anchors (D-165)', () => {
@@ -78,7 +80,7 @@ describe('PDF comment areas and markers (D-165)', () => {
   it('without a selection the page shown is the anchor', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
-    expect(pdfCommentAnchor(container, 4, 0)).toEqual({ anchor: { type: 'pdf', page: 4, rect: null }, quote: '' });
+    expect(pdfCommentAnchor(container, 4, 0)).toEqual({ anchor: { type: 'pdf', page: 4, rect: null }, quote: '', text: '' });
     expect(pdfCommentAnchor(container, 0, 0)).toEqual({ error: COMMENT_MESSAGES.notReady });
   });
 

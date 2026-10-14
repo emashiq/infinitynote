@@ -49,6 +49,7 @@ describe('mainWindowOptions (INF-SHELL-06)', () => {
       navigateOnDragDrop: false,
       spellcheck: false,
       safeDialogs: true,
+      zoomMode: 'isolated',
     });
     expect(opts.webPreferences).toMatchObject({
       preload: '/p/preload.js',

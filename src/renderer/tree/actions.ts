@@ -45,17 +45,19 @@ export async function openDocumentFromTree(services: AppServices, documentId: st
   if (services.layout.store.getState().treeMode === 'drawer') services.layout.closeDrawers();
 }
 
-/** New blank documents and "Import file…" at a tree node's location (D-118). */
+/** New blank documents (while Office documents are on, D-187) and "Import file…" at a tree node's location (D-118). */
 export function documentCreation(services: AppServices, key: string): Array<{ id: string; label: string; onSelect: () => void }> {
   const location = services.tree.locationFor(key);
   if (!location) return [];
   const { documents } = services;
-  return [
-    { id: 'new-docx', label: 'New Word document', onSelect: () => void documents.createBlank('docx', location) },
-    { id: 'new-xlsx', label: 'New spreadsheet', onSelect: () => void documents.createBlank('xlsx', location) },
-    { id: 'new-pptx', label: 'New presentation', onSelect: () => void documents.createBlank('pptx', location) },
-    { id: 'import', label: 'Import file…', onSelect: () => void documents.importFiles(location) },
-  ];
+  const blank = services.features.getState().officeDocuments
+    ? [
+        { id: 'new-docx', label: 'New Word document', onSelect: () => void documents.createBlank('docx', location) },
+        { id: 'new-xlsx', label: 'New spreadsheet', onSelect: () => void documents.createBlank('xlsx', location) },
+        { id: 'new-pptx', label: 'New presentation', onSelect: () => void documents.createBlank('pptx', location) },
+      ]
+    : [];
+  return [...blank, { id: 'import', label: 'Import file…', onSelect: () => void documents.importFiles(location) }];
 }
 
 export function trashItemCount(node: TreeNode): number {

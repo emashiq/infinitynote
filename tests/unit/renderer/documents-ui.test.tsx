@@ -13,8 +13,10 @@ const PAGE = `<!DOCTYPE html><html><head><title>T</title><script>alert(1)</scrip
 <body><p class="x">Hi <a href="https://example.com/a">a</a> <a href="https://example.com/a">again</a> <a href="javascript:alert(1)">js</a>
 <a href="mailto:me@example.com">mail</a> <a href="#local">local</a><!-- note --><img src="https://example.com/i.png"></p></body></html>`;
 
-function withDocuments() {
+function withDocuments(office = true) {
   const fake = createFakeBridge();
+  // Word, spreadsheet and PowerPoint documents are off by default (D-187); most tests here use them on.
+  fake.data.settings.set('documents.office', office);
   const at = { projectId: null, folderId: null };
   const page = fake.addDocument({ ...at, title: 'Saved page', kind: 'html', storage: 'managed', sizeBytes: PAGE.length });
   const report = fake.addDocument({ ...at, title: 'Report', kind: 'pptx', storage: 'managed', sizeBytes: 2048 });
@@ -84,7 +86,91 @@ describe('documents in the tree and tabs (D-118)', () => {
   });
 });
 
+describe('Office documents turned off (D-187)', () => {
+  const buttonsOf = (root: Element) => Object.fromEntries([...root.querySelectorAll('button')].map((b) => [b.textContent, b.disabled]));
+
+  it('a presentation shows the calm panel: system app, a copy, the setting; its viewer chunk is not loaded', async () => {
+    const { fake, report } = withDocuments(false);
+    const { el } = await dom.mount(fake);
+    await openFromTree(el, report.id);
+    const panel = el.querySelector('.office-off')!;
+    expect(panel.querySelector('h3')?.textContent).toBe('Word, spreadsheet and PowerPoint editing is turned off');
+    expect(buttonsOf(panel)).toEqual({ 'Open with the system app': false, 'Save a copy…': false, 'Turn on in Settings': false });
+    expect(el.querySelector('.pptx-viewer, .pptx-message')).toBeNull();
+    // No versions while the editor is off.
+    expect([...el.querySelectorAll('.document-actions button')].map((b) => b.textContent)).not.toContain('Versions');
+
+    await dom.click([...panel.querySelectorAll('button')].find((b) => b.textContent === 'Open with the system app')!);
+    await dom.click([...panel.querySelectorAll('button')].find((b) => b.textContent === 'Save a copy…')!);
+    expect(fake.data.documentHandoffs).toEqual([`open:${report.id}`, `export:${report.id}:current`]);
+
+    await dom.click([...panel.querySelectorAll('button')].find((b) => b.textContent === 'Turn on in Settings')!);
+    await dom.settle(10);
+    const office = await dom.until(() => el.querySelector<HTMLButtonElement>('.settings-page [role="switch"][aria-checked="false"]'));
+    expect(document.activeElement).toBe(office);
+    expect(office.closest('.switch-row')?.textContent).toBe('Office documents (Word, spreadsheets, PowerPoint)');
+  });
+
+  it('web pages and PDFs are not affected', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(PAGE)));
+    const { fake, page } = withDocuments(false);
+    const { el } = await dom.mount(fake);
+    await openFromTree(el, page.id);
+    await dom.until(() => el.querySelector('iframe.html-frame'));
+    expect(el.querySelector('.office-off')).toBeNull();
+  });
+
+  it('turning the setting on shows the viewer at once', async () => {
+    const { fake, report } = withDocuments(false);
+    const { el } = await dom.mount(fake);
+    await openFromTree(el, report.id);
+    expect(el.querySelector('.office-off')).not.toBeNull();
+    await act(async () => void (await fake.bridge.settings.set({ key: 'documents.office', value: true })));
+    // The presentation viewer's chunk loads; the fake bridge serves no bytes, so it says it could not read them.
+    await dom.until(() => el.querySelector('.pptx-message'), 12_000);
+    expect(el.querySelector('.office-off')).toBeNull();
+  }, 15_000);
+
+  it('no "New Word document", spreadsheet or presentation in the tree menu, the File menu or the palette', async () => {
+    const { fake } = withDocuments(false);
+    const { el } = await dom.mount(fake);
+    const common = el.querySelector<HTMLElement>('[id="tree-common"]')!;
+    await act(async () => common.focus());
+    await dom.key(common, 'F10', { shiftKey: true });
+    const treeMenu = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((m) => m.textContent);
+    expect(treeMenu).toContain('Import file…');
+    expect(treeMenu.filter((label) => /^New (Word|spreadsheet|presentation)/.test(label ?? ''))).toEqual([]);
+    await dom.key(document.querySelector('[role="menu"]')!, 'Escape');
+
+    await dom.click([...el.querySelectorAll('.menubar-item')].find((b) => b.textContent === 'File')!);
+    const fileMenu = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((m) => m.textContent);
+    expect(fileMenu).toContain('Import file…');
+    expect(fileMenu).not.toContain('New Word document');
+    expect(fileMenu).not.toContain('New spreadsheet');
+    expect(fileMenu).not.toContain('New presentation');
+  });
+});
+
 describe('HTML viewer (F6)', () => {
+  it('zooms the page and its source with its own control and keys (D-186)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(PAGE)));
+    const { fake, page } = withDocuments();
+    const { el } = await dom.mount(fake);
+    await openFromTree(el, page.id);
+    const viewer = await dom.until(() => el.querySelector<HTMLElement>('.html-viewer'));
+    const zoom = viewer.querySelector('[role="group"][aria-label="Zoom"]')!;
+    await dom.click(zoom.querySelector('[aria-label="Zoom in (Ctrl+=)"]'));
+    await dom.click(zoom.querySelector('[aria-label="Zoom in (Ctrl+=)"]'));
+    expect(viewer.style.getPropertyValue('--html-zoom')).toBe('1.25');
+    expect(zoom.querySelector('.zoom-control-value')?.textContent).toBe('125%');
+    await dom.key(zoom.querySelector('.zoom-control-value')!, '-', { ctrlKey: true });
+    expect(viewer.style.getPropertyValue('--html-zoom')).toBe('1.1');
+    await dom.key(zoom.querySelector('.zoom-control-value')!, '0', { ctrlKey: true });
+    expect(viewer.style.getPropertyValue('--html-zoom')).toBe('1');
+    // The window's zoom is not asked for.
+    expect(fake.callsTo('window:zoom')).toEqual([]);
+  });
+
   it('shows the page in a scriptless sandboxed frame from the infinity-html scheme', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(PAGE)));
     const { fake, page } = withDocuments();

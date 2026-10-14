@@ -4,6 +4,7 @@ import { UniqueID } from '@tiptap/extension-unique-id';
 import type { Schema } from '@tiptap/pm/model';
 import StarterKit, { type StarterKitOptions } from '@tiptap/starter-kit';
 import { parseExternalUrl } from '../url-policy';
+import { CalcResultMark } from './calc-result-mark';
 import { CommentMark } from './comment-mark';
 import { BLOCK_ID_TYPES } from './doc-schema';
 import { DocRefNode, FileAttachmentNode, FileLinkNode, ImageNode, MathBlockNode, MathInlineNode, NoteRefNode } from './nodes';
@@ -73,6 +74,7 @@ export function noteSchema(format: 'rich' | 'plain'): Schema {
     ...TABLE_EXTENSIONS,
     ...TEXT_STYLE_EXTENSIONS,
     CommentMark,
+    CalcResultMark,
     UniqueID.configure({ types: [...BLOCK_ID_TYPES] }),
   ];
   return (rich ??= getSchema(extensions));

@@ -40,6 +40,7 @@ export function createStickyWindowFactory(options: AppWindowFactoryOptions): Sti
         sender: { role: 'sticky', noteId: spec.noteId },
         hooks: options.windowHooks(),
         logger: options.logger,
+        zoom: options.zoom,
       });
       // The OS title names the note ("<title> - Infinity Notes"); the page's own <title> must not replace it.
       win.on('page-title-updated', (event) => event.preventDefault());

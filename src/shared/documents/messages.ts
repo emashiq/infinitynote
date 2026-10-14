@@ -19,6 +19,11 @@ export const DOCUMENT_MESSAGES = {
   noViewer: (kind: DocumentKind): string => `Infinity Notes has no viewer for ${DOCUMENT_KIND_INFO[kind].label} documents. Open it in your system app.`,
   versionMissing: 'That version no longer exists.',
   notOpenable: 'This kind of document is not opened outside Infinity Notes.',
+  /** Office documents are turned off (D-187): what main answers, and what the document tab and the importer say. */
+  officeOff: 'Word, spreadsheet and PowerPoint editing is turned off. Turn it on in Settings > Documents.',
+  officeOffImport: 'Word, spreadsheet and PowerPoint editing is turned off, so these files are not added as documents. Add them to a note as files, or turn Office documents on in Settings > Documents.',
+  officeOffPanel: 'Word, spreadsheet and PowerPoint editing is turned off',
+  officeOffPanelDetail: 'This document is kept as it is. Open it with the system app, save a copy of it, or turn Office documents on in Settings.',
 } as const;
 
 /** What the Versions panel of a document says (D-141). */

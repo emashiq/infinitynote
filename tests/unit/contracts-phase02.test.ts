@@ -95,7 +95,20 @@ describe('Phase 02 request schemas', () => {
       'attachments.imageMaxMb',
       'attachments.documentMaxMb',
       'attachments.addFiles',
+      'documents.office',
+      'notes.mathResults',
+      'ai.enabled',
+      'ai.engine',
+      'ai.claudeModel',
+      'ai.codexModel',
+      'ai.anthropicModel',
+      'ai.anthropicEffort',
+      'ai.openaiModel',
+      'ai.timeoutMinutes',
+      'ai.acknowledged',
+      'ai.cliPaths',
       'app.closeBehavior',
+      'window.zoom',
       'stickies.restoreOnStartup',
       'reminders.defaultZone',
       'reminders.followupDefault',
@@ -112,6 +125,43 @@ describe('Phase 02 request schemas', () => {
       'backup.lastAuto',
       'shortcut.quickSticky',
     ]);
+  });
+
+  it('v0.4.0 AI keys: off by default, Claude Code first, models checked; programs and confirmations main-only (D-190)', () => {
+    expect(SETTINGS['ai.enabled']).toMatchObject({ version: 1, default: false, public: true });
+    expect(SETTINGS['ai.engine']).toMatchObject({ default: 'claude-code', public: true });
+    expect(SETTINGS['ai.anthropicModel']).toMatchObject({ default: 'claude-opus-5-5', public: true });
+    expect(SETTINGS['ai.anthropicEffort']).toMatchObject({ default: 'medium', public: true });
+    expect(SETTINGS['ai.openaiModel']).toMatchObject({ default: 'gpt-5.5', public: true });
+    expect(SETTINGS['ai.timeoutMinutes']).toMatchObject({ default: 5, public: true });
+    expect(SETTINGS['ai.acknowledged']).toMatchObject({ default: [], public: false });
+    expect(SETTINGS['ai.cliPaths']).toMatchObject({ default: { claude: null, codex: null }, public: false });
+    expect(SettingsSetRequest.safeParse({ key: 'ai.engine', value: 'openai-api' }).success).toBe(true);
+    expect(SettingsSetRequest.safeParse({ key: 'ai.engine', value: 'gemini' }).success).toBe(false);
+    // A model name reaches a command line, so it is one plain token.
+    expect(SettingsSetRequest.safeParse({ key: 'ai.claudeModel', value: '' }).success).toBe(true);
+    expect(SettingsSetRequest.safeParse({ key: 'ai.claudeModel', value: 'opus' }).success).toBe(true);
+    for (const bad of ['opus & calc', 'a b', '--danger', '"x"', 'x;y']) expect(SettingsSetRequest.safeParse({ key: 'ai.codexModel', value: bad }).success, bad).toBe(false);
+    expect(SettingsSetRequest.safeParse({ key: 'ai.openaiModel', value: '' }).success).toBe(false);
+    expect(SettingsSetRequest.safeParse({ key: 'ai.timeoutMinutes', value: 31 }).success).toBe(false);
+    expect(SettingsSetRequest.safeParse({ key: 'ai.anthropicModel', value: 'claude-sonnet-5-5' }).success).toBe(true);
+    // No renderer names a program to run or confirms the notice through settings:set.
+    expect(SettingsSetRequest.safeParse({ key: 'ai.cliPaths', value: { claude: 'C:\\evil.exe', codex: null } }).success).toBe(false);
+    expect(SettingsSetRequest.safeParse({ key: 'ai.acknowledged', value: ['codex'] }).success).toBe(false);
+  });
+
+  it('v0.4.0 keys: Office documents off and math results suggested by default, the window zoom main-only (D-186..D-188)', () => {
+    expect(SETTINGS['documents.office']).toMatchObject({ version: 1, default: false, public: true });
+    expect(SETTINGS['notes.mathResults']).toMatchObject({ version: 1, default: 'suggest', public: true });
+    expect(SETTINGS['window.zoom']).toMatchObject({ version: 1, default: { main: 100, sticky: 100, widget: 100 }, public: false });
+    expect(SettingsSetRequest.safeParse({ key: 'documents.office', value: true }).success).toBe(true);
+    expect(SettingsSetRequest.safeParse({ key: 'documents.office', value: 'yes' }).success).toBe(false);
+    for (const mode of ['suggest', 'insert', 'off']) expect(SettingsSetRequest.safeParse({ key: 'notes.mathResults', value: mode }).success, mode).toBe(true);
+    expect(SettingsSetRequest.safeParse({ key: 'notes.mathResults', value: 'always' }).success).toBe(false);
+    // Only main writes the zoom, through window:zoom.
+    expect(SettingsSetRequest.safeParse({ key: 'window.zoom', value: { main: 125, sticky: 100, widget: 100 } }).success).toBe(false);
+    expect(SETTINGS['window.zoom'].schema.safeParse({ main: 125, sticky: 100, widget: 100 }).success).toBe(true);
+    expect(SETTINGS['window.zoom'].schema.safeParse({ main: 120, sticky: 100, widget: 100 }).success).toBe(false);
   });
 
   it('note:create requires a boolean sticky flag and a valid location', () => {

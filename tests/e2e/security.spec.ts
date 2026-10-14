@@ -131,6 +131,7 @@ test('bridge surface', async () => {
   });
   expect(surface).toEqual({
     top: [
+      'ai',
       'app',
       'attachment',
       'autostart',
@@ -174,6 +175,7 @@ test('bridge surface', async () => {
       'zones',
     ],
     namespaces: {
+      ai: ['acknowledge', 'ask', 'cliPath', 'config', 'context', 'deleteThread', 'followUp', 'pickFiles', 'setKey', 'status', 'stop', 'test', 'thread', 'wait'],
       app: ['flushed', 'getInfo', 'quit', 'showDataFolder'],
       attachment: ['addPicked', 'importBytes', 'open', 'pickFiles', 'showInFolder'],
       autostart: ['get', 'set'],
@@ -256,7 +258,7 @@ test('bridge surface', async () => {
       tree: ['list'],
       versions: ['list', 'restore'],
       widget: ['hide', 'setCollapsed', 'setPinned', 'show'],
-      window: ['getState'],
+      window: ['getState', 'zoom'],
       zones: ['list'],
     },
     frozen: true,

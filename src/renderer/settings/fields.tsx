@@ -111,3 +111,63 @@ export function NumberField({ label, value, min, max, unit, onCommit }: { label:
     </div>
   );
 }
+
+/**
+ * A short text value, saved when it loses focus or on Enter. `check` returns why a value cannot be saved (shown under
+ * the field) or null.
+ */
+export function TextField({
+  label,
+  value,
+  placeholder,
+  check,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  check: (v: string) => string | null;
+  onCommit: (v: string) => void;
+}) {
+  const id = useId();
+  const errorId = useId();
+  const [draft, setDraft] = useState(value);
+  const [error, setError] = useState<string | null>(null);
+  const [shown, setShown] = useState(value);
+  if (shown !== value) {
+    setShown(value);
+    setDraft(value);
+  }
+  const commit = () => {
+    const next = draft.trim();
+    const problem = check(next);
+    setError(problem);
+    if (problem === null && next !== value) onCommit(next);
+  };
+  return (
+    <div className="form-field">
+      <label htmlFor={id} className="field-label">
+        {label}
+      </label>
+      <input
+        id={id}
+        className="text-input"
+        value={draft}
+        placeholder={placeholder}
+        spellCheck={false}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+        }}
+      />
+      {error ? (
+        <p id={errorId} role="alert" className="field-error">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}

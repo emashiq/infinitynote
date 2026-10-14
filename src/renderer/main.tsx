@@ -14,6 +14,7 @@ import './styles/reminders.css';
 import './styles/widget.css';
 import './styles/documents.css';
 import './styles/comments.css';
+import './styles/ai.css';
 import './styles/graph.css';
 
 // The startup loader belongs to the main window; stickies and the widget drop it before their first render (D-109).

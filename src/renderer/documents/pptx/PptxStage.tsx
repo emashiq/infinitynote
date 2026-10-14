@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type RefObject } from 'react';
+import { stepLevel, type ZoomAction } from '../../../shared/zoom';
 import { EMU_PER_PX, shapeLabel, type SlideShape } from './pptx-model';
 import type { RunFormat, ShapeBox, TextParagraph } from './pptx-xml';
 import { HANDLES, moved, nudged, resized, snapped, type Handle } from './stage-geometry';
@@ -6,6 +7,15 @@ import { fillEditor, type TextLook } from './text-edit';
 
 /** The zoom of the slide view: fit the pane, or a fixed scale of the slide's own pixel size. */
 export type Zoom = 'fit' | number;
+
+/** The fixed scales the zoom offers besides Fit. */
+export const PPTX_ZOOMS: readonly number[] = [0.5, 0.75, 1, 1.5, 2];
+
+/** The slide zoom after a zoom key or Ctrl+wheel (D-186), stepping from the fitted scale when the slide fits. */
+export function pptxZoomAfter(zoom: Zoom, fit: number, action: ZoomAction): Zoom {
+  if (action === 'reset') return 'fit';
+  return stepLevel(PPTX_ZOOMS, zoom === 'fit' ? fit : zoom, action === 'in' ? 1 : -1);
+}
 
 /** Text in the editor is shown at this size where its runs name none (PowerPoint's body text default). */
 const DEFAULT_TEXT_PT = 18;
@@ -50,6 +60,8 @@ export interface StageProps {
   onFormatKey(format: keyof Pick<RunFormat, 'bold' | 'italic' | 'underline'>): void;
   onPaste(event: ClipboardEvent): void;
   onStep(delta: number): void;
+  /** The scale that fits the slide in the pane, each time the pane or the slide size changes. */
+  onFitScale?(scale: number): void;
 }
 
 /** How text is sized in the editor at a slide scale. */
@@ -89,10 +101,18 @@ export function PptxStage(props: StageProps) {
   const pane = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(1);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const reportFit = useRef(props.onFitScale);
+  useEffect(() => {
+    reportFit.current = props.onFitScale;
+  });
 
   useEffect(() => {
     const element = pane.current;
-    const measure = () => setFit(fitScale(element, size));
+    const measure = () => {
+      const scale = fitScale(element, size);
+      setFit(scale);
+      reportFit.current?.(scale);
+    };
     measure();
     if (!element || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);

@@ -20,6 +20,7 @@ import type { ReminderAlertEventType, ReminderChangedEventType } from '../shared
 import { ThemeSetting } from '../shared/contracts/settings';
 import { LAUNCHED_AT_LOGIN_ARG } from '../shared/contracts/widget';
 import { dateOrderOf } from '../shared/time/typed-date';
+import { safeStorageTextProtector } from './ai/ai-keys';
 import { assertNotInstallDir, ensureDataDirs, resolveDataPaths, resolveUserDataOverride } from './app-paths';
 import { LATEST } from './db/migrations';
 import { openDatabase } from './db/open-database';
@@ -66,6 +67,7 @@ import { createElectronInspector } from './windows/electron-inspector';
 import { createRendererHandler } from './windows/renderer-protocol';
 import { installWebSecurity } from './windows/web-security';
 import { WindowRegistry } from './windows/window-registry';
+import { memoryZoomStore, settingsZoomStore, WindowZoom } from './windows/window-zoom';
 
 const registry = new WindowRegistry();
 /** Housekeeping waits until the startup windows had time to load. */
@@ -251,6 +253,13 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       pdfText: pdfTextWorker(),
       workbooks: createWorkbookConverter({ workerFile: unpacked(path.join(__dirname, 'workbook.js')) }),
       locks: { ...osKey, power: seams ? seams.power : electronPowerEvents, windowHandle: mainWindowHandle },
+      ai: {
+        keysFile: paths.aiKeysFile,
+        workRoot: paths.aiWorkDir,
+        protector: hooks?.ai.protector ?? safeStorageTextProtector(safeStorage),
+        apiFetch: hooks?.ai.apiFetch,
+        env: hooks?.ai.env,
+      },
     });
     hooks?.attachServices({ services, db, clock: systemClock, emitRevision });
     applyNativeTheme(services.settings.getInternal('appearance.theme'));
@@ -272,6 +281,12 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     services.locks.start();
     services.stickyLocks.start();
   }
+
+  // Each kind of window keeps its zoom (D-186); without a database only until the app quits.
+  const zoom = new WindowZoom({
+    store: services ? settingsZoomStore(services.settings) : memoryZoomStore(),
+    notify: (webContentsId, percent) => void eventBus.sendTo(webContentsId, 'window:zoomChanged', { percent }),
+  });
 
   const startup: StartupStateType = opened.ok ? { status: 'ok' } : { status: 'error', code: opened.code };
   // Typed dates follow the computer's regional date order (D-184): Windows' and Linux's format locale, not the UI language.
@@ -311,6 +326,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
       iconPath: path.join(app.getAppPath(), 'resources', 'icon.png'),
       registry,
       logger: log,
+      zoom,
       devUrl: devUrl ? `${devUrl}${devUrl.endsWith('/') ? '' : '/'}` : null,
       onTitleBarOverlay: hooks ? (overlay) => (hooks.state.titleBarOverlay = overlay) : undefined,
     },
@@ -375,6 +391,7 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
     desktop: {
       ...windowsSide,
       shortcut,
+      zoom,
       autostart: createAutostartControl({
         adapter: hooks ? hooks.autostart : nativeAutostart(),
         capability: () => capabilities.launchAtLogin,
@@ -397,6 +414,8 @@ async function start(overrideOn: boolean, overrideWarning: string | null): Promi
   app.on('will-quit', () => {
     scheduler?.stop();
     shortcut?.stop();
+    // A running AI action ends with its tool's process tree (D-192).
+    services?.ai.stopAll();
     // The windows flushed before quitting; whatever main still holds of their edits is saved now (D-072, D-103).
     services?.collab.closeAll();
     // Then every locked sticky blurs and every locked note's key is zeroed (D-111, D-172).

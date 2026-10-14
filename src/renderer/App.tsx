@@ -41,17 +41,23 @@ function loadFor(bridge: InfinityBridge): Promise<Load> {
 // One AppServices per bridge: the cache survives StrictMode's double render, and the window lifecycle
 // hooks inside the services flush the active note when the page hides.
 const servicesByBridge = new WeakMap<InfinityBridge, AppServices>();
-function servicesFor(bridge: InfinityBridge, identity: MainIdentity): AppServices {
+function servicesFor(bridge: InfinityBridge, identity: MainIdentity, info: AppInfoType): AppServices {
   let services = servicesByBridge.get(bridge);
   if (!services) {
-    services = createAppServices(bridge, { initialOpens: identity.openNotes, initialReminders: identity.openReminders, initialWidget: identity.widget });
+    services = createAppServices(bridge, {
+      initialOpens: identity.openNotes,
+      initialReminders: identity.openReminders,
+      initialWidget: identity.widget,
+      initialZoom: identity.zoom,
+      dateOrder: info.dateOrder,
+    });
     servicesByBridge.set(bridge, services);
   }
   return services;
 }
 
-function ShellRoot({ bridge, identity }: { bridge: InfinityBridge; identity: MainIdentity }) {
-  const [services] = useState(() => servicesFor(bridge, identity));
+function ShellRoot({ bridge, identity, info }: { bridge: InfinityBridge; identity: MainIdentity; info: AppInfoType }) {
+  const [services] = useState(() => servicesFor(bridge, identity, info));
   return (
     <AppServicesContext.Provider value={services}>
       <Shell />
@@ -110,7 +116,7 @@ export function App({ bridge }: { bridge?: InfinityBridge }) {
   if (load.info.startup.status === 'error') {
     return <StartupErrorScreen bridge={api} code={load.info.startup.code} />;
   }
-  if (identity.role === 'sticky') return <StickyApp bridge={api} noteId={identity.sticky.noteId} />;
+  if (identity.role === 'sticky') return <StickyApp bridge={api} noteId={identity.sticky.noteId} dateOrder={load.info.dateOrder} />;
   if (identity.role === 'widget') return <WidgetApp bridge={api} initial={identity.widget} />;
-  return <ShellRoot bridge={api} identity={identity} />;
+  return <ShellRoot bridge={api} identity={identity} info={load.info} />;
 }

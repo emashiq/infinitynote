@@ -176,6 +176,24 @@ export interface InfinityBridge {
     deleteThread: Call<'comment:deleteThread'>;
     resolve: Call<'comment:resolve'>;
   };
+  /** AI actions (D-190): a sticky window uses the ones about its own note. */
+  readonly ai: {
+    status: Query<'ai:status'>;
+    acknowledge: Call<'ai:acknowledge'>;
+    context: Call<'ai:context'>;
+    pickFiles: Query<'ai:pickFiles'>;
+    ask: Call<'ai:ask'>;
+    followUp: Call<'ai:followUp'>;
+    /** Resolves when the thread's engine has answered (at once when it is not running). */
+    wait: Call<'ai:wait'>;
+    stop: Call<'ai:stop'>;
+    thread: Call<'ai:thread'>;
+    deleteThread: Call<'ai:deleteThread'>;
+    config: Query<'ai:config'>;
+    setKey: Call<'ai:setKey'>;
+    cliPath: Call<'ai:cliPath'>;
+    test: Call<'ai:test'>;
+  };
   readonly graph: {
     build: Call<'graph:build'>;
     local: Call<'graph:local'>;
@@ -208,6 +226,8 @@ export interface InfinityBridge {
   };
   readonly window: {
     getState: Query<'window:getState'>;
+    /** Zooms this window and every other window of its kind (D-186). */
+    zoom: Call<'window:zoom'>;
   };
   readonly zones: {
     list: Query<'zones:list'>;

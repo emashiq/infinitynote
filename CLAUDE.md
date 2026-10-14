@@ -66,6 +66,12 @@ Never promise notifications while fully quit or guaranteed window positioning un
 
 - **v0.3.1 follow-up (2026-10-11).** The user reported that documents (spreadsheets) could not be renamed, Mermaid diagrams were hard to find and dates like 10-10-2026 did not work, and asked that files (documents) can be locked like notes: opened instantly while unlocked, the password needed again after 5 idle minutes. Implemented, accepted (`docs/progress/release-0.3.1.md`, `-acceptance.md`) and released as v0.3.1 at the user's request (same push/release permission and testing rules as v0.3.0).
 
+- **v0.4.0 feature batch (2026-10-14).** The user asked for these, developed and released autonomously as v0.4.0 (same push/release permission and testing rules as v0.3.0; plan `docs/plans/release-0.4.0.md`, progress `docs/progress/release-0.4.0.md`; work happens in the git worktree on branch `emashiq/zoom-in-feature-docs-spreadsheet-pptx-disable-headless-ai-attach-like-claude-openai`):
+  - Zoom in / zoom out (window zoom with Ctrl +/-/0 and Ctrl+wheel; viewers zoom their own content).
+  - Word, spreadsheet and PowerPoint documents turned off (a setting, default off; existing data kept and openable with the system app).
+  - Headless AI actions with Claude and OpenAI (Claude Code / Codex CLIs headless, or their APIs with a user key): run an action on a selected part with attachments; the results live in a thread anchored to that part. This overrides "no embedded AI" for this opt-in, off-by-default feature only; nothing is sent anywhere unless the user runs an action.
+  - Math results like Apple Notes Math Notes: `7+5=` suggests `12`, with variables, percentages and date arithmetic (date subtraction, date plus duration).
+
 ## Host notes (Windows development machine)
 
 - Windows has no Python (`python` is the Store alias); none is needed.

@@ -5,6 +5,7 @@ import '../../styles/pdf.css';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { DOCUMENT_MESSAGES } from '../../../shared/documents/messages';
 import { useStore } from '../../state/use-store';
+import { useViewerZoom } from '../../zoom/use-viewer-zoom';
 import { LINK_COPIED, LINK_COPY_FAILED } from '../../ui/copy-text';
 import type { MenuItem } from '../../ui/Menu';
 import { SegmentedControl } from '../../ui/SegmentedControl';
@@ -77,6 +78,8 @@ export default function PdfViewer({ document, sourceUrl, host, target, findReque
   // The pages, thumbnails and outline exist (closing the document for new bytes removes them before the state says so).
   const shown = ready && session.document !== null;
   const dirty = !readOnly && (pagesChanged || state.annotationsChanged);
+  // Ctrl+wheel and the zoom keys in the viewer zoom the pages, not the window (D-186); Ctrl+0 fits them again.
+  useViewerZoom(root, shown ? (action) => (action === 'reset' ? session.setZoom('auto') : session.zoomBy(action === 'in' ? 1 : -1)) : null);
 
   // Loading new bytes (a page change, a save) disables the toolbar and removes the thumbnails, which drops the focus.
   // While loading, the viewer itself holds it, so keys still reach it (a Ctrl+S waits for the change under way); once

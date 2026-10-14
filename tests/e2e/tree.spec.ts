@@ -68,7 +68,8 @@ test('Common protected', async () => {
   await expect(page.getByRole('menu')).toBeVisible();
   // The context menu's items (the title bar's menubar has File, View and Help items of its own, D-097).
   const names = await page.getByRole('menu').getByRole('menuitem').allTextContents();
-  expect(names).toEqual(['New note', 'New sticky', 'New locked note…', 'New locked sticky…', 'New Word document', 'New spreadsheet', 'New presentation', 'Import file…', 'New folder', 'Open graph']);
+  // No new Word document, spreadsheet or presentation: Office documents are off by default (D-187).
+  expect(names).toEqual(['New note', 'New sticky', 'New locked note…', 'New locked sticky…', 'Import file…', 'New folder', 'Open graph']);
   for (const banned of ['Rename', 'Move to…', 'Move to Trash']) await expect(menuItem(page, banned)).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(common).toBeFocused();

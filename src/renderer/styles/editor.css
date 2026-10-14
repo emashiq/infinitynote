@@ -745,3 +745,19 @@
   font-family: var(--font-code);
   font-size: 12px;
 }
+
+/*
+ * Math results (D-188): a suggested result is muted text after the caret (Tab or Enter inserts it); an inserted result
+ * is underlined with dots in the text's own color, which reads on every note and sticky background.
+ */
+.calc-ghost {
+  color: var(--text-muted);
+  pointer-events: none;
+  user-select: none;
+}
+
+.calc-result {
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}

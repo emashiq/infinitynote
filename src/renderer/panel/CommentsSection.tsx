@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { describeAnchor } from '../../shared/comments/anchors';
 import { MAX_COMMENT_CHARS, type CommentDtoType, type CommentThreadDtoType } from '../../shared/contracts/comments';
-import type { CommentFilter, CommentsStore } from '../comments/comments-store';
+import { ANSWER_COPIED, ANSWER_COPY_FAILED, ANSWER_NOT_PLACED, AiThreadView } from '../ai/AiThreadView';
+import { AskAiDialog } from '../ai/AskAiDialog';
+import type { CommentFilter, CommentsStore, ThreadKindFilter } from '../comments/comments-store';
 import type { Outcome } from '../state/store';
 import { useServices, useStore } from '../state/use-store';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { copyText } from '../ui/copy-text';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { PanelSection } from './PanelSection';
 
 const fmt = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' });
 
 export const COMMENT_EMPTY = { open: 'No open comments. Select text and choose Comment (Ctrl+Alt+M).', resolved: 'No resolved comments' } as const;
+export const AI_EMPTY = 'No AI threads. Select text and choose Ask AI (Ctrl+Shift+I).';
 export const TEXT_REMOVED = 'Text removed';
 
 /** A comment field: Ctrl+Enter saves, Escape cancels; the error of the last save is shown under it. */
@@ -182,16 +186,51 @@ function ThreadCard({
   );
 }
 
-/** The Comments section of the Details panel (D-165): the active item's threads, open or resolved, and a new comment. */
+/** An AI thread (D-190): its anchor with the AI badge, the conversation and its actions. */
+function AiThreadCard({ thread, active, orphaned, comments, onDelete }: { thread: CommentThreadDtoType; active: boolean; orphaned: boolean; comments: CommentsStore; onDelete: () => void }) {
+  const { notices } = useServices();
+  const place = describeAnchor(thread.anchor);
+  return (
+    <li className={`comment-thread is-ai ${active ? 'is-active' : ''}`.trim()} aria-label={`AI thread on ${thread.quote || place || 'this item'}`}>
+      <button type="button" className="comment-anchor-btn" aria-current={active ? 'true' : undefined} onClick={() => comments.select(thread.id)}>
+        <span className="ai-badge">AI</span>
+        {orphaned ? <span className="comment-orphan">{TEXT_REMOVED}</span> : null}
+        {place ? <span className="comment-place">{place}</span> : null}
+        {thread.quote ? <q className="comment-quote">{thread.quote}</q> : null}
+      </button>
+      <AiThreadView
+        thread={thread}
+        onFollowUp={(prompt) => comments.followUpAi(thread.id, prompt)}
+        onStop={() => void comments.stopAi(thread.id)}
+        onDelete={onDelete}
+        onCopy={(text) => void copyText(text).then((copied) => notices.push(copied ? ANSWER_COPIED : ANSWER_COPY_FAILED, copied ? 'info' : 'error'))}
+        onPlace={
+          comments.canPlaceAnswers()
+            ? (text, placement) => {
+                if (!comments.placeAnswer(thread.id, text, placement)) notices.push(ANSWER_NOT_PLACED, 'error');
+              }
+            : undefined
+        }
+      />
+    </li>
+  );
+}
+
+/**
+ * The Comments section of the Details panel (D-165): the active item's threads, open or resolved, and a new comment;
+ * AI threads (D-190) with their badge, a filter of All, Comments and AI, and the Ask AI panel.
+ */
 export function CommentsSection() {
-  const { comments } = useServices();
+  const { comments, bridge, tabs, ui } = useServices();
   const s = useStore(comments.store);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   if (s.target === null) return null;
-  const open = s.threads.filter((t) => t.resolvedAt === null);
-  const resolved = s.threads.filter((t) => t.resolvedAt !== null);
+  const ofKind = s.threads.filter((t) => s.kind === 'all' || t.kind === s.kind);
+  const open = ofKind.filter((t) => t.resolvedAt === null);
+  const resolved = ofKind.filter((t) => t.resolvedAt !== null);
   const shown = s.filter === 'open' ? open : resolved;
+  const aiCount = s.threads.filter((t) => t.kind === 'ai').length;
   const confirmDelete = async () => {
     if (!pendingDelete) return;
     const result = pendingDelete.kind === 'thread' ? await comments.deleteThread(pendingDelete.threadId) : await comments.deleteReply(pendingDelete.commentId);
@@ -200,6 +239,17 @@ export function CommentsSection() {
   };
   return (
     <PanelSection title="Comments" className="comments-section">
+      <SegmentedControl<ThreadKindFilter>
+        label="Show threads"
+        name="thread-kind"
+        options={[
+          { value: 'all', label: 'All' },
+          { value: 'comment', label: `Comments (${s.threads.length - aiCount})` },
+          { value: 'ai', label: `AI (${aiCount})` },
+        ]}
+        value={s.kind}
+        onChange={(kind) => comments.setKind(kind)}
+      />
       <SegmentedControl<CommentFilter>
         label="Show comments"
         name="comment-filter"
@@ -222,12 +272,30 @@ export function CommentsSection() {
           {s.message}
         </p>
       ) : null}
-      {s.status === 'ready' && shown.length === 0 && !s.draft ? <p className="muted">{COMMENT_EMPTY[s.filter]}</p> : null}
+      {s.status === 'ready' && shown.length === 0 && !s.draft ? <p className="muted">{s.kind === 'ai' && s.filter === 'open' ? AI_EMPTY : COMMENT_EMPTY[s.filter]}</p> : null}
       <ul className="comment-threads" aria-label={s.filter === 'open' ? 'Open comments' : 'Resolved comments'}>
-        {shown.map((t) => (
-          <ThreadCard key={t.id} thread={t} active={t.id === s.activeThreadId} orphaned={s.orphans.has(t.id)} comments={comments} onDelete={setPendingDelete} />
-        ))}
+        {shown.map((t) =>
+          t.kind === 'ai' ? (
+            <AiThreadCard key={t.id} thread={t} active={t.id === s.activeThreadId} orphaned={s.orphans.has(t.id)} comments={comments} onDelete={() => setPendingDelete({ kind: 'thread', threadId: t.id })} />
+          ) : (
+            <ThreadCard key={t.id} thread={t} active={t.id === s.activeThreadId} orphaned={s.orphans.has(t.id)} comments={comments} onDelete={setPendingDelete} />
+          ),
+        )}
       </ul>
+      {s.aiDraft ? (
+        <AskAiDialog
+          bridge={bridge}
+          target={s.target}
+          quote={s.aiDraft.quote}
+          place={describeAnchor(s.aiDraft.anchor)}
+          onSubmit={(choices) => comments.submitAi(choices)}
+          onCancel={() => comments.cancelAi()}
+          onOpenSettings={() => {
+            comments.cancelAi();
+            void tabs.openPage('settings').then(() => ui.requestFocus({ target: 'aiSetting' }));
+          }}
+        />
+      ) : null}
       {pendingDelete ? (
         <ConfirmDialog
           title={pendingDelete.kind === 'thread' ? 'Delete this thread?' : 'Delete this reply?'}

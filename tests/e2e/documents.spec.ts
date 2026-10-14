@@ -7,7 +7,8 @@ import { useApp } from './harness';
 import { activate, chooseMenu, dialogByName, expandRows, menuItem, tabItem, toasts, treeByKey, treeItem } from './ui';
 
 /** Documents as tree items (D-118) and the read-only HTML viewer (F6). Written in Run 0; run at the end of release 0.3.0. */
-const h = useApp({ failOnMainErrors: true });
+// Word, spreadsheet and PowerPoint documents are off by default (D-187); these tests use them.
+const h = useApp({ failOnMainErrors: true, settings: { 'documents.office': true } });
 const FIXTURES = path.resolve('tests/fixtures/documents');
 
 let dir = '';

@@ -1,5 +1,6 @@
-import type { CommentAnchorType } from '../../../shared/comments/anchors';
+import { MAX_AI_SELECTION_CHARS } from '../../../shared/ai/limits';
 import { COMMENT_MESSAGES, MAX_COMMENT_QUOTE, type CommentThreadDtoType } from '../../../shared/contracts/comments';
+import type { AnchorChoice } from '../../comments/comments-store';
 
 /** An area of a page as fractions of its width and height (D-165). */
 export interface PageRect {
@@ -59,24 +60,26 @@ function pageOf(node: Node | null): HTMLElement | null {
 }
 
 /**
- * The anchor of a new PDF comment: the selected text on one page (its area and text) or, without a selection, the page
- * shown (the whole page).
+ * The anchor of a new PDF comment or AI action: the selected text on one page (its area and text) or, without a
+ * selection, the page shown (the whole page).
  */
-export function pdfCommentAnchor(container: HTMLElement, currentPage: number, rotation: number): { anchor: CommentAnchorType; quote: string } | { error: string } {
+export function pdfCommentAnchor(container: HTMLElement, currentPage: number, rotation: number): AnchorChoice | { error: string } {
   if (currentPage < 1) return { error: COMMENT_MESSAGES.notReady };
   const selection = container.ownerDocument.getSelection();
   const range = selection && !selection.isCollapsed && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
   const page = range ? pageOf(range.startContainer) : null;
   if (!range || !page || !container.contains(page) || pageOf(range.endContainer) !== page) {
-    return { anchor: { type: 'pdf', page: currentPage, rect: null }, quote: '' };
+    return { anchor: { type: 'pdf', page: currentPage, rect: null }, quote: '', text: '' };
   }
   const box = page.getBoundingClientRect();
   const r = range.getBoundingClientRect();
-  const quote = range.toString().replace(/\s+/g, ' ').trim().slice(0, MAX_COMMENT_QUOTE);
+  const raw = range.toString();
+  const quote = raw.replace(/\s+/g, ' ').trim().slice(0, MAX_COMMENT_QUOTE);
+  const text = raw.trim().slice(0, MAX_AI_SELECTION_CHARS);
   const pageNumber = Number(page.dataset.pageNumber);
-  if (box.width <= 0 || box.height <= 0 || r.width <= 0) return { anchor: { type: 'pdf', page: pageNumber, rect: null }, quote };
+  if (box.width <= 0 || box.height <= 0 || r.width <= 0) return { anchor: { type: 'pdf', page: pageNumber, rect: null }, quote, text };
   const rect = viewToPage({ x: (r.left - box.left) / box.width, y: (r.top - box.top) / box.height, width: r.width / box.width, height: r.height / box.height }, rotation);
-  return { anchor: { type: 'pdf', page: pageNumber, rect }, quote };
+  return { anchor: { type: 'pdf', page: pageNumber, rect }, quote, text };
 }
 
 const MARKER_ATTR = 'data-comment-marker';
@@ -114,16 +117,16 @@ export class PdfCommentMarkers {
       const rect = anchor.rect ? pageToView(anchor.rect, rotation) : null;
       if (rect) {
         const area = el.ownerDocument.createElement('div');
-        area.className = 'comment-area';
+        area.className = thread.kind === 'ai' ? 'comment-area is-ai' : 'comment-area';
         area.setAttribute(MARKER_ATTR, thread.id);
         Object.assign(area.style, { left: pct(rect.x), top: pct(rect.y), width: pct(rect.width), height: pct(rect.height) });
         el.appendChild(area);
       }
       const marker = el.ownerDocument.createElement('button');
       marker.type = 'button';
-      marker.className = `comment-marker${thread.id === this.activeId ? ' is-active' : ''}`;
+      marker.className = `comment-marker${thread.kind === 'ai' ? ' is-ai' : ''}${thread.id === this.activeId ? ' is-active' : ''}`;
       marker.setAttribute(MARKER_ATTR, thread.id);
-      marker.setAttribute('aria-label', `Comment ${i + 1}: ${thread.comments[0]?.body.slice(0, 80) ?? ''}`);
+      marker.setAttribute('aria-label', `${thread.kind === 'ai' ? 'AI thread' : 'Comment'} ${i + 1}: ${thread.comments[0]?.body.slice(0, 80) ?? ''}`);
       marker.title = thread.comments[0]?.body.slice(0, 200) ?? '';
       marker.textContent = String(i + 1);
       Object.assign(marker.style, rect ? { left: `calc(${pct(rect.x + rect.width)} - 10px)`, top: `calc(${pct(rect.y)} - 22px)` } : { right: '6px', top: '6px' });

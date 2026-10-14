@@ -20,6 +20,9 @@ export type CommandId =
   | 'go.settings'
   | 'view.toggleTree'
   | 'view.togglePanel'
+  | 'view.zoomIn'
+  | 'view.zoomOut'
+  | 'view.zoomReset'
   | 'tab.close'
   | 'tab.next'
   | 'tab.prev'
@@ -42,6 +45,7 @@ export type CommandId =
   | 'document.newXlsx'
   | 'document.newPptx'
   | 'comment.add'
+  | 'ai.ask'
   | 'go.graph';
 
 export interface CommandRunner {
@@ -67,9 +71,9 @@ export interface CommandRunner {
 }
 
 export function createCommandRunner(
-  services: Pick<AppServices, 'bridge' | 'tree' | 'tabs' | 'home' | 'layout' | 'ui' | 'notices' | 'portability' | 'documents' | 'comments' | 'graph'>,
+  services: Pick<AppServices, 'bridge' | 'tree' | 'tabs' | 'home' | 'layout' | 'ui' | 'notices' | 'portability' | 'documents' | 'comments' | 'graph' | 'zoom'>,
 ): CommandRunner {
-  const { bridge, tree, tabs, home, layout, ui, notices, portability, documents, comments, graph } = services;
+  const { bridge, tree, tabs, home, layout, ui, notices, portability, documents, comments, graph, zoom } = services;
 
   const currentLocation = (): LocationType => {
     const t = tree.store.getState();
@@ -219,12 +223,22 @@ export function createCommandRunner(
         case 'comment.add':
           comments.start();
           return;
+        case 'ai.ask':
+          comments.startAi();
+          return;
         case 'view.toggleTree':
           layout.toggleTree();
           return;
         case 'view.togglePanel':
           layout.togglePanel();
           return;
+        case 'view.zoomIn':
+        case 'view.zoomOut':
+        case 'view.zoomReset': {
+          const refused = await zoom.change(id === 'view.zoomIn' ? 'in' : id === 'view.zoomOut' ? 'out' : 'reset');
+          if (refused) notices.push(refused, 'error');
+          return;
+        }
         case 'tab.close':
           await tabs.closeActive();
           return;

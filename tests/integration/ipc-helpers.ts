@@ -5,6 +5,7 @@ import { createSenderPolicy, type IpcEventLike } from '../../src/main/ipc/sender
 import type { MainServices } from '../../src/main/main-services';
 import { memoryLogger } from '../../src/main/services/logger';
 import type { SenderInfo } from '../../src/main/windows/window-registry';
+import { memoryZoomStore, WindowZoom } from '../../src/main/windows/window-zoom';
 import type { Result } from '../../src/shared/contracts/envelope';
 
 type Listener = (event: IpcEventLike, payload: unknown) => unknown;
@@ -61,6 +62,7 @@ export const NO_DESKTOP: DesktopHandlerDeps = {
   widget: null,
   autostart: { get: () => ({ enabled: false, capability: { status: 'unsupported', reason: 'development-build' } }), set: () => { throw new Error('not used'); } },
   shortcut: null,
+  zoom: new WindowZoom({ store: memoryZoomStore(), notify: () => undefined }),
 };
 
 /**

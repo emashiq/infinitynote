@@ -8,6 +8,12 @@ const nodeBuiltins = [
   'https', 'net', 'os', 'path', 'process', 'readline', 'stream', 'tls', 'url', 'util', 'vm', 'worker_threads', 'zlib',
 ];
 
+// The AI SDKs run in main only, and only in their engine modules (D-191).
+const aiSdks = [
+  { name: '@anthropic-ai/sdk', message: 'The AI SDKs load only in main (src/main/ai/engines).' },
+  { name: 'openai', message: 'The AI SDKs load only in main (src/main/ai/engines).' },
+];
+
 const nodePatterns = [
   { group: ['node:*'], message: 'Node built-ins are not allowed here.' },
   { group: nodeBuiltins, message: 'Node built-ins are not allowed here.' },
@@ -48,6 +54,7 @@ export default tseslint.config(
           paths: [
             { name: 'electron', message: 'The renderer must not import electron.' },
             { name: 'better-sqlite3', message: 'The renderer must not import better-sqlite3.' },
+            ...aiSdks,
           ],
           patterns: [
             ...nodePatterns,
@@ -66,6 +73,7 @@ export default tseslint.config(
           paths: [
             { name: 'zod', message: 'The preload must not import zod.' },
             { name: 'better-sqlite3', message: 'The preload must not import better-sqlite3.' },
+            ...aiSdks,
           ],
           patterns: [
             ...nodePatterns,
@@ -84,6 +92,7 @@ export default tseslint.config(
           paths: [
             { name: 'electron', message: 'Shared code must not import electron.' },
             { name: 'better-sqlite3', message: 'Shared code must not import better-sqlite3.' },
+            ...aiSdks,
           ],
           patterns: [
             ...nodePatterns,
@@ -95,12 +104,18 @@ export default tseslint.config(
   },
   {
     files: ['src/main/**/*.ts'],
-    ignores: ['src/main/db/better-sqlite3-driver.ts'],
+    ignores: ['src/main/db/better-sqlite3-driver.ts', 'src/main/ai/engines/anthropic-api.ts', 'src/main/ai/engines/openai-api.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
-        { paths: [{ name: 'better-sqlite3', message: 'Only db/better-sqlite3-driver.ts may import better-sqlite3.' }] },
+        { paths: [{ name: 'better-sqlite3', message: 'Only db/better-sqlite3-driver.ts may import better-sqlite3.' }, ...aiSdks] },
       ],
+    },
+  },
+  {
+    files: ['src/main/ai/engines/anthropic-api.ts', 'src/main/ai/engines/openai-api.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { paths: [{ name: 'better-sqlite3', message: 'Only db/better-sqlite3-driver.ts may import better-sqlite3.' }] }],
     },
   },
 );

@@ -17,6 +17,23 @@ import {
   PickFilesRequest,
   PickFilesResponse,
 } from './attachments';
+import {
+  AiAcknowledgeRequest,
+  AiAskRequest,
+  AiCliPathRequest,
+  AiConfig,
+  AiContextResponse,
+  AiDeletedResponse,
+  AiFollowUpRequest,
+  AiSetKeyRequest,
+  AiStatus,
+  AiStopResponse,
+  AiTargetRequest,
+  AiTestRequest,
+  AiTestResponse,
+  AiThreadIdRequest,
+  AiThreadResponse,
+} from './ai';
 import type { EventChannel, InvokeChannel } from './channel-names';
 import {
   CommentCreateRequest,
@@ -210,7 +227,7 @@ import {
   StickySetPinnedRequest,
   StickyState,
 } from './stickies';
-import { AppOpenNoteEvent, WindowGetStateResponse } from './windows';
+import { AppOpenNoteEvent, WindowGetStateResponse, WindowZoomEvent, WindowZoomRequest, WindowZoomResponse } from './windows';
 import { AutostartSetRequest, AutostartState, WidgetSetCollapsedRequest, WidgetSetPinnedRequest, WidgetState } from './widget';
 import {
   SettingsChangedEvent,
@@ -394,6 +411,22 @@ export const CHANNEL_SCHEMAS = {
   'lock:documentSetHello': { request: DocumentLockSetHelloRequest, response: DocumentLockStatus },
   'lock:documentRemove': { request: DocumentLockRemoveRequest, response: DocumentLockStatus },
   'lock:documentActivity': { request: DocumentLockRequest, response: Empty },
+  'window:zoom': { request: WindowZoomRequest, response: WindowZoomResponse },
+  // v0.4.0: AI actions (D-190). Stickies run them on their own note; keys, programs and the test stay in the main window.
+  'ai:status': { request: Empty, response: AiStatus },
+  'ai:acknowledge': { request: AiAcknowledgeRequest, response: AiStatus },
+  'ai:context': { request: AiTargetRequest, response: AiContextResponse },
+  'ai:pickFiles': { request: Empty, response: PickFilesResponse },
+  'ai:ask': { request: AiAskRequest, response: AiThreadResponse },
+  'ai:followUp': { request: AiFollowUpRequest, response: AiThreadResponse },
+  'ai:wait': { request: AiThreadIdRequest, response: AiThreadResponse },
+  'ai:stop': { request: AiThreadIdRequest, response: AiStopResponse },
+  'ai:thread': { request: AiThreadIdRequest, response: AiThreadResponse },
+  'ai:deleteThread': { request: AiThreadIdRequest, response: AiDeletedResponse },
+  'ai:config': { request: Empty, response: AiConfig },
+  'ai:setKey': { request: AiSetKeyRequest, response: AiConfig },
+  'ai:cliPath': { request: AiCliPathRequest, response: AiConfig },
+  'ai:test': { request: AiTestRequest, response: AiTestResponse },
 } as const satisfies Record<InvokeChannel, ChannelSchema>;
 
 export const EVENT_SCHEMAS = {
@@ -412,6 +445,7 @@ export const EVENT_SCHEMAS = {
   'collab:status': CollabStatusEvent,
   'sticky:lockState': StickyLockState,
   'lock:documentLocked': DocumentLockedEvent,
+  'window:zoomChanged': WindowZoomEvent,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 type ChannelSchemas = typeof CHANNEL_SCHEMAS;

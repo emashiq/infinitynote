@@ -4,6 +4,7 @@ import { APP_VERSION } from '../../src/shared/app-identity';
 import type { TreeChangedEventType } from '../../src/shared/contracts/hierarchy';
 import type { NoteRevisionEventType } from '../../src/shared/contracts/notes';
 import type { ReminderChangedEventType } from '../../src/shared/contracts/reminders';
+import { createMemoryTextProtector } from '../../src/main/ai/ai-keys';
 import { resolveDataPaths } from '../../src/main/app-paths';
 import { HierarchyRepo } from '../../src/main/db/repositories/hierarchy-repo';
 import { createMainServices, type MainServicesDeps } from '../../src/main/main-services';
@@ -46,6 +47,16 @@ export async function setupServices(
     restoreOutcome?: MainServicesDeps['restoreOutcome'];
     /** Locked notes: the OS key, its protection and power events (cheap scrypt parameters unless given). */
     locks?: MainServicesDeps['locks'];
+    /**
+     * The "Office documents" setting (D-187). The app starts with it off; these services turn it on (a settings row),
+     * because many tests make Word, spreadsheet and PowerPoint documents. Tests of the off state pass false.
+     */
+    office?: boolean;
+    /**
+     * AI actions (D-190): by default no tool is on PATH and the APIs' transport refuses every request, so no test ever
+     * reaches a real service; AI tests name their fake tools and transport.
+     */
+    ai?: Partial<MainServicesDeps['ai']>;
   } = {},
 ) {
   const t = opts.testDb ?? (await openFresh());
@@ -158,7 +169,16 @@ export async function setupServices(
     },
     testFaults: opts.testFaults,
     locks: { kdf: TEST_KDF, pinKdf: TEST_PIN_KDF, ...opts.locks },
+    ai: {
+      keysFile: path.join(t.dir, 'ai-keys.json'),
+      workRoot: paths.aiWorkDir,
+      protector: createMemoryTextProtector(),
+      env: { PATH: '' },
+      apiFetch: () => Promise.reject(new Error('No network in tests')),
+      ...opts.ai,
+    },
   });
+  if (opts.office !== false) services.settings.setInternal('documents.office', true);
   const { hierarchy } = services;
   const repo = new HierarchyRepo(t.db);
 

@@ -1,6 +1,7 @@
 import type { AddFilesMode } from '../../shared/attachments/file-choice';
 import { DOCUMENT_MAX_MB_RANGE, IMAGE_MAX_MB_RANGE } from '../../shared/attachments/limits';
 import { AUTO_LOCK_MINUTES, BLUR_STICKY_SECONDS } from '../../shared/contracts/locks';
+import type { MathResultsMode } from '../../shared/contracts/settings';
 import { AUTO_VERSION_DAYS_RANGE, AUTO_VERSION_MAX_RANGE } from '../../shared/versions/retention';
 import { NumberField, SelectField, SettingsSection } from './fields';
 import { useSettingValues } from './use-settings';
@@ -17,6 +18,15 @@ export const ADD_FILES_OPTIONS: Array<{ value: AddFilesMode; label: string }> = 
 export const ADD_FILES_SETTING_TEXT =
   `Copied files travel with backups and exports. Linked files stay where they are and are not in backups or exports. Files larger than the copy limit (at most ${DOCUMENT_MAX_MB_RANGE.max} MB) are always linked.`;
 
+export const MATH_RESULTS_OPTIONS: Array<{ value: MathResultsMode; label: string }> = [
+  { value: 'suggest', label: 'Suggest results' },
+  { value: 'insert', label: 'Insert results automatically' },
+  { value: 'off', label: 'Off' },
+];
+
+export const MATH_RESULTS_TEXT =
+  'A line ending in "=" after a calculation gets its result, in notes and stickies: 7+5= gives 12. Variables ("Lunch = 25"), percentages ("20% of 50") and dates ("25-12-2026 - today") work too. Suggested results appear after the cursor: Tab or Enter inserts one, Esc dismisses it.';
+
 export const AUTO_LOCK_OPTIONS = AUTO_LOCK_MINUTES.map((m) => ({ value: String(m), label: m === 60 ? 'After 1 hour' : `After ${m} minute${m === 1 ? '' : 's'}` }));
 
 export const BLUR_STICKY_OPTIONS = BLUR_STICKY_SECONDS.map((s) => ({ value: String(s), label: s < 60 ? `After ${s} seconds` : `After ${s / 60} minute${s === 60 ? '' : 's'}` }));
@@ -27,17 +37,19 @@ export const BLUR_STICKY_TEXT =
 export const AUTO_LOCK_TEXT =
   'An unlocked note locks again when it is not opened or edited for this long, when the computer locks or sleeps, and when Infinity Notes quits.';
 
-const KEYS = ['locks.autoLockMinutes', 'locks.blurStickySeconds', 'attachments.addFiles', 'attachments.imageMaxMb', 'attachments.documentMaxMb', 'retention.trashDays', 'retention.autoVersionDays', 'retention.autoVersionMax'] as const;
+const KEYS = ['notes.mathResults', 'locks.autoLockMinutes', 'locks.blurStickySeconds', 'attachments.addFiles', 'attachments.imageMaxMb', 'attachments.documentMaxMb', 'retention.trashDays', 'retention.autoVersionDays', 'retention.autoVersionMax'] as const;
 
 /**
- * Settings > Notes and attachments (INF-PREF-05, INF-PORT-07, D-108, D-111): adding files, size limits, Trash and version
- * retention, when locked notes lock again and when locked stickies blur again (D-172).
+ * Settings > Notes and attachments (INF-PREF-05, INF-PORT-07, D-108, D-111): math results (D-188), adding files, size
+ * limits, Trash and version retention, when locked notes lock again and when locked stickies blur again (D-172).
  */
 export function NotesSettings() {
   const { values, set } = useSettingValues(KEYS);
   if (!values) return null;
   return (
     <SettingsSection title="Notes and attachments">
+      <SelectField label="Math results" value={values['notes.mathResults']} options={MATH_RESULTS_OPTIONS} onChange={(v) => set('notes.mathResults', v as MathResultsMode)} />
+      <p className="muted">{MATH_RESULTS_TEXT}</p>
       <SelectField
         label="When adding files"
         value={values['attachments.addFiles']}

@@ -15,6 +15,17 @@ export type BlankDocumentKind = (typeof BLANK_DOCUMENT_KINDS)[number];
 /** The kinds stored as an Office Open XML package (a zip). */
 export const OOXML_KINDS: ReadonlySet<DocumentKind> = new Set(['docx', 'pptx', 'xlsx']);
 
+/**
+ * Word, spreadsheet and PowerPoint kinds (CSV is a spreadsheet): opened and edited in the app only while the setting
+ * "Office documents" is on (D-187). Otherwise such files are plain files, and existing documents of these kinds open in
+ * the system app.
+ */
+export const OFFICE_KINDS: ReadonlySet<DocumentKind> = new Set(['docx', 'pptx', 'xlsx', 'csv']);
+
+export function isOfficeKind(kind: DocumentKind): boolean {
+  return OFFICE_KINDS.has(kind);
+}
+
 export interface DocumentKindInfo {
   /** What people call it ("Word document"). */
   label: string;
@@ -60,12 +71,22 @@ const KIND_BY_EXTENSION: Readonly<Record<string, DocumentKind>> = {
   htm: 'html',
 };
 
-/** Every extension a document can be imported from (the file picker's filter). */
-export const DOCUMENT_EXTENSIONS: readonly string[] = Object.keys(KIND_BY_EXTENSION);
-
 /** The document kind of a file name by its extension, or null when Infinity Notes does not open that kind. */
 export function documentKindOf(name: string | null | undefined): DocumentKind | null {
   return KIND_BY_EXTENSION[extensionFor(name)] ?? null;
+}
+
+/** The kind a file opens as in the app with the Office setting as given; null for a file that stays a plain file. */
+export function openableKindOf(name: string | null | undefined, office: boolean): DocumentKind | null {
+  const kind = documentKindOf(name);
+  return kind && (office || !isOfficeKind(kind)) ? kind : null;
+}
+
+/** Every extension a document can be imported from with the Office setting as given (the file picker's filter). */
+export function documentExtensions(office: boolean): string[] {
+  return Object.entries(KIND_BY_EXTENSION)
+    .filter(([, kind]) => office || !isOfficeKind(kind))
+    .map(([extension]) => extension);
 }
 
 const MAX_TITLE_CHARS = 200;

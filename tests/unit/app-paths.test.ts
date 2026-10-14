@@ -42,6 +42,8 @@ describe('data layout and containment', () => {
     const p = resolveDataPaths(ud);
     expect(p.dbFile).toBe(path.join(ud, 'data', 'infinity-notes.sqlite3'));
     expect(p.logsDir).toBe(path.join(ud, 'logs'));
+    expect(p.aiKeysFile).toBe(path.join(ud, 'ai-keys.json'));
+    expect(p.aiWorkDir).toBe(path.join(ud, 'ai-work'));
   });
 
   it('assertNotInstallDir throws inside the install dir, case-insensitive on win32', () => {

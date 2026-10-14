@@ -2,11 +2,12 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { isInTable } from '@tiptap/pm/tables';
 import { useEditorState } from '@tiptap/react';
-import { ALargeSmall, Baseline, Bold, Code, Heading, Highlighter, Italic, Link, List, ListOrdered, ListTodo, MessageSquarePlus, SquareCode, Table, Type, Workflow } from 'lucide-react';
+import { ALargeSmall, Baseline, Bold, Code, Heading, Highlighter, Italic, Link, List, ListOrdered, ListTodo, MessageSquarePlus, Sparkles, SquareCode, Table, Type, Workflow } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentProps, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import type { ImageSize } from '../../shared/editor/doc-schema';
 import { FONT_FAMILIES, FONT_SIZES, HIGHLIGHT_COLORS, TEXT_COLORS, type ColorSwatch } from '../../shared/editor/formatting';
 import { IconButton } from '../ui/IconButton';
+import type { AiStarter } from './editor-services';
 import type { MenuItem } from '../ui/Menu';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { ColorButton, MenuButton } from './bubble-controls';
@@ -55,6 +56,7 @@ export function FormatBubble({
   request,
   link,
   onComment,
+  ai,
 }: {
   editor: Editor;
   editable: boolean;
@@ -62,6 +64,8 @@ export function FormatBubble({
   link: LinkActions;
   /** Comments on the selection (D-165), where the window offers comments. */
   onComment?: () => void;
+  /** Ask AI on the selection (D-190), while AI actions are on. */
+  ai?: AiStarter;
 }) {
   const s = useEditorState({
     editor,
@@ -219,12 +223,9 @@ export function FormatBubble({
           <ToggleButton label="Code block" title="Code block (Ctrl+Alt+C)" icon={SquareCode} pressed={s.codeBlock} onClick={run(() => chain().toggleCodeBlock().run())} />
           <ToggleButton label="Diagram" title="Diagram (Mermaid; or type ```mermaid)" icon={Workflow} pressed={s.diagram} onClick={() => toggleDiagram(editor)} />
           {s.inTable ? <MenuButton label="Table" icon={Table} items={tableMenuItems(editor, s.headerRow)} /> : null}
-          {onComment && !s.empty ? (
-            <>
-              <span className="bubble-separator" aria-hidden />
-              <IconButton label="Comment" title="Comment (Ctrl+Alt+M)" icon={MessageSquarePlus} onClick={onComment} />
-            </>
-          ) : null}
+          {(onComment || ai?.enabled()) && !s.empty ? <span className="bubble-separator" aria-hidden /> : null}
+          {onComment && !s.empty ? <IconButton label="Comment" title="Comment (Ctrl+Alt+M)" icon={MessageSquarePlus} onClick={onComment} /> : null}
+          {ai?.enabled() && !s.empty ? <IconButton label="Ask AI" title="Ask AI (Ctrl+Shift+I)" icon={Sparkles} onClick={() => ai.start()} /> : null}
         </>
       ) : null}
       {kind === 'image' && s.imageSize ? (

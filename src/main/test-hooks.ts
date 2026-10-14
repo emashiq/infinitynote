@@ -3,12 +3,14 @@ import type { NoteRevisionEventType } from '../shared/contracts/notes';
 import { textToDoc } from '../shared/text/textarea-doc';
 import type { Db } from './db/driver';
 import type { Desktop } from './desktop';
+import { createMemoryTextProtector, type TextProtector } from './ai/ai-keys';
 import { NotesRepo } from './db/repositories/notes-repo';
 import { createFakeOsKeyVerifier, createMemoryKeyProtector, type KeyProtector, type OsKeyVerifier } from './locks/os-key';
 import type { MainServices } from './main-services';
 import { AppError } from './services/app-error';
 import type { CloseChoice, CloseDialogOptions } from './services/close-dialog';
 import type { DialogAdapter } from './services/dialog-adapter';
+import type { FetchLike } from './services/network-guard';
 import type { FlushOutcome } from './services/flush-coordinator';
 import { createFakeClock, systemClock, type Clock, type FakeClock } from './services/clock';
 import { createFakeNotificationAdapter, type FakeNotificationAdapter, type FakeNotifyMode, type ShownNotification } from './services/notification-adapter';
@@ -155,6 +157,12 @@ export interface TestHooks {
   lockClock: Clock;
   /** Exposes the scheduler once it exists (storage is up). */
   attachReminders(deps: { scheduler: ReminderScheduler; db: Db }): void;
+  /**
+   * AI actions never reach a real tool or API in tests (D-190): the tools are looked up only in the folder the test
+   * names (INFINITY_NOTES_TEST_AI_PATH, its fake `claude` and `codex`), the APIs get a transport that refuses
+   * everything, and keys are kept with a protector bound to this process.
+   */
+  ai: { env: NodeJS.ProcessEnv; apiFetch: FetchLike; protector: TextProtector };
 }
 
 const Rect = z.strictObject({ x: z.number().int(), y: z.number().int(), width: z.number().int().positive(), height: z.number().int().positive() });
@@ -201,6 +209,11 @@ export function createReminderSeams(env: NodeJS.ProcessEnv): ReminderSeams {
     notifications: env.INFINITY_NOTES_TEST_NOTIFY === 'real' ? null : createFakeNotificationAdapter(clock ?? { now: () => Date.now() }),
     power: createFakePowerEvents(),
   };
+}
+
+/** The environment without its PATH, however it is spelled (Windows has `Path`). */
+function withoutPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => key.toUpperCase() !== 'PATH'));
 }
 
 /** Test hooks exist only in unpackaged builds started with INFINITY_NOTES_E2E=1. */
@@ -254,6 +267,11 @@ export function installTestHooks(env: NodeJS.ProcessEnv = process.env): TestHook
     state,
     lockClock,
     osKey: { verifier: hello.verifier, protector: createMemoryKeyProtector() },
+    ai: {
+      env: { ...withoutPath(env), PATH: env.INFINITY_NOTES_TEST_AI_PATH ?? '' },
+      apiFetch: () => Promise.reject(new Error('No network in tests')),
+      protector: createMemoryTextProtector(),
+    },
     systemLocale: env.INFINITY_NOTES_TEST_LOCALE || null,
     shell: {
       openPath: async (p) => {

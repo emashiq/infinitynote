@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PALETTE_ACTIONS, filterActions } from '../../src/renderer/state/palette-actions';
+import { PALETTE_ACTIONS, filterActions, paletteActions } from '../../src/renderer/state/palette-actions';
 
 describe('palette actions', () => {
   it('has the exact labels and shortcuts', () => {
@@ -22,6 +22,9 @@ describe('palette actions', () => {
       ['Open graph', null],
       ['Toggle notes tree', 'Ctrl+\\'],
       ['Toggle details panel', 'Ctrl+Shift+\\'],
+      ['Zoom in', 'Ctrl+='],
+      ['Zoom out', 'Ctrl+-'],
+      ['Actual size', 'Ctrl+0'],
       ['Close tab', 'Ctrl+W'],
       ['Next tab', 'Ctrl+Tab'],
       ['Previous tab', 'Ctrl+Shift+Tab'],
@@ -29,6 +32,7 @@ describe('palette actions', () => {
       ['Link to note or document…', null],
       ['Insert diagram', null],
       ['Add comment', 'Ctrl+Alt+M'],
+      ['Ask AI about the selection…', 'Ctrl+Shift+I'],
       ['Float current note', null],
       ['Export note as Markdown…', null],
       ['Export note as HTML…', null],
@@ -52,5 +56,19 @@ describe('palette actions', () => {
     expect(filterActions(PALETTE_ACTIONS, 'float').map((a) => a.id)).toEqual(['note.float']);
     expect(filterActions(PALETTE_ACTIONS, 'link').map((a) => a.id)).toEqual(['note.insertReference']);
     expect(filterActions(PALETTE_ACTIONS, 'zzz')).toEqual([]);
+    expect(filterActions(PALETTE_ACTIONS, 'zoom').map((a) => a.id)).toEqual(['view.zoomIn', 'view.zoomOut', 'view.zoomReset']);
+  });
+
+  it('lists the new Office documents only while Office documents are on (D-187)', () => {
+    const office = ['document.newDocx', 'document.newXlsx', 'document.newPptx'];
+    expect(paletteActions({ officeDocuments: false, aiActions: true }).filter((a) => office.includes(a.id))).toEqual([]);
+    expect(paletteActions({ officeDocuments: false, aiActions: true })).toHaveLength(PALETTE_ACTIONS.length - 3);
+    expect(paletteActions({ officeDocuments: true, aiActions: true })).toEqual(PALETTE_ACTIONS);
+  });
+
+  it('lists Ask AI only while AI actions are on (D-190)', () => {
+    expect(paletteActions({ officeDocuments: true, aiActions: false }).map((a) => a.id)).not.toContain('ai.ask');
+    expect(paletteActions({ officeDocuments: true, aiActions: false })).toHaveLength(PALETTE_ACTIONS.length - 1);
+    expect(filterActions(paletteActions({ officeDocuments: true, aiActions: true }), 'summarize').map((a) => a.id)).toEqual(['ai.ask']);
   });
 });

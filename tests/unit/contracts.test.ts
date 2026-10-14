@@ -84,6 +84,8 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
       'collab:status',
       'sticky:lockState',
       'lock:documentLocked',
+      // Window zoom (D-186).
+      'window:zoomChanged',
     ];
     expect([...EVENT_CHANNELS]).toEqual(events);
     expect(Object.keys(EVENT_SCHEMAS)).toEqual(events);
@@ -209,9 +211,26 @@ describe('IPC contract catalogue (INF-FND-04)', () => {
       'lock:documentSetHello',
       'lock:documentRemove',
       'lock:documentActivity',
+      // Window zoom (D-186): every window kind zooms itself.
+      'window:zoom',
+      // AI actions (D-190).
+      'ai:status',
+      'ai:acknowledge',
+      'ai:context',
+      'ai:pickFiles',
+      'ai:ask',
+      'ai:followUp',
+      'ai:wait',
+      'ai:stop',
+      'ai:thread',
+      'ai:deleteThread',
+      'ai:config',
+      'ai:setKey',
+      'ai:cliPath',
+      'ai:test',
     ]);
-    expect(INVOKE_CHANNELS).toHaveLength(159);
-    expect(EVENT_CHANNELS).toHaveLength(15);
+    expect(INVOKE_CHANNELS).toHaveLength(174);
+    expect(EVENT_CHANNELS).toHaveLength(16);
     const all: string[] = [...INVOKE_CHANNELS, ...EVENT_CHANNELS];
     for (const name of ['note:trashed', 'sticky:removeSticky', 'attachment:importImageBytes']) {
       expect(all, name).not.toContain(name);

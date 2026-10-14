@@ -7,6 +7,7 @@ import type { WindowHooks } from '../window-lifecycle';
 import type { MainWindowFactory } from './main-window-controller';
 import { rendererUrl, secureWebPreferences, trackWindow } from './secure-window';
 import type { WindowRegistry } from './window-registry';
+import type { WindowZoom } from './window-zoom';
 
 export interface AppWindowFactoryOptions {
   preloadPath: string;
@@ -17,6 +18,8 @@ export interface AppWindowFactoryOptions {
   devUrl: string | null;
   /** Renderer and session hooks for each new window. */
   windowHooks(): WindowHooks;
+  /** The zoom of each kind of window (D-186); absent in tests that do not need it. */
+  zoom?: WindowZoom;
   /** Each caption-button overlay applied to the main window (test hooks record it). */
   onTitleBarOverlay?: (overlay: TitleBarOverlayOptions) => void;
 }
@@ -80,7 +83,7 @@ export function createMainWindowFactory(options: AppWindowFactoryOptions): MainW
       };
       nativeTheme.on('updated', followTheme);
       win.on('closed', () => nativeTheme.off('updated', followTheme));
-      const webContentsId = trackWindow(win, { registry: options.registry, sender: { role: 'main' }, hooks: options.windowHooks(), logger: options.logger });
+      const webContentsId = trackWindow(win, { registry: options.registry, sender: { role: 'main' }, hooks: options.windowHooks(), logger: options.logger, zoom: options.zoom });
       win.once('ready-to-show', () => win.show());
       win.on('close', (event) => events.onClose(event));
       win.on('closed', () => events.onClosed());

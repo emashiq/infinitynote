@@ -41,7 +41,7 @@ export function createWidgetWindowFactory(options: AppWindowFactoryOptions): Wid
       const win = new BrowserWindow(widgetWindowOptions({ ...spec, preloadPath: options.preloadPath, iconPath: options.iconPath }));
       // The application menu stays with the main window.
       win.removeMenu();
-      const webContentsId = trackWindow(win, { registry: options.registry, sender: { role: 'widget' }, hooks: options.windowHooks(), logger: options.logger });
+      const webContentsId = trackWindow(win, { registry: options.registry, sender: { role: 'widget' }, hooks: options.windowHooks(), logger: options.logger, zoom: options.zoom });
       win.on('page-title-updated', (event) => event.preventDefault());
       win.once('ready-to-show', () => events.onReadyToShow());
       win.on('close', (event) => events.onClose(event));

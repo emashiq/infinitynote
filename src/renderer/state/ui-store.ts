@@ -42,7 +42,11 @@ export type FocusRequest =
   /** Inserts into the note's editor from the palette: the reference picker ("Link to note or document…") or a diagram. */
   | { target: 'noteInsert'; noteId: string; item: NoteInsertItem }
   | { target: 'treeRename'; key: string }
-  | { target: 'tree' };
+  | { target: 'tree' }
+  /** The Office documents switch in Settings, from a document tab while they are off (D-187). */
+  | { target: 'officeSetting' }
+  /** The AI switch in Settings, from the Ask AI panel while AI actions are off or not set up (D-190). */
+  | { target: 'aiSetting' };
 
 export interface UiState {
   dialog: DialogState | null;

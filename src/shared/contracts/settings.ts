@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AI_ENGINES, AI_TIMEOUT_MINUTES, AiEngineSchema, AnthropicEffortSchema, AnthropicModelSchema, CliModelSchema, DEFAULT_OPENAI_MODEL, ModelNameSchema } from '../ai/engines';
 import { ADD_FILES_MODES } from '../attachments/file-choice';
 import { DEFAULT_DOCUMENT_MAX_MB, DEFAULT_IMAGE_MAX_MB, DOCUMENT_MAX_MB_RANGE, IMAGE_MAX_MB_RANGE } from '../attachments/limits';
 import { isKnownZone } from '../time/zones';
@@ -9,7 +10,7 @@ import { AutoBackupSetting, LastAutoBackup } from './portability';
 import { FollowupInterval, FollowupMax, LocalTime, REMINDER_MESSAGES, ZoneId } from './reminders';
 import { DEFAULT_SESSION, TabSession } from './session';
 import { QuickStickySetting } from './shortcuts';
-import { CloseBehavior } from './windows';
+import { CloseBehavior, ZoomPercentSchema } from './windows';
 
 export const ThemeSetting = z.enum(['system', 'light', 'dark']);
 
@@ -25,6 +26,23 @@ export const QuietHoursSetting = z
   .strictObject({ enabled: z.boolean(), start: LocalTime, end: LocalTime, zoneId: ZoneId.nullable() })
   .refine((q) => q.start !== q.end, 'Quiet hours must start and end at different times')
   .refine((q) => !q.enabled || q.zoneId !== null, 'Quiet hours need a time zone');
+
+/** The zoom of each kind of window (D-186); all stickies share one. */
+export const WindowZoomSetting = z.strictObject({ main: ZoomPercentSchema, sticky: ZoomPercentSchema, widget: ZoomPercentSchema });
+
+/** What a line ending in "=" does in notes and stickies (D-188): suggest the result, insert it, or nothing. */
+export const MATH_RESULTS_MODES = ['suggest', 'insert', 'off'] as const;
+export const MathResultsSetting = z.enum(MATH_RESULTS_MODES);
+export type MathResultsMode = z.infer<typeof MathResultsSetting>;
+
+/** The engines whose first-use notice was confirmed (D-190), each once. */
+export const AiAcknowledgedSetting = z
+  .array(AiEngineSchema)
+  .max(AI_ENGINES.length)
+  .refine((engines) => new Set(engines).size === engines.length, 'Engines must be unique');
+
+/** Programs chosen for the command-line tools in main's file dialog (D-190); null finds the tool on PATH. */
+export const AiCliPathsSetting = z.strictObject({ claude: z.string().min(1).max(4096).nullable(), codex: z.string().min(1).max(4096).nullable() });
 
 /** Days after which Trash is emptied automatically; null keeps it until the user empties it (D-034). */
 export const TRASH_RETENTION_DAYS = [30, 90] as const;
@@ -59,7 +77,31 @@ export const SETTINGS = {
     upgrade: (value: unknown): unknown => (typeof value === 'number' ? Math.min(value, DOCUMENT_MAX_MB_RANGE.max) : value),
   },
   'attachments.addFiles': { version: 1, schema: z.enum(ADD_FILES_MODES), default: 'ask', public: true },
+  // Word, spreadsheet and PowerPoint documents open in the app only when this is on (D-187). A new key, so everyone,
+  // including people upgrading from 0.3.x, starts with it off; their documents stay and open in the system app.
+  'documents.office': { version: 1, schema: z.boolean(), default: false, public: true },
+  'notes.mathResults': { version: 1, schema: MathResultsSetting, default: 'suggest', public: true },
+  // AI actions (D-190): off until the user turns them on; nothing is sent anywhere unless an action runs.
+  'ai.enabled': { version: 1, schema: z.boolean(), default: false, public: true },
+  'ai.engine': { version: 1, schema: AiEngineSchema, default: 'claude-code', public: true },
+  'ai.claudeModel': { version: 1, schema: CliModelSchema, default: '', public: true },
+  'ai.codexModel': { version: 1, schema: CliModelSchema, default: '', public: true },
+  'ai.anthropicModel': { version: 1, schema: AnthropicModelSchema, default: 'claude-opus-5-5', public: true },
+  'ai.anthropicEffort': { version: 1, schema: AnthropicEffortSchema, default: 'medium', public: true },
+  'ai.openaiModel': { version: 1, schema: ModelNameSchema, default: DEFAULT_OPENAI_MODEL, public: true },
+  'ai.timeoutMinutes': {
+    version: 1,
+    schema: z.number().int().min(AI_TIMEOUT_MINUTES.min).max(AI_TIMEOUT_MINUTES.max),
+    default: AI_TIMEOUT_MINUTES.default,
+    public: true,
+  },
+  // Main-only: written through ai:acknowledge (every window may confirm) and ai:cliPath (main's file dialog), so no
+  // renderer names a program to run.
+  'ai.acknowledged': { version: 1, schema: AiAcknowledgedSetting, default: [], public: false },
+  'ai.cliPaths': { version: 1, schema: AiCliPathsSetting, default: { claude: null, codex: null }, public: false },
   'app.closeBehavior': { version: 1, schema: CloseBehavior, default: 'ask', public: true },
+  // Main-only: written through window:zoom, which applies it to the windows of the kind first (D-186).
+  'window.zoom': { version: 1, schema: WindowZoomSetting, default: { main: 100, sticky: 100, widget: 100 }, public: false },
   'stickies.restoreOnStartup': { version: 1, schema: z.boolean(), default: false, public: true },
   // Null follows the computer's zone (D-083).
   'reminders.defaultZone': { version: 1, schema: ZoneId.nullable(), default: null, public: true },

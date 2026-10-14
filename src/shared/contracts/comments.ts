@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { AiEngineSchema } from '../ai/engines';
+import { MAX_AI_FILES, MAX_AI_MESSAGE_CHARS } from '../ai/limits';
 import { CommentAnchor } from '../comments/anchors';
 import { Uuid } from './ids';
 
@@ -33,9 +35,36 @@ const Body = z
   .transform((s) => s.trim())
   .pipe(z.string().min(1, COMMENT_MESSAGES.empty).max(MAX_COMMENT_CHARS, COMMENT_MESSAGES.tooLong));
 
+/** Comments are plain comment threads; an AI thread holds an AI action on its anchor and its follow-ups (D-190). */
+export const THREAD_KINDS = ['comment', 'ai'] as const;
+export const ThreadKind = z.enum(THREAD_KINDS);
+export type ThreadKindType = z.infer<typeof ThreadKind>;
+
+/** Who wrote a comment: the user, or in an AI thread the engine's answer or the error that took its place. */
+export const MESSAGE_ROLES = ['user', 'assistant', 'error'] as const;
+export const MessageRole = z.enum(MESSAGE_ROLES);
+export type MessageRoleType = z.infer<typeof MessageRole>;
+
+/** A file sent with an AI action, as the thread remembers it: its name and size, never its bytes. */
+export const AiAttachmentInfo = z.strictObject({ name: z.string().min(1).max(255), sizeBytes: z.number().int().min(0) });
+export type AiAttachmentInfoType = z.infer<typeof AiAttachmentInfo>;
+
+/** What an AI thread shows about a message: the engine and model that answered, the files sent and the cost reported. */
+export const AiMessageInfo = z.strictObject({
+  engine: AiEngineSchema,
+  model: z.string().max(100).nullable(),
+  attachments: z.array(AiAttachmentInfo).max(MAX_AI_FILES + 2),
+  costUsd: z.number().min(0).nullable(),
+});
+export type AiMessageInfoType = z.infer<typeof AiMessageInfo>;
+
 export const CommentDto = z.strictObject({
   id: Uuid,
-  body: z.string().max(MAX_COMMENT_CHARS),
+  role: MessageRole,
+  /** An AI answer can be longer than a comment. */
+  body: z.string().max(MAX_AI_MESSAGE_CHARS),
+  /** The AI details of a message in an AI thread; null for comments. */
+  ai: AiMessageInfo.nullable(),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
@@ -43,6 +72,7 @@ export type CommentDtoType = z.infer<typeof CommentDto>;
 
 export const CommentThreadDto = z.strictObject({
   id: Uuid,
+  kind: ThreadKind,
   target: CommentTarget,
   anchor: CommentAnchor,
   /** The text the thread was made on (kept up to date for notes); '' for anchors without text (a PDF area, a cell). */
@@ -50,6 +80,8 @@ export const CommentThreadDto = z.strictObject({
   resolvedAt: z.number().int().nullable(),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
+  /** An AI thread whose engine is answering now. */
+  running: z.boolean(),
   /** Oldest first; the first one opened the thread. */
   comments: z.array(CommentDto).min(1).max(MAX_COMMENTS_PER_THREAD),
 });

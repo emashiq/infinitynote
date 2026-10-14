@@ -33,6 +33,10 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: 'Ctrl+\\', action: 'Toggle notes tree' },
       { keys: 'Ctrl+Shift+\\', action: 'Toggle details panel' },
       { keys: 'Ctrl+/', action: 'Keyboard shortcuts' },
+      { keys: 'Ctrl+Shift+I', action: 'Ask AI about the selected part (when AI actions are on; also in stickies)' },
+      { keys: 'Ctrl+=, Ctrl++, Ctrl+wheel up', action: 'Zoom in (over a PDF, Word, PowerPoint or web page viewer: its page)' },
+      { keys: 'Ctrl+-, Ctrl+wheel down', action: 'Zoom out' },
+      { keys: 'Ctrl+0', action: 'Actual size' },
       { keys: 'Alt', action: 'Menu bar (File, View, Help)' },
       { keys: 'Escape', action: 'Close menus and dialogs' },
     ],
@@ -67,6 +71,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: '/', action: 'Insert menu (at the start of a line or after a space)' },
       { keys: 'Ctrl+Alt+C', action: 'Code block' },
       { keys: '```mermaid, then Enter', action: 'Diagram (also /Diagram, the Diagram button or Insert diagram in the note menu)' },
+      { keys: 'Tab or Enter, Escape', action: 'Insert or dismiss the suggested result after "=" (math results)' },
       { keys: 'Shift+F10', action: 'Note menu' },
       { keys: 'Enter, Shift+Enter', action: 'Next, previous match in Find' },
     ],
@@ -77,13 +82,20 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: 'Ctrl+W', action: 'Hide the sticky' },
       { keys: 'Ctrl+F', action: 'Find in the sticky' },
       { keys: 'F2', action: 'Rename the sticky' },
+      { keys: 'Ctrl+=, Ctrl+-, Ctrl+0', action: 'Zoom every sticky in, out, or to actual size' },
     ],
   },
 ];
 
+/** Ctrl+Shift+I, Ask AI on the selection (D-190), in the main window and in stickies. */
+export function isAskAiShortcut(e: KeyLike): boolean {
+  return e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && (e.key.toLowerCase() === 'i' || e.code === 'KeyI');
+}
+
 /** Maps a key event to an application command, or null when the event is not a shortcut. */
 export function matchShortcut(e: KeyLike): CommandId | null {
   if (e.altKey || e.metaKey || !e.ctrlKey) return null;
+  if (isAskAiShortcut(e)) return 'ai.ask';
   if (e.code === 'Backslash') return e.shiftKey ? 'view.togglePanel' : 'view.toggleTree';
   const key = e.key.toLowerCase();
   if (key === 'tab') return e.shiftKey ? 'tab.prev' : 'tab.next';

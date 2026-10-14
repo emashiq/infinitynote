@@ -5,12 +5,13 @@ const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})[ \t]*([A-Za-z][\w+#-]{0,31})?[ \t]*$/;
 
 /** True when the text holds at least one complete fenced code block (an opening and a closing fence line). */
 export function hasCodeFence(text: string): boolean {
-  return blocksOf(text).some((b) => b.kind === 'code');
+  return fenceBlocks(text).some((b) => b.kind === 'code');
 }
 
-type TextBlock = { kind: 'line'; text: string } | { kind: 'code'; language: string | null; text: string };
+export type TextBlock = { kind: 'line'; text: string } | { kind: 'code'; language: string | null; text: string };
 
-function blocksOf(text: string): TextBlock[] {
+/** The text as lines and complete fenced code blocks, in order. */
+export function fenceBlocks(text: string): TextBlock[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const blocks: TextBlock[] = [];
   for (let i = 0; i < lines.length; i += 1) {
@@ -34,7 +35,7 @@ function blocksOf(text: string): TextBlock[] {
  * end, so the first and last lines join the paragraph the cursor is in.
  */
 export function fencedTextSlice(text: string, schema: Schema): Slice | null {
-  const blocks = blocksOf(text);
+  const blocks = fenceBlocks(text);
   if (!blocks.some((b) => b.kind === 'code')) return null;
   const { paragraph, codeBlock } = schema.nodes;
   if (!paragraph || !codeBlock) return null;

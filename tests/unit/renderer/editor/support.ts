@@ -3,6 +3,7 @@ import { EditorContent } from '@tiptap/react';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach } from 'vitest';
+import type { MathSettings } from '../../../../src/renderer/editor/calc/calc-results';
 import { plainExtensions, richExtensions } from '../../../../src/renderer/editor/extensions';
 import type { LinkRequest } from '../../../../src/renderer/editor/link-trigger';
 import { createPasteProps } from '../../../../src/renderer/editor/paste';
@@ -19,6 +20,9 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+/** Math results as the app starts (Suggest), on Wednesday 14 October 2026, 10:00 in Dhaka. */
+export const TEST_MATH: MathSettings = { mode: 'suggest', dateOrder: 'day-first', now: Date.parse('2026-10-14T04:00:00Z'), zone: 'Asia/Dhaka' };
+
 export const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export interface TestEditor {
@@ -33,7 +37,7 @@ export interface TestEditor {
 
 /** A real Tiptap editor in jsdom with the production extensions and paste handling. */
 export function makeEditor(
-  opts: { format?: 'rich' | 'plain'; content?: Content; uploader?: Partial<UploaderDeps>; flushPending?: () => Promise<unknown>; requestLink?: (request: LinkRequest) => boolean; startComment?: () => boolean } = {},
+  opts: { format?: 'rich' | 'plain'; content?: Content; uploader?: Partial<UploaderDeps>; flushPending?: () => Promise<unknown>; requestLink?: (request: LinkRequest) => boolean; startComment?: () => boolean; mathResults?: () => MathSettings } = {},
 ): TestEditor {
   const format = opts.format ?? 'rich';
   const notices: string[] = [];
@@ -55,7 +59,7 @@ export function makeEditor(
   document.body.appendChild(element);
   const editor = new Editor({
     element,
-    extensions: format === 'rich' ? richExtensions({ uploader, notify: (m) => notices.push(m), files: null, links: null, references: null, requestLink: opts.requestLink ?? (() => false), startComment: opts.startComment ?? null }) : plainExtensions(),
+    extensions: format === 'rich' ? richExtensions({ uploader, notify: (m) => notices.push(m), files: null, links: null, references: null, requestLink: opts.requestLink ?? (() => false), startComment: opts.startComment ?? null, mathResults: opts.mathResults ?? (() => TEST_MATH) }) : plainExtensions(),
     content: opts.content ?? null,
     enableContentCheck: true,
     editorProps: createPasteProps({ format, uploader, notify: (m) => notices.push(m), flushPending: opts.flushPending ?? (async () => {}) }),
